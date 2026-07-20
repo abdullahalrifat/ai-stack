@@ -1,0 +1,72 @@
+model_list:
+
+  ###########################################################
+  # General Chat
+  ###########################################################
+
+  - model_name: qwen3-8b
+    litellm_params:
+      model: ollama/qwen3:8b
+      api_base: http://ollama:11434
+
+  - model_name: qwen3-14b
+    litellm_params:
+      model: ollama/qwen3:14b
+      api_base: http://ollama:11434
+
+  ###########################################################
+  # Coding
+  ###########################################################
+
+  - model_name: coder
+    litellm_params:
+      model: ollama/qwen3-coder:30b
+      api_base: http://ollama:11434
+
+  ###########################################################
+  # Reasoning
+  ###########################################################
+
+  - model_name: reasoning
+    litellm_params:
+      model: ollama/deepseek-r1:14b
+      api_base: http://ollama:11434
+
+  ###########################################################
+  # Vision
+  ###########################################################
+
+  - model_name: vision
+    litellm_params:
+      model: ollama/gemma3:12b
+      api_base: http://ollama:11434
+
+  ###########################################################
+  # Embedding
+  ###########################################################
+
+  - model_name: embedding
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://ollama:11434
+
+###########################################################
+# General Settings
+###########################################################
+
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY}
+
+###########################################################
+# LiteLLM Settings
+###########################################################
+
+litellm_settings:
+  set_verbose: true
+
+###########################################################
+# Router Settings
+###########################################################
+
+router_settings:
+  routing_strategy: simple-shuffle
