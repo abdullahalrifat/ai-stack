@@ -83,10 +83,9 @@ services:
     image: ghcr.io/berriai/litellm:main
     container_name: litellm
     restart: unless-stopped
-
+    entrypoint: ["litellm"]
     command:
-      - "--config"
-      - "/app/config.yaml"
+      - "--config=/app/config.yaml"
 
     ports:
       - "4000:4000"
@@ -95,7 +94,7 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
 
     volumes:
-      - ./litellm/config.yaml:/app/config.yaml
+      - /mnt/work/code/ai-stack/litellm/config.yaml:/app/config.yaml
 
     depends_on:
       - ollama
@@ -160,13 +159,53 @@ services:
 
       QDRANT_URI: http://qdrant:6333
 
-      OPENAI_API_BASE_URL: http://litellm:4000
+      OPENAI_API_BASE_URL: http://litellm:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
     volumes:
       - ./open-webui:/app/backend/data
 
     networks:
       - ai
+  ####################################################
+  ## Agents
+  ####################################################
+  agents:
+
+    build:
+      context: ./agents
+    image: ai-agents:latest
+    container_name: ai-agents
+
+    restart: unless-stopped
+
+    working_dir: /app
+
+    volumes:
+      - ./agents:/app
+
+    environment:
+      OPENAI_API_BASE: http://litellm:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+
+      QDRANT_URL: http://qdrant:6333
+
+      REDIS_URL: redis://redis:6379
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      - litellm
+      - qdrant
+      - redis
+    networks:
+      - ai
+    command:
+      bash -c "
+      pip install -r requirements.txt &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+
 
 networks:
   ai:
