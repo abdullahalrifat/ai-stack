@@ -196,11 +196,13 @@ def _run_agent_with_prompt(prompt: str, conversation_id: Optional[str] = None) -
     context = _format_history(history)
     full_input = f"Conversation history:\n{context}\n\n{prompt}" if context else prompt
 
-    result = agent.run(full_input)
+    result = agent.invoke({"input": full_input})
+    # Extract the output from the result dict (LangGraph agents return a dict with "output" key)
+    answer = result.get("output") if isinstance(result, dict) else str(result)
     history.append({"role": "user", "content": prompt})
-    history.append({"role": "assistant", "content": result})
+    history.append({"role": "assistant", "content": answer})
     save_conversation(conversation_id, history)
-    return result
+    return answer
 
 
 def chat(message: str, conversation_id: Optional[str] = None) -> str:
