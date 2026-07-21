@@ -208,8 +208,24 @@ docker compose ps
 | LiteLLM API | http://localhost:4000  |
 | Ollama API  | http://localhost:11434 |
 | Qdrant      | http://localhost:6333  |
+| AI Agents   | http://localhost:8000  |
 
 ---
+
+# AI Agents Endpoints
+
+- POST http://localhost:8000/chat
+  - Body: {"message": "...", "conversation_id": "optional"}
+- POST http://localhost:8000/ingest
+  - Body: {"documents": ["..."], "metadata": {"source": "notes"}}
+- GET http://localhost:8000/conversation/{conversation_id}
+- POST http://localhost:8000/memory/search
+  - Body: {"query": "...", "top_k": 4}
+- POST http://localhost:8000/v1/chat/completions
+  - Body: {"model": "qwen3-8b", "messages": [{"role": "user", "content": "..."}]}
+- POST http://localhost:8000/v1/embeddings
+  - Body: {"model": "embedding", "input": ["..."]}
+- GET http://localhost:8000/v1/models
 
 # Adding Models
 

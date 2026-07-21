@@ -9,6 +9,9 @@ qdrant-client
 
 redis
 
+openai
+langchain-qdrant
+
 docker
 
 pydantic
