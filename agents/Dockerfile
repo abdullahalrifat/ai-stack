@@ -20,8 +20,12 @@ RUN pip install --no-cache-dir \
 
 COPY app ./app
 
+# -----------------------------
+# Build validation
+# -----------------------------
 
-EXPOSE 8000
+# Check Python syntax
+RUN python -m compileall app
 
 
 EXPOSE 8000

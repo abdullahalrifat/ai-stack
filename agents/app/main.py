@@ -1,148 +1,561 @@
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Security,
+)
+
+from fastapi.concurrency import run_in_threadpool
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
-from app.agent import chat, get_embeddings, ingest_documents, load_conversation, search_long_term_memory
 
-app = FastAPI()
+from app.agent import (
+    chat,
+    ingest_documents,
+)
+
+
+from app.memory.memory import (
+    get_conversation as fetch_conversation,
+    search_long_term_memory,
+)
+
+
+from app.memory.embeddings import (
+    create_embedding,
+)
+
+
+
+app = FastAPI(
+    title="Local AI Agent API",
+    version="1.0"
+)
+
+
+
+# ============================================================
+# Authentication
+# ============================================================
+
+API_KEY = os.getenv(
+    "AGENT_API_KEY"
+)
+
+
+api_key_header = APIKeyHeader(
+    name="Authorization",
+    auto_error=False,
+)
+
+
+
+def verify_api_key(
+    key: Optional[str] = Security(api_key_header)
+):
+
+    if not API_KEY:
+        return True
+
+
+    if not key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing authorization header"
+        )
+
+
+    token = key.replace(
+        "Bearer ",
+        ""
+    )
+
+
+    if token != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key"
+        )
+
+
+    return True
+
+
+
+# ============================================================
+# Models
+# ============================================================
 
 
 class ChatRequest(BaseModel):
+
     message: str
+
     conversation_id: Optional[str] = None
+
 
 
 class IngestRequest(BaseModel):
+
     documents: List[str]
-    metadata: Optional[Dict[str, str]] = None
+
+    metadata: Optional[
+        Dict[str,str]
+    ] = None
+
 
 
 class MemoryQuery(BaseModel):
+
     query: str
-    top_k: Optional[int] = 4
+
+    top_k: int = 4
+
 
 
 class OpenAIChatMessage(BaseModel):
+
     role: str
+
     content: str
 
 
+
 class OpenAIChatCompletionRequest(BaseModel):
+
     model: Optional[str] = None
+
     messages: List[OpenAIChatMessage]
-    temperature: Optional[float] = 0.0
+
+    temperature: Optional[float] = 0
+
     max_tokens: Optional[int] = None
-    n: Optional[int] = 1
+
+    stream: Optional[bool] = False
+
     conversation_id: Optional[str] = None
 
 
+
 class OpenAIEmbeddingRequest(BaseModel):
+
     model: Optional[str] = None
+
     input: List[str] | str
+
+
+
+# ============================================================
+# Health
+# ============================================================
 
 
 @app.get("/")
 def health():
-    return {"status": "running"}
 
-
-@app.post("/chat")
-async def api_chat(request: ChatRequest):
-    try:
-        answer = chat(request.message, request.conversation_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
     return {
-        "answer": answer,
-        "conversation_id": request.conversation_id or "default",
+        "status": "running"
     }
 
 
-@app.post("/v1/chat/completions")
+
+# ============================================================
+# Chat API
+# ============================================================
+
+
+@app.post(
+    "/chat",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+async def api_chat(
+    request: ChatRequest
+):
+
+    if not request.message.strip():
+
+        raise HTTPException(
+            status_code=400,
+            detail="Message cannot be empty"
+        )
+
+
+    answer = await run_in_threadpool(
+        chat,
+        request.message,
+        request.conversation_id,
+    )
+
+
+    return {
+
+        "answer": answer,
+
+        "conversation_id":
+            request.conversation_id
+            or "default"
+
+    }
+
+
+
+# ============================================================
+# OpenAI Compatible Chat
+# ============================================================
+
+
+@app.post(
+    "/v1/chat/completions",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
 async def openai_chat_completions(
     request: OpenAIChatCompletionRequest,
     x_conversation_id: Optional[str] = Header(None),
-    conversation_id: Optional[str] = None,
 ):
+
+
     if not request.messages:
-        raise HTTPException(status_code=400, detail="`messages` is required for chat completions.")
 
-    conversation_id = conversation_id or x_conversation_id or request.conversation_id
-    prompt_lines = []
-    for message in request.messages:
-        role = message.role.lower()
-        if role == "assistant":
-            prompt_lines.append(f"Assistant: {message.content}")
-        elif role == "system":
-            prompt_lines.append(f"System: {message.content}")
-        else:
-            prompt_lines.append(f"User: {message.content}")
+        raise HTTPException(
+            status_code=400,
+            detail="messages required"
+        )
 
-    prompt = "\n".join(prompt_lines)
-    try:
-        answer = chat(prompt, conversation_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+
+    conversation_id = (
+
+        x_conversation_id
+
+        or request.conversation_id
+
+        or "default"
+
+    )
+
+
+    prompt = "\n".join(
+
+        [
+            f"{m.role}: {m.content}"
+
+            for m in request.messages
+
+        ]
+
+    )
+
+
+    answer = await run_in_threadpool(
+
+        chat,
+
+        prompt,
+
+        conversation_id,
+
+    )
+
+
+
+    created = int(
+        datetime.now(
+            timezone.utc
+        ).timestamp()
+    )
+
+
 
     return {
-        "id": f"chatcmpl-{datetime.utcnow().timestamp():.0f}",
-        "object": "chat.completion",
-        "created": int(datetime.utcnow().timestamp()),
-        "model": request.model or "qwen3-8b",
-        "choices": [
+
+        "id":
+            f"chatcmpl-{created}",
+
+        "object":
+            "chat.completion",
+
+        "created":
+            created,
+
+        "model":
+            request.model
+            or "qwen3-8b",
+
+        "choices":
+
+        [
+
             {
-                "index": 0,
-                "message": {"role": "assistant", "content": answer},
-                "finish_reason": "stop",
+
+                "index":0,
+
+                "message":
+                {
+
+                    "role":
+                        "assistant",
+
+                    "content":
+                        answer,
+
+                },
+
+                "finish_reason":
+                    "stop"
+
             }
-        ],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+
+        ]
+
     }
 
 
-@app.post("/v1/embeddings")
-async def openai_embeddings(request: OpenAIEmbeddingRequest):
+
+# ============================================================
+# Embeddings API
+# ============================================================
+
+
+@app.post(
+    "/v1/embeddings",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+async def openai_embeddings(
+    request: OpenAIEmbeddingRequest
+):
+
+
     inputs = request.input
-    if isinstance(inputs, str):
-        inputs = [inputs]
 
-    vectors = get_embeddings().embed_documents(inputs)
+
+    if isinstance(inputs,str):
+
+        inputs = [
+            inputs
+        ]
+
+
+
+    vectors=[]
+
+
+    for text in inputs:
+
+        vector = await run_in_threadpool(
+
+            create_embedding,
+
+            text
+
+        )
+
+        vectors.append(
+            vector
+        )
+
+
+
     return {
-        "object": "list",
-        "data": [
-            {"object": "embedding", "embedding": vector, "index": index}
-            for index, vector in enumerate(vectors)
+
+        "object":
+            "list",
+
+        "data":
+
+        [
+
+            {
+
+                "object":
+                    "embedding",
+
+                "embedding":
+                    vector,
+
+                "index":
+                    index,
+
+            }
+
+            for index,vector
+            in enumerate(vectors)
+
         ],
-        "model": request.model or "embedding",
+
+        "model":
+            request.model
+            or "nomic-embed-text"
+
     }
 
 
-@app.get("/v1/models")
-async def openai_models():
+
+# ============================================================
+# Models
+# ============================================================
+
+
+@app.get(
+    "/v1/models",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+def openai_models():
+
     return {
-        "object": "list",
-        "data": [
-            {"id": "qwen3-8b", "object": "model", "owned_by": "local"},
-            {"id": "embedding", "object": "model", "owned_by": "local"},
-        ],
+
+        "object":
+            "list",
+
+        "data":
+
+        [
+
+            {
+
+                "id":
+                    "qwen3-8b",
+
+                "object":
+                    "model",
+
+                "owned_by":
+                    "local"
+
+            },
+
+            {
+
+                "id":
+                    "nomic-embed-text",
+
+                "object":
+                    "model",
+
+                "owned_by":
+                    "local"
+
+            }
+
+        ]
+
     }
 
 
-@app.post("/ingest")
-async def api_ingest(request: IngestRequest):
-    if not request.documents:
-        raise HTTPException(status_code=400, detail="No documents provided for ingestion.")
-    result = ingest_documents(request.documents, request.metadata)
-    return result
+
+# ============================================================
+# Ingest
+# ============================================================
 
 
-@app.get("/conversation/{conversation_id}")
-async def get_conversation(conversation_id: str):
-    return {"conversation_id": conversation_id, "history": load_conversation(conversation_id)}
+@app.post(
+    "/ingest",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+async def api_ingest(
+    request: IngestRequest
+):
 
 
-@app.post("/memory/search")
-async def api_search_memory(request: MemoryQuery):
-    return {"query": request.query, "results": search_long_term_memory(request.query, top_k=request.top_k)}
+    return await run_in_threadpool(
+
+        ingest_documents,
+
+        request.documents,
+
+        request.metadata,
+
+    )
+
+
+
+# ============================================================
+# Conversation
+# ============================================================
+
+
+@app.get(
+    "/conversation/{conversation_id}",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+def conversation_history(
+    conversation_id:str
+):
+
+    return {
+
+        "conversation_id":
+            conversation_id,
+
+        "history":
+            fetch_conversation(
+                conversation_id
+            )
+
+    }
+
+
+
+# ============================================================
+# Memory Search
+# ============================================================
+
+
+@app.post(
+    "/memory/search",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+async def api_search_memory(
+    request: MemoryQuery
+):
+
+
+    embedding = await run_in_threadpool(
+
+        create_embedding,
+
+        request.query,
+
+    )
+
+
+
+    result = await run_in_threadpool(
+
+        search_long_term_memory,
+
+        embedding,
+
+        request.top_k,
+
+    )
+
+
+
+    return {
+
+        "query":
+            request.query,
+
+        "results":
+            result
+
+    }
