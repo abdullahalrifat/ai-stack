@@ -55,7 +55,7 @@ model_list:
 ###########################################################
 
 general_settings:
-  master_key: ${LITELLM_MASTER_KEY}
+  master_key: os.environ/LITELLM_MASTER_KEY
 
 ###########################################################
 # LiteLLM Settings
@@ -63,6 +63,7 @@ general_settings:
 
 litellm_settings:
   set_verbose: true
+  drop_params: true
 
 ###########################################################
 # Router Settings

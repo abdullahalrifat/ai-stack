@@ -9,7 +9,7 @@ class AgentState(TypedDict):
 
 
 llm = ChatOpenAI(
-    model="qwen-local",
+    model="qwen3-8b",
     temperature=0,
     base_url=os.getenv("OPENAI_API_BASE"),
     api_key=os.getenv("OPENAI_API_KEY"),

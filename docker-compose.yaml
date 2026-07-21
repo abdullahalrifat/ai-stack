@@ -17,6 +17,12 @@ services:
     volumes:
       - ./ollama:/root/.ollama
 
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
     networks:
       - ai
 
@@ -25,9 +31,7 @@ services:
   ####################################################
   postgres:
     image: postgres:17
-
     container_name: postgres
-
     restart: unless-stopped
 
     environment:
@@ -46,9 +50,7 @@ services:
   ####################################################
   redis:
     image: redis:8-alpine
-
     container_name: redis
-
     restart: unless-stopped
 
     volumes:
@@ -62,9 +64,7 @@ services:
   ####################################################
   qdrant:
     image: qdrant/qdrant:latest
-
     container_name: qdrant
-
     restart: unless-stopped
 
     ports:
@@ -79,13 +79,17 @@ services:
   ####################################################
   ## LiteLLM
   ####################################################
-  litellm: 
+  litellm:
     image: ghcr.io/berriai/litellm:main
     container_name: litellm
     restart: unless-stopped
+
     entrypoint: ["litellm"]
+
     command:
       - "--config=/app/config.yaml"
+      - "--host=0.0.0.0"
+      - "--port=4000"
 
     ports:
       - "4000:4000"
@@ -94,10 +98,23 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
 
     volumes:
-      - /mnt/work/code/ai-stack/litellm/config.yaml:/app/config.yaml
+      - ./litellm/config.yaml:/app/config.yaml:ro
 
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket;s=socket.socket();s.connect(('127.0.0.1',4000));print('ok')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
     networks:
       - ai
@@ -106,11 +123,8 @@ services:
   ## Pipelines
   ####################################################
   pipelines:
-
     image: ghcr.io/open-webui/pipelines:main
-
     container_name: pipelines
-
     restart: unless-stopped
 
     ports:
@@ -129,26 +143,28 @@ services:
   ## Open WebUI
   ####################################################
   open-webui:
-
     image: ghcr.io/open-webui/open-webui:latest
-
     container_name: open-webui
-
     restart: unless-stopped
 
     depends_on:
-      - ollama
-      - postgres
-      - redis
-      - qdrant
-      - pipelines
-      - litellm
+      ollama:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      pipelines:
+        condition: service_started
 
     ports:
       - "3000:8080"
 
     environment:
-
       OLLAMA_BASE_URL: http://ollama:11434
 
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
@@ -156,26 +172,26 @@ services:
       REDIS_URL: redis://redis:6379
 
       VECTOR_DB: qdrant
-
       QDRANT_URI: http://qdrant:6333
 
       OPENAI_API_BASE_URL: http://litellm:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+
     volumes:
       - ./open-webui:/app/backend/data
 
     networks:
       - ai
+
   ####################################################
-  ## Agents
+  ## AI Agents
   ####################################################
   agents:
-
     build:
       context: ./agents
+
     image: ai-agents:latest
     container_name: ai-agents
-
     restart: unless-stopped
 
     working_dir: /app
@@ -188,24 +204,28 @@ services:
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
 
       QDRANT_URL: http://qdrant:6333
-
       REDIS_URL: redis://redis:6379
 
     ports:
       - "8000:8000"
 
     depends_on:
-      - litellm
-      - qdrant
-      - redis
-    networks:
-      - ai
-    command:
+      litellm:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_started
+
+    command: >
       bash -c "
       pip install -r requirements.txt &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000
       "
 
+    networks:
+      - ai
 
 networks:
   ai:
+    driver: bridge
