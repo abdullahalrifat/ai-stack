@@ -80,7 +80,7 @@ services:
   ## LiteLLM
   ####################################################
   litellm:
-    image: ghcr.io/berriai/litellm:main
+    image: custom-litellm:latest
     container_name: litellm
     restart: unless-stopped
 
@@ -187,9 +187,6 @@ services:
   ## AI Agents
   ####################################################
   agents:
-    build:
-      context: ./agents
-
     image: ai-agents:latest
     container_name: ai-agents
     restart: unless-stopped

@@ -1,19 +1,24 @@
 # AI Stack - Private Local AI Platform
 
-A self-hosted AI platform built with open-source technologies. This project provides a private ChatGPT-like environment with local LLM inference, AI gateway management, vector search, and future AI agent capabilities.
+A self-hosted AI platform built with open-source technologies. This project provides a private ChatGPT-like environment with local LLM inference, AI gateway management, vector search, and AI agent capabilities.
 
-The goal is to build a private AI infrastructure that runs on your own hardware while supporting knowledge management, automation, and autonomous agents.
+The goal is to build a private AI infrastructure that runs on your own hardware while supporting knowledge management, automation, development assistance, and autonomous agents.
 
-## Architecture
+---
+
+# Architecture
 
 ```text
                          User
                           |
+              +-----------+-----------+
+              |                       |
+          Open WebUI              VS Code
+              |                  Continue
+              |                       |
+              +-----------+-----------+
                           |
-                    Open WebUI
-                          |
-                          |
-                     LiteLLM Proxy
+                    LiteLLM Proxy
                           |
               +-----------+-----------+
               |                       |
@@ -33,9 +38,11 @@ The goal is to build a private AI infrastructure that runs on your own hardware 
         Cache / Queue
 ```
 
-## Components
+---
 
-### Ollama
+# Components
+
+## Ollama
 
 Local LLM runtime.
 
@@ -48,13 +55,14 @@ Responsibilities:
 Supported models:
 
 * Qwen
-* Llama
 * DeepSeek
+* Llama
 * Mistral
+* Gemma
 
 ---
 
-### LiteLLM
+## LiteLLM
 
 Unified AI gateway.
 
@@ -64,12 +72,13 @@ Responsibilities:
 * Model routing
 * API key management
 * Multi-model support
+* Central AI access layer
 
 All AI applications communicate through LiteLLM instead of directly connecting to models.
 
 ---
 
-### Open WebUI
+## Open WebUI
 
 Web-based AI interface.
 
@@ -82,7 +91,23 @@ Features:
 
 ---
 
-### Qdrant
+## VS Code + Continue
+
+Private local coding assistant.
+
+Features:
+
+* Code explanation
+* Repository analysis
+* Code generation
+* Debugging assistance
+* Documentation generation
+
+VS Code connects to LiteLLM using the OpenAI-compatible API.
+
+---
+
+## Qdrant
 
 Vector database for AI memory.
 
@@ -95,19 +120,20 @@ Used for:
 
 ---
 
-### PostgreSQL
+## PostgreSQL
 
 Relational database for persistent application data.
 
 ---
 
-### Redis
+## Redis
 
 In-memory datastore for:
 
 * Caching
 * Queues
 * Temporary state
+* Conversation memory
 
 ---
 
@@ -122,6 +148,7 @@ ai-stack/
 ├── README.md
 |
 ├── litellm/
+│   ├── Dockerfile
 │   └── config.yaml
 |
 ├── pipelines/
@@ -166,6 +193,8 @@ git clone <repository-url>
 cd ai-stack
 ```
 
+---
+
 ## Configure environment
 
 ```bash
@@ -186,7 +215,7 @@ PIPELINES_API_KEY=
 
 ---
 
-## Start services
+# Start Services
 
 ```bash
 docker compose up -d
@@ -202,30 +231,54 @@ docker compose ps
 
 # Service URLs
 
-| Service     | URL                    |
-| ----------- | ---------------------- |
-| Open WebUI  | http://localhost:3000  |
-| LiteLLM API | http://localhost:4000  |
-| Ollama API  | http://localhost:11434 |
-| Qdrant      | http://localhost:6333  |
-| AI Agents   | http://localhost:8000  |
+| Service | URL |
+|---|---|
+| Open WebUI | http://localhost:3000 |
+| LiteLLM API | http://localhost:4000 |
+| Ollama API | http://localhost:11434 |
+| Qdrant | http://localhost:6333 |
+| AI Agents | http://localhost:8000 |
 
 ---
 
-# AI Agents Endpoints
+# LiteLLM Configuration
 
-- POST http://localhost:8000/chat
-  - Body: {"message": "...", "conversation_id": "optional"}
-- POST http://localhost:8000/ingest
-  - Body: {"documents": ["..."], "metadata": {"source": "notes"}}
-- GET http://localhost:8000/conversation/{conversation_id}
-- POST http://localhost:8000/memory/search
-  - Body: {"query": "...", "top_k": 4}
-- POST http://localhost:8000/v1/chat/completions
-  - Body: {"model": "qwen3-8b", "messages": [{"role": "user", "content": "..."}]}
-- POST http://localhost:8000/v1/embeddings
-  - Body: {"model": "embedding", "input": ["..."]}
-- GET http://localhost:8000/v1/models
+Example:
+
+```yaml
+model_list:
+
+  - model_name: coder
+    litellm_params:
+      model: ollama/qwen3-coder:30b
+      api_base: http://ollama:11434
+
+
+  - model_name: qwen3-14b
+    litellm_params:
+      model: ollama/qwen3:14b
+      api_base: http://ollama:11434
+
+
+  - model_name: embedding
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://ollama:11434
+
+
+litellm_settings:
+  drop_params: true
+```
+
+Applications use:
+
+```text
+OpenAI compatible endpoint:
+
+http://localhost:4000/v1
+```
+
+---
 
 # Adding Models
 
@@ -234,7 +287,7 @@ Example:
 ```bash
 docker exec -it ollama bash
 
-ollama pull qwen2.5:14b
+ollama pull qwen3-coder:30b
 ```
 
 Verify:
@@ -245,24 +298,169 @@ ollama list
 
 ---
 
-# LiteLLM Configuration
+# VS Code Integration (Local Coding Assistant)
+
+This AI stack can be used as a private coding assistant inside VS Code using the Continue extension.
+
+Architecture:
+
+```text
+VS Code
+   |
+Continue Extension
+   |
+LiteLLM Proxy
+   |
+Ollama
+   |
+Local Coding Model
+```
+
+Benefits:
+
+* Private local AI coding assistant
+* No external API dependency
+* Centralized model management
+* Ability to switch models without changing clients
+
+---
+
+## Install Continue
+
+Install:
+
+```text
+Continue VS Code Extension
+```
+
+---
+
+## Configure Continue
+
+Open:
+
+```text
+~/.continue/config.yaml
+```
+
+Add:
+
+```yaml
+name: Main Config
+
+version: 1.0.0
+
+schema: v1
+
+
+models:
+
+  - name: Qwen Local
+
+    provider: openai
+
+    model: coder
+
+    apiBase: http://localhost:4000/v1
+
+    apiKey: ${API_KEY}
+
+
+
+tabAutocompleteModel:
+
+  name: Qwen Local
+```
+
+---
+
+## Configure API Key
+
+Set your LiteLLM key:
+
+Linux:
+
+```bash
+export API_KEY=<your-litellm-key>
+```
+
+Or directly:
+
+```yaml
+apiKey: sk-your-key
+```
+
+Do not commit API keys into Git.
+
+---
+
+## Verify Available Models
+
+```bash
+curl http://localhost:4000/v1/models \
+-H "Authorization: Bearer <API_KEY>"
+```
+
+Example:
+
+```json
+{
+  "data": [
+    {
+      "id": "coder"
+    }
+  ]
+}
+```
+
+The Continue model name must match the LiteLLM model name.
 
 Example:
 
 ```yaml
-model_list:
-  - model_name: qwen-local
-    litellm_params:
-      model: ollama/qwen2.5:14b
-      api_base: http://ollama:11434
+model: coder
 ```
 
-Applications can use:
+---
 
-```text
-OpenAI compatible endpoint:
+## Recommended Models
 
-http://localhost:4000/v1
+| Purpose | Model |
+|---|---|
+| Coding Assistant | qwen3-coder:30b |
+| General Assistant | qwen3:14b |
+| Lightweight Agent | qwen3:8b |
+| Embeddings | nomic-embed-text |
+
+---
+
+# AI Agent API
+
+Endpoints:
+
+```
+POST /chat
+
+POST /ingest
+
+GET /conversation/{conversation_id}
+
+POST /memory/search
+
+POST /v1/chat/completions
+
+POST /v1/embeddings
+
+GET /v1/models
+```
+
+Example:
+
+```json
+{
+  "message": "Analyze my infrastructure",
+  "conversation_id": "home"
+}
 ```
 
 ---
@@ -333,11 +531,17 @@ Recommended architecture:
 
 ```text
 Internet
+
     |
+
 Cloudflare Tunnel
+
     |
+
 Authentication
+
     |
+
 AI Stack
 ```
 
@@ -380,6 +584,12 @@ Stop stack:
 
 ```bash
 docker compose down
+```
+
+Rebuild custom images:
+
+```bash
+docker compose build --no-cache
 ```
 
 ---
