@@ -170,6 +170,8 @@ class ChatRequest(BaseModel):
 
     conversation_id: Optional[str] = None
 
+    workspace: Optional[str] = "/workspace"
+
 
 
 
@@ -178,6 +180,8 @@ class PlanRequest(BaseModel):
     message: str
 
     conversation_id: Optional[str] = None
+
+    workspace: Optional[str] = "/workspace"
 
 
 
@@ -188,6 +192,7 @@ class ExecuteRequest(BaseModel):
 
     conversation_id: Optional[str] = None
 
+    workspace: Optional[str] = "/workspace"
 
 
 
@@ -293,22 +298,21 @@ def tools():
 
 
 
-@app.get(
-    "/debug/tools"
-)
+@app.get("/debug/tools")
 def debug_tools():
 
     return {
 
         "count":
-            len(
-                registry.list_tools()
-            ),
+            len(registry.list_tools()),
 
         "tools":
             registry.list_tools(),
 
-        "workspace":os.listdir("/workspace")
+        "workspace":
+            os.listdir("/workspace")
+            if os.path.exists("/workspace")
+            else []
 
     }
 
@@ -395,7 +399,9 @@ async def execute(
 
         request.task,
 
-        request.conversation_id
+        request.conversation_id,
+
+        request.workspace
 
     )
 
@@ -453,7 +459,8 @@ async def openai_chat(
 
         x_conversation_id
         or request.conversation_id
-        or "default"
+        or "default",
+        request.workspace
 
     )
 
@@ -693,7 +700,10 @@ async def plan(
             or "default",
 
         user_message=
-            request.message
+            request.message,
+
+        workspace=
+        request.workspace
 
     )
 
@@ -825,16 +835,16 @@ async def memory_search(
         Depends(verify_api_key)
     ]
 )
-def workspace_tree():
+def workspace_tree(
+    path: str = "/workspace"
+):
 
     return {
 
         "workspace":
-            "/workspace",
+            path,
 
         "files":
-            list_files(
-                "/workspace"
-            )
+            list_files(path)
 
     }

@@ -8,12 +8,15 @@ from langchain.tools import tool
 # Configuration
 # ============================================================
 
-WORKSPACE = Path(
+DEFAULT_WORKSPACE = Path(
     os.getenv(
         "WORKSPACE_DIR",
         "/workspace"
     )
 ).resolve()
+
+
+CURRENT_WORKSPACE = DEFAULT_WORKSPACE
 
 
 IGNORE_DIRS = {
@@ -38,6 +41,31 @@ MAX_FILE_SIZE = 100_000
 # Helpers
 # ============================================================
 
+def set_workspace(path:str):
+
+    global CURRENT_WORKSPACE
+
+    new_path = Path(path).resolve()
+
+
+    if not new_path.exists():
+        raise ValueError(
+            f"Workspace does not exist: {new_path}"
+        )
+
+
+    if (
+        new_path != DEFAULT_WORKSPACE
+        and DEFAULT_WORKSPACE not in new_path.parents
+    ):
+        raise PermissionError(
+            "Workspace must be inside mounted workspace"
+        )
+
+
+    CURRENT_WORKSPACE = new_path
+
+
 def resolve_path(path: str) -> Path:
     """
     Resolve a path relative to the workspace.
@@ -51,11 +79,11 @@ def resolve_path(path: str) -> Path:
     p = Path(path)
 
     if not p.is_absolute():
-        p = WORKSPACE / p
+        p = CURRENT_WORKSPACE / p
 
     p = p.resolve()
 
-    if p != WORKSPACE and WORKSPACE not in p.parents:
+    if p != CURRENT_WORKSPACE and CURRENT_WORKSPACE not in p.parents:
         raise PermissionError(
             "Access outside workspace denied."
         )
@@ -74,7 +102,7 @@ def ignored(path: Path) -> bool:
 def relative(path: Path):
 
     return str(
-        path.relative_to(WORKSPACE)
+        path.relative_to(CURRENT_WORKSPACE)
     )
 
 
@@ -89,7 +117,7 @@ def workspace_root():
     """
 
     return {
-        "workspace": str(WORKSPACE)
+        "workspace": str(CURRENT_WORKSPACE)
     }
 
 
@@ -254,7 +282,7 @@ def find_file(
 
         matches = []
 
-        for file in WORKSPACE.rglob("*"):
+        for file in CURRENT_WORKSPACE.rglob("*"):
 
             if ignored(file):
                 continue
@@ -340,7 +368,7 @@ def project_summary():
 
     important = []
 
-    for file in WORKSPACE.rglob("*"):
+    for file in CURRENT_WORKSPACE.rglob("*"):
 
         if ignored(file):
             continue
@@ -369,7 +397,7 @@ def project_summary():
             )
 
     return {
-        "workspace": str(WORKSPACE),
+        "workspace": str(CURRENT_WORKSPACE),
         "important_files": important,
         "languages": extensions,
     }
