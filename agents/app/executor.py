@@ -13,9 +13,9 @@ from .tool_registry import registry
 from .prompts import EXECUTOR_PROMPT
 
 
-MAX_STEPS = 15
+MAX_STEPS = 10
 
-MIN_TOOL_CALLS_BEFORE_FINAL = 5
+MIN_TOOL_CALLS_BEFORE_FINAL = 3
 
 
 def normalize_tool_args(
