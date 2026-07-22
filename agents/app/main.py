@@ -1,6 +1,8 @@
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
 
 from fastapi import (
     Depends,
@@ -15,34 +17,83 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 
+# =====================================================
+# IMPORTANT
+# Load tools before registry usage
+# =====================================================
+
+import app.tools.register
+
+
 from app.agent import (
-    chat,
+    run_agent,
     ingest_documents,
 )
 
 
+from app.state import AgentState
+
+
+from app.planner import create_plan
+
+
+from app.tool_registry import registry
+
+
+from app.tools.filesystem import list_files
+
+
 from app.memory.memory import (
-    get_conversation as fetch_conversation,
-    search_long_term_memory,
+    get_conversation,
+    search_memory,
 )
 
 
-from app.memory.embeddings import (
-    create_embedding,
-)
+from app.memory.embeddings import create_embedding
+
+
+
+
+
+# =====================================================
+# Application
+# =====================================================
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    print(
+        "REGISTERED TOOLS:",
+        registry.list_tools()
+    )
+
+    yield
+
 
 
 
 app = FastAPI(
-    title="Local AI Agent API",
-    version="1.0"
+
+    title="Local AI Engineering Agent",
+
+    description=
+    "Private autonomous coding agent running in homelab",
+
+    version="2.0",
+
+    lifespan=lifespan
+
 )
 
 
 
-# ============================================================
+
+
+# =====================================================
 # Authentication
-# ============================================================
+# =====================================================
+
 
 API_KEY = os.getenv(
     "AGENT_API_KEY"
@@ -50,25 +101,38 @@ API_KEY = os.getenv(
 
 
 api_key_header = APIKeyHeader(
+
     name="Authorization",
-    auto_error=False,
+
+    auto_error=False
+
 )
 
 
 
+
 def verify_api_key(
+
     key: Optional[str] = Security(api_key_header)
+
 ):
 
     if not API_KEY:
+
         return True
 
 
+
     if not key:
+
         raise HTTPException(
+
             status_code=401,
+
             detail="Missing authorization header"
+
         )
+
 
 
     token = key.replace(
@@ -77,10 +141,15 @@ def verify_api_key(
     )
 
 
+
     if token != API_KEY:
+
         raise HTTPException(
+
             status_code=401,
+
             detail="Invalid API key"
+
         )
 
 
@@ -88,9 +157,11 @@ def verify_api_key(
 
 
 
-# ============================================================
+
+
+# =====================================================
 # Models
-# ============================================================
+# =====================================================
 
 
 class ChatRequest(BaseModel):
@@ -101,13 +172,33 @@ class ChatRequest(BaseModel):
 
 
 
+
+class PlanRequest(BaseModel):
+
+    message: str
+
+    conversation_id: Optional[str] = None
+
+
+
+
+class ExecuteRequest(BaseModel):
+
+    task: str
+
+    conversation_id: Optional[str] = None
+
+
+
+
 class IngestRequest(BaseModel):
 
     documents: List[str]
 
     metadata: Optional[
-        Dict[str,str]
+        Dict[str, Any]
     ] = None
+
 
 
 
@@ -115,7 +206,8 @@ class MemoryQuery(BaseModel):
 
     query: str
 
-    top_k: int = 4
+    top_k: int = 5
+
 
 
 
@@ -124,6 +216,7 @@ class OpenAIChatMessage(BaseModel):
     role: str
 
     content: str
+
 
 
 
@@ -143,6 +236,7 @@ class OpenAIChatCompletionRequest(BaseModel):
 
 
 
+
 class OpenAIEmbeddingRequest(BaseModel):
 
     model: Optional[str] = None
@@ -151,23 +245,76 @@ class OpenAIEmbeddingRequest(BaseModel):
 
 
 
-# ============================================================
+
+
+# =====================================================
 # Health
-# ============================================================
+# =====================================================
 
 
 @app.get("/")
+@app.get("/health")
 def health():
 
     return {
-        "status": "running"
+
+        "status":"running",
+
+        "service":"local-ai-agent"
+
     }
 
 
 
-# ============================================================
-# Chat API
-# ============================================================
+
+
+# =====================================================
+# Debug / Tools
+# =====================================================
+
+
+@app.get(
+    "/tools",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+def tools():
+
+    return {
+
+        "tools":
+            registry.list_tools()
+
+    }
+
+
+
+
+@app.get(
+    "/debug/tools"
+)
+def debug_tools():
+
+    return {
+
+        "count":
+            len(
+                registry.list_tools()
+            ),
+
+        "tools":
+            registry.list_tools()
+
+    }
+
+
+
+
+
+# =====================================================
+# Agent Chat
+# =====================================================
 
 
 @app.post(
@@ -176,40 +323,83 @@ def health():
         Depends(verify_api_key)
     ]
 )
-async def api_chat(
+async def chat(
+
     request: ChatRequest
+
 ):
 
     if not request.message.strip():
 
         raise HTTPException(
-            status_code=400,
-            detail="Message cannot be empty"
+
+            400,
+
+            "Message cannot be empty"
+
         )
 
 
-    answer = await run_in_threadpool(
-        chat,
-        request.message,
-        request.conversation_id,
+    try:
+
+        return await run_in_threadpool(
+
+            run_agent,
+
+            request.message,
+
+            request.conversation_id
+
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+
+            500,
+
+            str(e)
+
+        )
+
+
+
+
+
+# =====================================================
+# Execute Task
+# =====================================================
+
+
+@app.post(
+    "/execute",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+async def execute(
+
+    request: ExecuteRequest
+
+):
+
+    return await run_in_threadpool(
+
+        run_agent,
+
+        request.task,
+
+        request.conversation_id
+
     )
 
 
-    return {
-
-        "answer": answer,
-
-        "conversation_id":
-            request.conversation_id
-            or "default"
-
-    }
 
 
 
-# ============================================================
-# OpenAI Compatible Chat
-# ============================================================
+# =====================================================
+# OpenAI Compatible API
+# =====================================================
 
 
 @app.post(
@@ -218,59 +408,57 @@ async def api_chat(
         Depends(verify_api_key)
     ]
 )
-async def openai_chat_completions(
+async def openai_chat(
+
     request: OpenAIChatCompletionRequest,
-    x_conversation_id: Optional[str] = Header(None),
+
+    x_conversation_id:
+        Optional[str] = Header(None)
+
 ):
 
 
-    if not request.messages:
+    if request.stream:
 
         raise HTTPException(
-            status_code=400,
-            detail="messages required"
+
+            400,
+
+            "Streaming not supported yet"
+
         )
-
-
-    conversation_id = (
-
-        x_conversation_id
-
-        or request.conversation_id
-
-        or "default"
-
-    )
 
 
     prompt = "\n".join(
 
-        [
-            f"{m.role}: {m.content}"
+        f"{m.role}: {m.content}"
 
-            for m in request.messages
-
-        ]
+        for m in request.messages
 
     )
 
 
-    answer = await run_in_threadpool(
 
-        chat,
+    result = await run_in_threadpool(
+
+        run_agent,
 
         prompt,
 
-        conversation_id,
+        x_conversation_id
+        or request.conversation_id
+        or "default"
 
     )
 
 
 
     created = int(
+
         datetime.now(
             timezone.utc
         ).timestamp()
+
     )
 
 
@@ -290,22 +478,19 @@ async def openai_chat_completions(
             request.model
             or "qwen3-8b",
 
-        "choices":
-
-        [
+        "choices":[
 
             {
 
                 "index":0,
 
-                "message":
-                {
+                "message":{
 
                     "role":
                         "assistant",
 
                     "content":
-                        answer,
+                        result["answer"]
 
                 },
 
@@ -320,90 +505,11 @@ async def openai_chat_completions(
 
 
 
-# ============================================================
-# Embeddings API
-# ============================================================
 
 
-@app.post(
-    "/v1/embeddings",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-async def openai_embeddings(
-    request: OpenAIEmbeddingRequest
-):
-
-
-    inputs = request.input
-
-
-    if isinstance(inputs,str):
-
-        inputs = [
-            inputs
-        ]
-
-
-
-    vectors=[]
-
-
-    for text in inputs:
-
-        vector = await run_in_threadpool(
-
-            create_embedding,
-
-            text
-
-        )
-
-        vectors.append(
-            vector
-        )
-
-
-
-    return {
-
-        "object":
-            "list",
-
-        "data":
-
-        [
-
-            {
-
-                "object":
-                    "embedding",
-
-                "embedding":
-                    vector,
-
-                "index":
-                    index,
-
-            }
-
-            for index,vector
-            in enumerate(vectors)
-
-        ],
-
-        "model":
-            request.model
-            or "nomic-embed-text"
-
-    }
-
-
-
-# ============================================================
+# =====================================================
 # Models
-# ============================================================
+# =====================================================
 
 
 @app.get(
@@ -412,40 +518,41 @@ async def openai_embeddings(
         Depends(verify_api_key)
     ]
 )
-def openai_models():
+def models():
 
     return {
 
-        "object":
-            "list",
+        "object":"list",
 
-        "data":
-
-        [
+        "data":[
 
             {
 
-                "id":
-                    "qwen3-8b",
+                "id":"coder",
 
-                "object":
-                    "model",
+                "object":"model",
 
-                "owned_by":
-                    "local"
+                "owned_by":"local"
 
             },
 
             {
 
-                "id":
-                    "nomic-embed-text",
+                "id":"qwen3-8b",
 
-                "object":
-                    "model",
+                "object":"model",
 
-                "owned_by":
-                    "local"
+                "owned_by":"local"
+
+            },
+
+            {
+
+                "id":"nomic-embed-text",
+
+                "object":"model",
+
+                "owned_by":"local"
 
             }
 
@@ -455,9 +562,158 @@ def openai_models():
 
 
 
-# ============================================================
+
+
+@app.get(
+    "/v1/models/{model_id}",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+def model_detail(model_id:str):
+
+    return {
+
+        "id":model_id,
+
+        "object":"model",
+
+        "owned_by":"local"
+
+    }
+
+
+
+
+
+# =====================================================
+# Embeddings
+# =====================================================
+
+
+@app.post(
+    "/v1/embeddings",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+async def embeddings(
+
+    request:OpenAIEmbeddingRequest
+
+):
+
+
+    inputs = request.input
+
+
+    if isinstance(inputs,str):
+
+        inputs=[inputs]
+
+
+
+    vectors=[]
+
+
+    for text in inputs:
+
+        vectors.append(
+
+            await run_in_threadpool(
+
+                create_embedding,
+
+                text
+
+            )
+
+        )
+
+
+
+    return {
+
+        "object":"list",
+
+        "data":[
+
+            {
+
+                "object":"embedding",
+
+                "embedding":v,
+
+                "index":i
+
+            }
+
+            for i,v in enumerate(vectors)
+
+        ],
+
+        "model":
+
+            request.model
+            or "nomic-embed-text"
+
+    }
+
+
+
+
+
+# =====================================================
+# Planning
+# =====================================================
+
+
+@app.post(
+    "/plan",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+async def plan(
+
+    request:PlanRequest
+
+):
+
+    state = AgentState(
+
+        conversation_id=
+            request.conversation_id
+            or "default",
+
+        user_message=
+            request.message
+
+    )
+
+
+    result = await run_in_threadpool(
+
+        create_plan,
+
+        state
+
+    )
+
+
+    return {
+
+        "plan":result
+
+    }
+
+
+
+
+
+# =====================================================
 # Ingest
-# ============================================================
+# =====================================================
 
 
 @app.post(
@@ -466,10 +722,11 @@ def openai_models():
         Depends(verify_api_key)
     ]
 )
-async def api_ingest(
-    request: IngestRequest
-):
+async def ingest(
 
+    request:IngestRequest
+
+):
 
     return await run_in_threadpool(
 
@@ -477,15 +734,17 @@ async def api_ingest(
 
         request.documents,
 
-        request.metadata,
+        request.metadata
 
     )
 
 
 
-# ============================================================
-# Conversation
-# ============================================================
+
+
+# =====================================================
+# Memory
+# =====================================================
 
 
 @app.get(
@@ -494,8 +753,10 @@ async def api_ingest(
         Depends(verify_api_key)
     ]
 )
-def conversation_history(
+def conversation(
+
     conversation_id:str
+
 ):
 
     return {
@@ -504,7 +765,7 @@ def conversation_history(
             conversation_id,
 
         "history":
-            fetch_conversation(
+            get_conversation(
                 conversation_id
             )
 
@@ -512,9 +773,6 @@ def conversation_history(
 
 
 
-# ============================================================
-# Memory Search
-# ============================================================
 
 
 @app.post(
@@ -523,32 +781,11 @@ def conversation_history(
         Depends(verify_api_key)
     ]
 )
-async def api_search_memory(
-    request: MemoryQuery
+async def memory_search(
+
+    request:MemoryQuery
+
 ):
-
-
-    embedding = await run_in_threadpool(
-
-        create_embedding,
-
-        request.query,
-
-    )
-
-
-
-    result = await run_in_threadpool(
-
-        search_long_term_memory,
-
-        embedding,
-
-        request.top_k,
-
-    )
-
-
 
     return {
 
@@ -556,6 +793,42 @@ async def api_search_memory(
             request.query,
 
         "results":
-            result
+
+            await run_in_threadpool(
+
+                search_memory,
+
+                request.query
+
+            )
+
+    }
+
+
+
+
+
+# =====================================================
+# Workspace
+# =====================================================
+
+
+@app.get(
+    "/workspace/tree",
+    dependencies=[
+        Depends(verify_api_key)
+    ]
+)
+def workspace_tree():
+
+    return {
+
+        "workspace":
+            "/workspace",
+
+        "files":
+            list_files(
+                "/workspace"
+            )
 
     }

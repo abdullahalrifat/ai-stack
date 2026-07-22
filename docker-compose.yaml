@@ -194,7 +194,7 @@ services:
     working_dir: /app
 
     volumes:
-      - ./agents:/app
+      - ./:/workspace
 
     environment:
       OPENAI_API_BASE: http://litellm:4000/v1
@@ -202,6 +202,7 @@ services:
 
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: redis://redis:6379
+      WORKSPACE_DIR: /workspace
 
     ports:
       - "8000:8000"

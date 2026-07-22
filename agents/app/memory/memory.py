@@ -1,28 +1,44 @@
 import os
 import json
 import uuid
+
 from datetime import datetime, timezone
 
 
 import redis
 
+
 from qdrant_client import QdrantClient
+
+
 from qdrant_client.models import (
+
     PointStruct,
+
     Distance,
+
     VectorParams,
+
 )
 
 
 
-# ============================================================
+from .embeddings import create_embedding
+
+
+
+
+
+# =====================================================
 # Configuration
-# ============================================================
+# =====================================================
+
 
 REDIS_HOST = os.getenv(
     "REDIS_HOST",
     "redis"
 )
+
 
 REDIS_PORT = int(
     os.getenv(
@@ -32,22 +48,32 @@ REDIS_PORT = int(
 )
 
 
+
 QDRANT_URL = os.getenv(
+
     "QDRANT_URL",
+
     "http://qdrant:6333"
+
 )
+
 
 
 COLLECTION = os.getenv(
+
     "QDRANT_COLLECTION",
+
     "agent_memory"
+
 )
 
 
 
-# ============================================================
+
+
+# =====================================================
 # Clients
-# ============================================================
+# =====================================================
 
 
 redis_client = redis.Redis(
@@ -70,59 +96,79 @@ qdrant = QdrantClient(
 
 
 
-# ============================================================
-# Collection Management
-# ============================================================
+
+
+# =====================================================
+# Qdrant Collection
+# =====================================================
 
 
 def ensure_collection(
-    vector_size: int
+
+    vector_size:int
+
 ):
 
-    collections = [
+
+    existing = [
 
         c.name
 
-        for c in qdrant.get_collections().collections
+        for c in
+        qdrant.get_collections().collections
 
     ]
 
 
-    if COLLECTION not in collections:
+    if COLLECTION not in existing:
+
 
         qdrant.create_collection(
 
             collection_name=COLLECTION,
 
-            vectors_config=VectorParams(
+            vectors_config=
 
-                size=vector_size,
+                VectorParams(
 
-                distance=Distance.COSINE
+                    size=vector_size,
 
-            )
+                    distance=Distance.COSINE
+
+                )
 
         )
 
 
 
-# ============================================================
-# Short Term Memory
-# ============================================================
+
+
+# =====================================================
+# Conversation Memory
+# =====================================================
 
 
 def save_conversation(
-    session_id: str,
-    role: str,
-    content: str
+
+    session_id:str,
+
+    role:str,
+
+    content:str
+
 ):
+
 
     if not content:
 
         return
 
 
-    key = f"conversation:{session_id}"
+
+    key = (
+        f"conversation:{session_id}"
+    )
+
 
 
     redis_client.rpush(
@@ -130,22 +176,53 @@ def save_conversation(
         key,
 
         json.dumps(
+
             {
-                "role": role,
-                "content": content
+
+                "role":
+                    role,
+
+                "content":
+                    content
+
             }
+
         )
 
     )
 
 
 
+    # keep last 50 messages
+
+    redis_client.ltrim(
+
+        key,
+
+        -50,
+
+        -1
+
+    )
+
+
+
+
+
+
 def get_conversation(
-    session_id: str,
-    limit: int = 20
+
+    session_id:str,
+
+    limit:int=20
+
 ):
 
-    key = f"conversation:{session_id}"
+
+    key = (
+        f"conversation:{session_id}"
+    )
+
 
 
     messages = redis_client.lrange(
@@ -159,25 +236,32 @@ def get_conversation(
     )
 
 
+
     return [
 
-        json.loads(message)
+        json.loads(item)
 
-        for message in messages
+        for item in messages
 
     ]
 
 
 
-# ============================================================
-# Long Term Memory
-# ============================================================
+
+
+# =====================================================
+# Long Term Vector Memory
+# =====================================================
 
 
 def save_long_term_memory(
-    text: str,
-    embedding: list,
+
+    text:str,
+
+    embedding:list[float],
+
     metadata=None
+
 ):
 
 
@@ -188,6 +272,7 @@ def save_long_term_memory(
     )
 
 
+
     point_id = str(
 
         uuid.uuid4()
@@ -195,16 +280,28 @@ def save_long_term_memory(
     )
 
 
-    payload = {
 
-        "text": text,
+    payload={
+
+
+        "text":
+
+            text,
+
 
         "created_at":
+
             datetime.now(
+
                 timezone.utc
+
             ).isoformat(),
 
-        **(metadata or {})
+
+        **(
+            metadata
+            or {}
+        )
 
     }
 
@@ -212,7 +309,10 @@ def save_long_term_memory(
 
     qdrant.upsert(
 
-        collection_name=COLLECTION,
+        collection_name=
+
+            COLLECTION,
+
 
         points=[
 
@@ -231,14 +331,19 @@ def save_long_term_memory(
     )
 
 
+
     return point_id
 
 
 
 
+
 def search_long_term_memory(
-    embedding: list,
-    limit: int = 5
+
+    embedding:list[float],
+
+    limit:int=5
+
 ):
 
 
@@ -246,12 +351,12 @@ def search_long_term_memory(
 
         c.name
 
-        for c in qdrant.get_collections().collections
+        for c in
+        qdrant.get_collections().collections
 
     ]
 
 
-    # No memories stored yet
 
     if COLLECTION not in collections:
 
@@ -259,13 +364,21 @@ def search_long_term_memory(
 
 
 
-    results = qdrant.query_points(
+    result = qdrant.query_points(
 
-        collection_name=COLLECTION,
+        collection_name=
 
-        query=embedding,
+            COLLECTION,
 
-        limit=limit,
+
+        query=
+
+            embedding,
+
+
+        limit=
+
+            limit
 
     )
 
@@ -276,13 +389,108 @@ def search_long_term_memory(
         {
 
             "memory":
-                point.payload,
+                item.payload,
+
 
             "score":
-                point.score
+                item.score
 
         }
 
-        for point in results.points
+        for item in result.points
 
     ]
+
+
+
+
+
+# =====================================================
+# Agent Friendly Wrappers
+# =====================================================
+
+
+def search_memory(
+
+    query:str,
+
+    limit:int=5
+
+):
+
+
+    embedding = create_embedding(
+
+        query
+
+    )
+
+
+    return search_long_term_memory(
+
+        embedding,
+
+        limit
+
+    )
+
+
+
+
+
+def save_memory(
+
+    question:str,
+
+    answer:str
+
+):
+
+
+    text = f"""
+
+Question:
+
+{question}
+
+
+Answer:
+
+{answer}
+
+"""
+
+
+    embedding = create_embedding(
+
+        text
+
+    )
+
+
+    return save_long_term_memory(
+
+        text,
+
+        embedding,
+
+        {
+
+            "type":
+                "conversation"
+
+        }
+
+    )
+
+
+
+
+
+def clear_memory():
+
+    qdrant.delete_collection(
+
+        COLLECTION
+
+    )

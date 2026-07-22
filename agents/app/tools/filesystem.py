@@ -1,150 +1,120 @@
-from pathlib import Path
-from langchain.tools import tool
+import os
 
 
-ALLOWED_PATHS = [
-    Path("/data").resolve(),
-    Path("/workspace").resolve(),
-]
+WORKSPACE="/workspace"
 
 
 
-def is_allowed(path: Path):
+def normalize_path(path):
 
-    path = path.resolve()
+    if path.startswith("/workspace"):
+
+        return path
 
 
-    return any(
-        allowed == path
-        or allowed in path.parents
-        for allowed in ALLOWED_PATHS
+    return os.path.join(
+        WORKSPACE,
+        path
     )
 
 
 
-@tool
+
 def list_files(
-    directory: str
+    directory="/workspace"
 ):
-    """
-    List files from allowed directories.
-    """
 
-    path = Path(directory)
-
-
-    if not is_allowed(path):
-
-        return {
-            "error":
-                "Access denied"
-        }
+    directory=normalize_path(
+        directory
+    )
 
 
-    if not path.exists():
-
-        return {
-            "error":
-                "Path does not exist"
-        }
+    result=[]
 
 
-    return {
-        "files":
-            [
-                str(x)
-                for x in path.iterdir()
-            ]
-    }
+    for root, dirs, files in os.walk(
+        directory
+    ):
+
+        for file in files:
+
+            result.append(
+
+                os.path.join(
+                    root,
+                    file
+                )
+
+            )
+
+
+    return result[:200]
 
 
 
-@tool
+
+
 def read_file(
-    file_path:str
+    file_path
 ):
-    """
-    Read a text file.
-    """
 
-    path = Path(file_path)
-
-
-    if not is_allowed(path):
-
-        return {
-            "error":
-                "Access denied"
-        }
+    file_path=normalize_path(
+        file_path
+    )
 
 
-    if not path.exists():
+    with open(
+        file_path,
+        "r",
+        errors="ignore"
+    ) as f:
 
-        return {
-            "error":
-                "File not found"
-        }
-
-
-    try:
-
-        return {
-            "content":
-                path.read_text(
-                    encoding="utf-8"
-                )[:10000]
-        }
-
-
-    except Exception as e:
-
-        return {
-            "error":
-                str(e)
-        }
+        return f.read(
+            20000
+        )
 
 
 
-@tool
+
+
 def search_files(
-    directory:str,
-    keyword:str
+    query,
+    directory="/workspace"
 ):
-    """
-    Search text files for keyword.
-    """
 
-    path = Path(directory)
-
-
-    if not is_allowed(path):
-
-        return {
-            "error":
-                "Access denied"
-        }
+    directory=normalize_path(
+        directory
+    )
 
 
-    results=[]
+    matches=[]
 
 
-    for file in path.rglob("*"):
+    for root,dirs,files in os.walk(
+        directory
+    ):
 
-        if file.is_file():
+        for file in files:
+
+            path=os.path.join(
+                root,
+                file
+            )
+
 
             try:
 
-                content=file.read_text(
+                content=open(
+                    path,
                     errors="ignore"
-                )
+                ).read()
 
 
-                if keyword.lower() in content.lower():
+                if query.lower() in content.lower():
 
-                    results.append(
-                        str(file)
+                    matches.append(
+                        path
                     )
-
 
             except:
 
@@ -152,7 +122,4 @@ def search_files(
 
 
 
-    return {
-        "matches":
-            results[:50]
-    }
+    return matches[:50]

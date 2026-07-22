@@ -4,11 +4,13 @@ WORKDIR /app
 
 # Prevent Python buffering in Docker logs
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 
@@ -27,6 +29,8 @@ COPY app ./app
 # Check Python syntax
 RUN python -m compileall app
 
+# Create workspace mount point
+RUN mkdir -p /workspace
 
 EXPOSE 8000
 
