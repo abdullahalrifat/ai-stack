@@ -232,6 +232,8 @@ class OpenAIChatCompletionRequest(BaseModel):
 
     stream: Optional[bool] = False
 
+    workspace: Optional[str] = "/workspace"
+
     conversation_id: Optional[str] = None
 
 
@@ -304,7 +306,9 @@ def debug_tools():
             ),
 
         "tools":
-            registry.list_tools()
+            registry.list_tools(),
+
+        "workspace":os.listdir("/workspace")
 
     }
 
@@ -348,7 +352,9 @@ async def chat(
 
             request.message,
 
-            request.conversation_id
+            request.conversation_id,
+
+            request.workspace
 
         )
 

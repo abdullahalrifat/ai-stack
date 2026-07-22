@@ -25,7 +25,8 @@ from .memory.embeddings import create_embedding
 
 def run_agent(
     message: str,
-    conversation_id: str | None = None
+    conversation_id: str | None = None,
+    workspace="/workspace"
 ):
 
     conversation_id = (
@@ -42,6 +43,7 @@ def run_agent(
 
     )
 
+    state.workspace = workspace
 
     #
     # Load short memory

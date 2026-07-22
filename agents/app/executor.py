@@ -1,8 +1,11 @@
+import json
+
 from .llm import chat
 
 from .parser import (
     extract_json,
-    parse_tool_arguments
+    parse_tool_arguments,
+    validate_agent_response
 )
 
 from .tool_registry import registry
@@ -10,9 +13,7 @@ from .tool_registry import registry
 from .prompts import EXECUTOR_PROMPT
 
 
-
 MAX_STEPS = 15
-
 
 
 
@@ -20,8 +21,11 @@ def execute_plan(state):
 
 
     available_tools = registry.list_tools()
-
-
+    previous_observations = json.dumps(
+            state.observations,
+            indent=2,
+            default=str
+        )
 
     messages = [
 
@@ -34,11 +38,14 @@ def execute_plan(state):
         {
             "role": "user",
             "content": f"""
+Workspace:
+
+{state.workspace}
+
 
 Task:
 
 {state.user_message}
-
 
 
 Plan:
@@ -46,16 +53,44 @@ Plan:
 {state.plan}
 
 
-
 Available tools:
 
 {available_tools}
 
 
-
 Previous observations:
 
-{state.observations}
+{previous_observations}
+
+
+
+You are an autonomous engineering agent.
+
+Rules:
+
+1. Repositories exist inside workspace.
+2. Never invent paths.
+3. Inspect files before making conclusions.
+4. Use tools whenever you need information.
+5. Do not answer until investigation is complete.
+6. Your response MUST be valid JSON.
+
+
+Tool call format:
+
+{{
+    "tool": "tool_name",
+    "args": {{
+        "argument": "value"
+    }}
+}}
+
+
+Final response format:
+
+{{
+    "final_answer": "your complete answer"
+}}
 
 """
         }
@@ -70,12 +105,8 @@ Previous observations:
         state.steps += 1
 
 
+        response = chat(messages)
 
-        response = chat(
-
-            messages
-
-        )
 
 
         print(
@@ -85,20 +116,108 @@ Previous observations:
 
 
 
-        data = extract_json(
+        try:
 
-            response
+            data = extract_json(response)
 
-        )
+
+        except Exception as e:
+
+            print(
+                "JSON PARSE FAILED:",
+                e
+            )
+
+
+            # Ask model to correct itself
+
+            messages.append(
+
+                {
+                    "role":
+                        "assistant",
+
+                    "content":
+                        response
+                }
+
+            )
+
+
+            messages.append(
+
+                {
+                    "role":
+                        "user",
+
+                    "content":
+                    """
+Your previous response was not valid JSON.
+
+Return ONLY JSON.
+
+Use:
+
+{
+ "tool": "...",
+ "args": {}
+}
+
+or:
+
+{
+ "final_answer": "..."
+}
+"""
+                }
+
+            )
+
+
+            continue
+
 
 
 
         #
-        # Final answer
+        # Handle incorrect decision format
         #
 
-        if "final_answer" in data:
+        if data.get("decision") == "final_answer":
 
+
+            messages.append(
+
+                {
+                    "role":
+                        "user",
+
+                    "content":
+                    """
+You selected final_answer.
+
+Now provide the actual answer.
+
+Return ONLY:
+
+{
+ "final_answer": "answer text"
+}
+"""
+                }
+
+            )
+
+
+            continue
+
+
+
+        #
+        # Completed
+        #
+
+        if validate_agent_response(data) and "final_answer" in data:
 
             state.finished = True
 
@@ -109,7 +228,7 @@ Previous observations:
 
 
         #
-        # Tool call
+        # Tool request
         #
 
         tool = data.get(
@@ -117,18 +236,37 @@ Previous observations:
         )
 
 
-
         if not tool:
 
-            return response
 
+            messages.append(
+
+                {
+                    "role":
+                        "user",
+
+                    "content":
+                    """
+No valid tool or final_answer detected.
+
+Continue investigation.
+
+Return ONLY JSON.
+"""
+                }
+
+            )
+
+
+            continue
 
 
 
         args = parse_tool_arguments(
 
             data.get(
-                "args"
+                "args",
+                {}
             )
 
         )
@@ -144,6 +282,7 @@ Previous observations:
 
 
         try:
+
 
             result = registry.execute(
 
@@ -166,7 +305,6 @@ Previous observations:
 
 
 
-
         state.add_tool(
 
             tool,
@@ -177,65 +315,70 @@ Previous observations:
 
 
 
+        #
+        # Continue reasoning
+        #
+
         messages.append(
 
             {
-
                 "role":
                     "assistant",
 
                 "content":
                     response
-
             }
 
         )
 
 
-
         messages.append(
 
             {
-
-                "role":
-                    "tool",
-
-                "name":
-                    tool,
-
-                "content":
-                    str(result)
-
-            }
-
-        )
-
-
-
-        # Tell model about updated state
-
-        messages.append(
-
-            {
-
                 "role":
                     "user",
 
                 "content":
                 f"""
-Observation received:
+Tool result:
+
+Tool:
+{tool}
+
+
+Result:
 
 {result}
 
 
 Continue.
-"""
 
+
+Remember:
+
+If more information is required:
+use another tool.
+
+If investigation is complete:
+return:
+
+{
+ "final_answer": "WRITE THE ACTUAL FINAL RESPONSE HERE"
+}
+
+
+The value of final_answer must contain the real answer to the user.
+Do not use placeholder text.
+
+Return ONLY JSON.
+"""
             }
 
         )
 
 
 
-
-    return "Maximum execution steps reached"
+    return {
+        "final_answer":
+            "Maximum execution steps reached before completion."
+    }

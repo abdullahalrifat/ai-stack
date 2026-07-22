@@ -17,6 +17,7 @@ from app.tools.filesystem import (
     list_files,
     read_file,
     search_files,
+    workspace_tree
 )
 
 
@@ -61,7 +62,10 @@ registry.register(
 
 )
 
-
+registry.register(
+    name="workspace_tree",
+    function=workspace_tree
+)
 
 # =====================================================
 # Docker Tools

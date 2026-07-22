@@ -148,3 +148,30 @@ def validate_action(action: Dict[str, Any]) -> bool:
         field in action
         for field in required
     )
+
+def validate_agent_response(data):
+
+    if "tool" in data:
+
+        if not isinstance(data.get("args"), dict):
+            return False
+
+        return True
+
+
+    if "final_answer" in data:
+
+        answer = data["final_answer"]
+
+        if answer in [
+            "complete explanation",
+            "answer text",
+            "your answer",
+            ""
+        ]:
+            return False
+
+        return True
+
+
+    return False

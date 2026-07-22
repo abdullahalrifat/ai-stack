@@ -123,3 +123,9 @@ def search_files(
 
 
     return matches[:50]
+
+def workspace_tree():
+
+    return list_files(
+        "/workspace"
+    )
