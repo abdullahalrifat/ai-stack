@@ -153,25 +153,23 @@ def validate_agent_response(data):
 
     if "tool" in data:
 
-        if not isinstance(data.get("args"), dict):
-            return False
-
-        return True
+        return (
+            isinstance(data.get("tool"), str)
+            and isinstance(
+                data.get("args", {}),
+                dict
+            )
+        )
 
 
     if "final_answer" in data:
 
-        answer = data["final_answer"]
+        answer = data.get("final_answer")
 
-        if answer in [
-            "complete explanation",
-            "answer text",
-            "your answer",
-            ""
-        ]:
-            return False
-
-        return True
+        return (
+            isinstance(answer, str)
+            and len(answer.strip()) > 20
+        )
 
 
     return False

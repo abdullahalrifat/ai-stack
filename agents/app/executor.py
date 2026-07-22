@@ -15,19 +15,23 @@ from .prompts import EXECUTOR_PROMPT
 
 MAX_STEPS = 15
 
+MIN_TOOL_CALLS_BEFORE_FINAL = 2
+
 
 
 def execute_plan(state):
 
-
     available_tools = registry.list_tools()
 
 
-    previous_observations = json.dumps(
-        state.observations,
-        indent=2,
-        default=str
-    )
+    def observation_json():
+
+        return json.dumps(
+            state.observations[-10:],
+            indent=2,
+            default=str
+        )
+
 
 
     messages = [
@@ -36,7 +40,6 @@ def execute_plan(state):
             "role": "system",
             "content": EXECUTOR_PROMPT
         },
-
 
         {
             "role": "user",
@@ -63,38 +66,37 @@ Available tools:
 
 Previous observations:
 
-{previous_observations}
+{observation_json()}
 
 
 Rules:
 
-1. Repositories exist inside workspace.
-2. Never invent paths.
-3. Inspect files before making conclusions.
-4. Use tools whenever information is missing.
-5. Do not answer until investigation is complete.
-6. Your response MUST be valid JSON.
+- You are a software engineering agent.
+- All repositories exist inside workspace.
+- Never guess file contents.
+- Always inspect files before answering.
+- For repository analysis:
+    1. list files
+    2. read important configuration files
+    3. inspect source files
+- Do not produce final_answer after only list_files.
+- Use tools until investigation is complete.
+- Output ONLY valid JSON.
 
 
-Tool call format:
+Tool format:
 
 {{
-    "tool": "tool_name",
-    "args": {{
-        "argument": "value"
-    }}
+    "tool":"tool_name",
+    "args":{{}}
 }}
 
 
-Final response format:
+Final format:
 
 {{
-    "final_answer": "actual answer to the user"
+    "final_answer":"actual answer"
 }}
-
-
-Never return placeholders.
-The final_answer field must contain the real response.
 """
         }
 
@@ -104,13 +106,10 @@ The final_answer field must contain the real response.
 
     for step in range(MAX_STEPS):
 
-
         state.steps += 1
 
 
-        response = chat(
-            messages
-        )
+        response = chat(messages)
 
 
         print(
@@ -119,157 +118,134 @@ The final_answer field must contain the real response.
         )
 
 
-
-        #
-        # Parse JSON
-        #
-
         try:
 
-            data = extract_json(
-                response
-            )
+            data = extract_json(response)
 
 
         except Exception as e:
 
-
             print(
-                "JSON PARSE FAILED:",
+                "INVALID JSON:",
                 e
             )
 
 
             messages.append(
                 {
-                    "role": "assistant",
-                    "content": response
-                }
-            )
-
-
-            messages.append(
-                {
-                    "role": "user",
-                    "content": """
-Your previous response was invalid.
+                    "role":"user",
+                    "content":
+                    """
+Your output was invalid.
 
 Return ONLY JSON.
 
-Tool call:
+Allowed:
 
 {
  "tool":"tool_name",
  "args":{}
 }
 
-
-OR final response:
+or
 
 {
- "final_answer":"actual answer"
+ "final_answer":"answer"
 }
 """
                 }
             )
-
 
             continue
 
 
 
         #
-        # Model incorrectly says decision=final_answer
+        # Handle wrong model format
         #
 
         if data.get("decision") == "final_answer":
 
+            data = {
+                "final_answer":
+                    data.get(
+                        "reason",
+                        "Investigation completed."
+                    )
+            }
 
-            messages.append(
 
-                {
-                    "role": "user",
-                    "content": """
-Investigation is complete.
 
-Now write the final answer.
+        #
+        # Final answer validation
+        #
 
-Return ONLY:
+        if "final_answer" in data:
 
-{
- "final_answer":"actual detailed response"
-}
 
-Do not return:
-- decision
-- reason
-- placeholders
+            if len(state.observations) < MIN_TOOL_CALLS_BEFORE_FINAL:
+
+
+                messages.append(
+                    {
+                        "role":"user",
+                        "content":
+                        """
+You finished too early.
+
+More investigation is required.
+
+Inspect repository files before answering.
+
+Return ONLY JSON.
 """
-                }
+                    }
+                )
 
-            )
+                continue
 
-
-            continue
-
-
-
-        #
-        # Completed
-        #
-
-        if (
-            validate_agent_response(data)
-            and "final_answer" in data
-        ):
 
 
             state.finished = True
-
 
             return data["final_answer"]
 
 
 
+
         #
-        # Tool request
+        # Tool call
         #
 
-        tool = data.get(
-            "tool"
-        )
+        tool = data.get("tool")
 
 
         if not tool:
 
 
             messages.append(
-
                 {
-                    "role": "user",
-                    "content": """
-No valid action detected.
+                    "role":"user",
+                    "content":
+                    """
+No valid action.
 
 Continue investigation.
 
 Return ONLY JSON.
 """
                 }
-
             )
-
 
             continue
 
 
 
         args = parse_tool_arguments(
-
             data.get(
                 "args",
                 {}
             )
-
         )
 
 
@@ -282,48 +258,27 @@ Return ONLY JSON.
 
 
 
-        #
-        # Execute tool
-        #
-
         try:
 
-
             result = registry.execute(
-
                 tool,
-
                 args
-
             )
 
 
         except Exception as e:
 
-
             result = {
-
-                "error":
-                    str(e)
-
+                "error": str(e)
             }
 
 
-
-        #
-        # Save observation
-        #
 
         state.add_tool(
             tool,
             result
         )
 
-
-
-        #
-        # Serialize result for LLM
-        #
 
         tool_result = json.dumps(
             result,
@@ -333,41 +288,37 @@ Return ONLY JSON.
 
 
 
-        #
-        # Continue reasoning
-        #
-
         messages.append(
-
             {
-                "role": "assistant",
-                "content": response
+                "role":"assistant",
+                "content":response
             }
-
         )
 
 
         messages.append(
-
             {
-                "role": "user",
-                "content": f"""
+                "role":"user",
+                "content":f"""
 Tool executed:
 
 {tool}
 
 
-Tool result:
+Result:
 
 {tool_result}
 
 
+Current observations:
+
+{observation_json()}
+
+
 Continue.
 
+If more information is needed:
 
-Decide:
-
-1. Need another tool?
 Return:
 
 {{
@@ -376,27 +327,22 @@ Return:
 }}
 
 
-2. Investigation complete?
+If finished:
+
 Return:
 
 {{
- "final_answer":"actual complete answer"
+ "final_answer":"actual detailed answer"
 }}
 
 
-Do not use placeholders.
-
-Return ONLY JSON.
+ONLY JSON.
 """
             }
-
         )
 
 
 
-    return {
-
-        "final_answer":
-            "Maximum execution steps reached before completion."
-
-    }
+    return (
+        "Maximum execution steps reached before completion."
+    )
