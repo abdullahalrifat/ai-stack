@@ -1,80 +1,176 @@
-import subprocess
+import docker
+from langchain.tools import tool
 
 
+_client = None
 
-def run_command(
-    cmd
-):
+def get_docker_client():
 
-    result=subprocess.run(
+    global _client
 
-        cmd,
+    if _client is None:
+        _client = docker.from_env()
 
-        capture_output=True,
+    return _client
 
-        text=True
-
-    )
-
-
-    if result.returncode !=0:
-
-        return result.stderr
-
-
-    return result.stdout
-
-
-
-
+@tool
 def list_docker_containers():
+    """
+    List all Docker containers and their current state.
+    """
 
-    return run_command(
+    try:
+        client = get_docker_client()
 
-        [
-            "docker",
-            "ps",
-            "--format",
-            "{{.Names}} {{.Status}}"
+        containers = client.containers.list(
+            all=True
+        )
+
+        return [
+            {
+                "name": c.name,
+                "status": c.status,
+                "image": c.image.tags,
+            }
+            for c in containers
         ]
 
-    )
+    except Exception as e:
+        return {
+            "error": str(e)
+        }
 
 
 
-
-
+@tool
 def docker_logs(
-    container,
-    lines=100
+    container_name: str,
+    lines: int = 50
 ):
+    """
+    Get recent logs from a Docker container.
+    """
 
-    return run_command(
-
-        [
-            "docker",
-            "logs",
-            "--tail",
-            str(lines),
-            container
-        ]
-
-    )
+    try:
+        client = get_docker_client()
 
 
+        container = client.containers.get(
+            container_name
+        )
+
+        logs = container.logs(
+            tail=lines
+        )
+
+        return logs.decode(
+            errors="ignore"
+        )
+
+
+    except docker.errors.NotFound:
+
+        return {
+            "error":
+                f"Container {container_name} not found"
+        }
+
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
 
 
 
+@tool
 def restart_container(
-    container
+    container_name: str
 ):
+    """
+    Restart an approved Docker container.
+    """
 
-    return run_command(
+    allowed = [
+        "nextcloud",
+        "redis",
+        "cloudflared",
+        "ollama",
+        "qdrant",
+    ]
 
-        [
-            "docker",
-            "restart",
-            container
-        ]
 
-    )
+    if container_name not in allowed:
+
+        return {
+            "error":
+                "Container not allowed"
+        }
+
+
+    try:
+        client = get_docker_client()
+
+        container = client.containers.get(
+            container_name
+        )
+
+        container.restart()
+
+        return {
+            "status":
+                f"{container_name} restarted"
+        }
+
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
+
+
+
+@tool
+def docker_health():
+    """
+    Check Docker container health status.
+    """
+
+    try:
+        client = get_docker_client()
+
+        containers = client.containers.list(
+            all=True
+        )
+
+        result=[]
+
+
+        for c in containers:
+
+            state = c.attrs.get(
+                "State",
+                {}
+            )
+
+
+            result.append(
+                {
+                    "name": c.name,
+                    "status": c.status,
+                    "health":
+                        state.get("Health")
+                }
+            )
+
+
+        return result
+
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
