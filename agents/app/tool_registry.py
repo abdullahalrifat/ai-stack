@@ -4,15 +4,13 @@ from typing import Dict, Callable, Any
 class ToolRegistry:
 
     def __init__(self):
-
-        self.tools: Dict[str, Callable] = {}
-
+        self.tools: Dict[str, Any] = {}
 
 
     def register(
         self,
         name: str,
-        function: Callable
+        function: Any
     ):
 
         self.tools[name] = function
@@ -25,11 +23,9 @@ class ToolRegistry:
     ):
 
         if name not in self.tools:
-
             raise Exception(
                 f"Tool not found: {name}"
             )
-
 
         return self.tools[name]
 
@@ -44,17 +40,48 @@ class ToolRegistry:
 
 
     def execute(
-        self,
-        name: str,
-        args: dict
+    self,
+    name: str,
+    args: dict
     ):
 
         tool = self.get(name)
 
 
-        return tool(
-            **args
+        print(
+            "TOOL TYPE:",
+            type(tool)
         )
+
+
+        if hasattr(tool, "invoke"):
+
+            try:
+
+                return tool.invoke(
+                    args
+                )
+
+            except Exception as e:
+
+                return {
+                    "tool_error": str(e),
+                    "tool": name,
+                    "args": args
+                }
+
+
+        try:
+
+            return tool(**args)
+
+        except Exception as e:
+
+            return {
+                "tool_error": str(e),
+                "tool": name,
+                "args": args
+            }
 
 
 

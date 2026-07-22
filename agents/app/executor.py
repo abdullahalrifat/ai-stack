@@ -15,9 +15,41 @@ from .prompts import EXECUTOR_PROMPT
 
 MAX_STEPS = 15
 
-MIN_TOOL_CALLS_BEFORE_FINAL = 2
+MIN_TOOL_CALLS_BEFORE_FINAL = 5
 
 
+def normalize_tool_args(
+    tool_name,
+    args
+):
+
+    aliases = {
+
+        "read_file": {
+            "path": "file_path"
+        },
+
+        "tree": {
+            "path": "directory"
+        },
+
+        "search_text": {
+            "query": "keyword"
+        },
+
+    }
+
+
+    if tool_name in aliases:
+
+        for old,new in aliases[tool_name].items():
+
+            if old in args and new not in args:
+
+                args[new] = args.pop(old)
+
+
+    return args
 
 def execute_plan(state):
 
@@ -76,9 +108,16 @@ Rules:
 - Never guess file contents.
 - Always inspect files before answering.
 - For repository analysis:
-    1. list files
-    2. read important configuration files
-    3. inspect source files
+    Required investigation:
+
+        1. Call list_files on workspace root.
+        2. Call tree to understand structure.
+        3. Read:
+            - README.md if exists
+            - docker-compose.yml/docker-compose.yaml if exists
+        - requirements.txt/package.json/pyproject.toml if exists
+        4. Inspect application source directories.
+        5. Only then provide final_answer.
 - Do not produce final_answer after only list_files.
 - Use tools until investigation is complete.
 - Output ONLY valid JSON.
@@ -142,9 +181,33 @@ Return ONLY JSON.
 
 Allowed:
 
+Tool argument rules:
+
+read_file:
 {
- "tool":"tool_name",
- "args":{}
+ "file_path":"absolute or relative file path"
+}
+
+list_files:
+{
+ "directory":"directory path"
+}
+
+tree:
+{
+ "directory":"directory path",
+ "depth":2
+}
+
+search_text:
+{
+ "keyword":"text to search",
+ "directory":"directory path"
+}
+
+inspect_files:
+{
+ "paths":["file1","file2"]
 }
 
 or
@@ -248,7 +311,10 @@ Return ONLY JSON.
             )
         )
 
-
+        args = normalize_tool_args(
+            tool,
+            args
+        )
 
         print(
             "EXECUTING TOOL:",

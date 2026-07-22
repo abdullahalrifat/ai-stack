@@ -134,6 +134,8 @@ TOOLS = [
 
     project_summary,
 
+    inspect_files,
+    
     list_docker_containers,
 
     docker_logs,
