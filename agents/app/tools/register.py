@@ -19,6 +19,7 @@ from app.tools.filesystem import (
     workspace_root,
     find_file,
     project_summary,
+    inspect_files
 )
 
 
@@ -77,7 +78,10 @@ registry.register(
 )
 
 
-
+registry.register(
+    name="inspect_files",
+    function=inspect_files
+)
 # =====================================================
 # Docker Tools
 # =====================================================

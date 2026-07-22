@@ -401,3 +401,95 @@ def project_summary():
         "important_files": important,
         "languages": extensions,
     }
+
+# ============================================================
+# Inspect Multiple Files
+# ============================================================
+
+@tool
+def inspect_files(
+    paths: list[str],
+):
+    """
+    Inspect multiple files or directories.
+
+    Useful for repository analysis.
+    """
+
+    results = []
+
+    try:
+
+        for item in paths:
+
+            path = resolve_path(item)
+
+            if not path.exists():
+
+                results.append(
+                    {
+                        "path": item,
+                        "error": "Not found"
+                    }
+                )
+
+                continue
+
+
+            if path.is_dir():
+
+                files = []
+
+                for f in path.iterdir():
+
+                    if ignored(f):
+                        continue
+
+                    files.append(
+                        f.name
+                    )
+
+                results.append(
+                    {
+                        "path": item,
+                        "type": "directory",
+                        "contents": files[:100]
+                    }
+                )
+
+            else:
+
+                if path.stat().st_size > MAX_FILE_SIZE:
+
+                    results.append(
+                        {
+                            "path": item,
+                            "error":
+                                "File too large"
+                        }
+                    )
+
+                    continue
+
+
+                results.append(
+                    {
+                        "path": item,
+                        "type": "file",
+                        "content":
+                            path.read_text(
+                                encoding="utf-8",
+                                errors="ignore"
+                            )
+                    }
+                )
+
+
+        return results
+
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
