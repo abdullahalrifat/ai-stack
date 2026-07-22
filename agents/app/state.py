@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-
+from .config import DEFAULT_MODEL
 @dataclass
 class AgentState:
 
@@ -16,6 +16,8 @@ class AgentState:
     memories: list = field(default_factory=list)
 
     observations: list = field(default_factory=list)
+
+    model: str = DEFAULT_MODEL
 
     plan: list = field(default_factory=list)
 

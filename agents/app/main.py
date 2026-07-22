@@ -23,8 +23,8 @@ from pydantic import BaseModel
 # =====================================================
 
 import app.tools.register
-
-
+from app.config import DEFAULT_MODEL
+from app.llm import get_available_models
 from app.agent import (
     run_agent,
     ingest_documents,
@@ -358,7 +358,9 @@ async def chat(
 
             request.conversation_id,
 
-            request.workspace
+            request.workspace,
+
+            request.model or DEFAULT_MODEL
 
         )
 
@@ -401,7 +403,9 @@ async def execute(
 
         request.conversation_id,
 
-        request.workspace
+        request.workspace,
+
+        request.model or DEFAULT_MODEL
 
     )
 
@@ -460,7 +464,9 @@ async def openai_chat(
         x_conversation_id
         or request.conversation_id
         or "default",
-        request.workspace
+        request.workspace,
+
+        request.model or DEFAULT_MODEL
 
     )
 
@@ -531,46 +537,19 @@ async def openai_chat(
         Depends(verify_api_key)
     ]
 )
+@app.get("/v1/models")
 def models():
 
     return {
-
         "object":"list",
-
         "data":[
-
             {
-
-                "id":"coder",
-
+                "id":m,
                 "object":"model",
-
                 "owned_by":"local"
-
-            },
-
-            {
-
-                "id":"qwen3-8b",
-
-                "object":"model",
-
-                "owned_by":"local"
-
-            },
-
-            {
-
-                "id":"nomic-embed-text",
-
-                "object":"model",
-
-                "owned_by":"local"
-
             }
-
+            for m in get_available_models()
         ]
-
     }
 
 

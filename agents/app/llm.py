@@ -1,5 +1,6 @@
 from openai import OpenAI
 import os
+from .config import DEFAULT_MODEL
 
 
 client = OpenAI(
@@ -14,16 +15,48 @@ client = OpenAI(
 
 )
 
+import requests
 
 
-def chat(messages):
+def get_available_models():
 
+    base_url = os.getenv(
+        "OPENAI_API_BASE",
+        "http://litellm:4000/v1"
+    )
+
+    api_key = os.getenv(
+        "OPENAI_API_KEY"
+    )
+
+    response = requests.get(
+        f"{base_url}/models",
+        headers={
+            "Authorization": f"Bearer {api_key}"
+        }
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    return [
+        item["id"]
+        for item in data["data"]
+    ]
+
+def chat(messages, model=DEFAULT_MODEL):
+
+    available = get_available_models()
+    if model not in available:
+
+        raise ValueError(
+            f"Model '{model}' not available. "
+            f"Available: {available}"
+        )
     response = client.chat.completions.create(
 
-        model=os.getenv(
-            "MODEL",
-            "qwen3-8b"
-        ),
+        model=model,
 
         messages=messages,
 

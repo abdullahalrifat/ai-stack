@@ -18,7 +18,7 @@ from .memory import (
 )
 
 from .memory.embeddings import create_embedding
-
+from .config import DEFAULT_MODEL
 
 
 
@@ -26,7 +26,8 @@ from .memory.embeddings import create_embedding
 def run_agent(
     message: str,
     conversation_id: str | None = None,
-    workspace="/workspace"
+    workspace="/workspace",
+    model=DEFAULT_MODEL
 ):
 
     conversation_id = (
@@ -39,7 +40,9 @@ def run_agent(
 
         conversation_id=conversation_id,
 
-        user_message=message
+        user_message=message,
+
+        model=model
 
     )
 

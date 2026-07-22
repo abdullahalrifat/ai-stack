@@ -148,7 +148,7 @@ Final format:
         state.steps += 1
 
 
-        response = chat(messages)
+        response = chat(messages, state.model)
 
 
         print(
