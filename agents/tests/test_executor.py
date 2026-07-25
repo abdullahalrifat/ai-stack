@@ -4,7 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
-from app.agent.executor import execute_plan, financial_price_query, normalize_tool_args
+from app.agent.executor import (
+    execute_plan,
+    financial_price_query,
+    financial_research_queries,
+    normalize_tool_args,
+)
 
 
 class DummyState:
@@ -91,6 +96,16 @@ def test_financial_price_query_keeps_company_and_market():
     ) == "renata DSE latest closing price previous close historical data"
 
 
+def test_financial_research_queries_cover_company_and_sector_evidence():
+    queries = financial_research_queries("search renata last closing day price from DSE")
+
+    assert len(queries) == 4
+    assert "renata DSE" in queries[0]
+    assert "annual report" in queries[1]
+    assert "latest company news" in queries[2]
+    assert "pharmaceutical healthcare sector" in queries[3]
+
+
 # ----------------------------------------------------
 # execute_plan
 # ----------------------------------------------------
@@ -160,8 +175,8 @@ def test_execute_plan_prefetches_current_external_information(mock_chat_with_too
     result = execute_plan(state)
 
     assert result == "Result"
-    assert mock_registry.execute.call_args.args[0] == "web_search"
-    assert mock_registry.execute.call_args.args[1]["query"] == (
+    assert mock_registry.execute.call_args_list[0].args[0] == "web_search"
+    assert mock_registry.execute.call_args_list[0].args[1]["query"] == (
         "Renata DSE latest closing price previous close historical data"
     )
     assert "https://example.test/renata" in mock_chat_with_tools.call_args.args[0][1]["content"]

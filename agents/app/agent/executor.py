@@ -101,6 +101,20 @@ def financial_price_query(message: str) -> str:
     return f"{subject} {market} latest closing price previous close historical data"
 
 
+def financial_research_queries(message: str) -> list[str]:
+    """Return a minimal evidence set for an investment-style research request."""
+
+    price_query = financial_price_query(message)
+    subject = price_query.split(" ", 1)[0]
+    market = "Bangladesh" if re.search(r"\bdse\b", message, re.IGNORECASE) else ""
+    return [
+        price_query,
+        f"{subject} annual report revenue profit earnings financial statements pdf",
+        f"{subject} latest company news expansion earnings {market}",
+        f"{market} pharmaceutical healthcare sector outlook inflation healthcare spending latest",
+    ]
+
+
 def _prefetch_external_search(state, available_tools: list[str], on_event):
     """Fetch current evidence before a non-tool-capable model can decline.
 
@@ -111,19 +125,25 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
     if "web_search" not in available_tools or not requires_external_search(state.user_message):
         return None
 
-    query = state.user_message
-    if is_financial_query(query):
-        query = financial_price_query(query)
-    args = {"query": query}
-    on_event("tool_call", {"tool": "web_search", "args": args, "prefetch": True})
-    try:
-        result = registry.execute("web_search", args)
-    except Exception as exc:
-        logger.exception("Prefetch web search failed")
-        result = {"error": str(exc)}
-    state.add_tool("web_search", result)
-    on_event("tool_result", {"tool": "web_search", "result": result, "prefetch": True})
-    return result
+    queries = (
+        financial_research_queries(state.user_message)
+        if is_financial_query(state.user_message)
+        else [state.user_message]
+    )
+    searches = []
+    for query in queries:
+        args = {"query": query}
+        on_event("tool_call", {"tool": "web_search", "args": args, "prefetch": True})
+        try:
+            result = registry.execute("web_search", args)
+        except Exception as exc:
+            logger.exception("Prefetch web search failed")
+            result = {"error": str(exc)}
+        state.add_tool("web_search", result)
+        on_event("tool_result", {"tool": "web_search", "result": result, "prefetch": True})
+        searches.append(result)
+
+    return searches[0] if len(searches) == 1 else {"research_queries": searches}
 
 
 def _leaked_tool_call(text: str) -> bool:
@@ -284,7 +304,7 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_
     if research_mode and "web_search" in available_tools:
         # Prevent a coding-oriented model from wandering through the mounted
         # repository when the user asked for current external information.
-        available_tools = ["web_search"]
+        available_tools = [tool for tool in ("web_search", "web_fetch") if tool in available_tools]
 
     tools = schemas_for(available_tools)
     external_search = _prefetch_external_search(state, available_tools, on_event)

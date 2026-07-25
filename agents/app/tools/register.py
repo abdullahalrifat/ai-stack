@@ -26,6 +26,7 @@ from app.tools.filesystem import (
     write_file,
 )
 from app.tools.web_search import web_search
+from app.tools.web_fetch import web_fetch
 
 # =====================================================
 # Filesystem Tools
@@ -57,6 +58,8 @@ registry.register(name="run_tests", function=run_tests)
 
 registry.register(name="web_search", function=web_search)
 
+registry.register(name="web_fetch", function=web_fetch)
+
 # =====================================================
 # LangChain compatibility
 # =====================================================
@@ -78,4 +81,5 @@ TOOLS = [
     run_command,
     run_tests,
     web_search,
+    web_fetch,
 ]

@@ -221,6 +221,22 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": (
+                "Fetch text from a public HTML page or PDF report returned by web_search. "
+                "Use it to verify filings, earnings releases, and reputable news before "
+                "making a financial claim."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string", "format": "uri"}},
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
