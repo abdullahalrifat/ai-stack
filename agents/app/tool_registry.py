@@ -1,88 +1,43 @@
-from typing import Dict, Callable, Any
+from typing import Any
 
 
 class ToolRegistry:
-
     def __init__(self):
-        self.tools: Dict[str, Any] = {}
+        self.tools: dict[str, Any] = {}
 
-
-    def register(
-        self,
-        name: str,
-        function: Any
-    ):
+    def register(self, name: str, function: Any):
 
         self.tools[name] = function
 
-
-
-    def get(
-        self,
-        name: str
-    ):
+    def get(self, name: str):
 
         if name not in self.tools:
-            raise Exception(
-                f"Tool not found: {name}"
-            )
+            raise Exception(f"Tool not found: {name}")
 
         return self.tools[name]
 
-
-
     def list_tools(self):
 
-        return list(
-            self.tools.keys()
-        )
+        return list(self.tools.keys())
 
-
-
-    def execute(
-    self,
-    name: str,
-    args: dict
-    ):
+    def execute(self, name: str, args: dict):
 
         tool = self.get(name)
 
-
-        print(
-            "TOOL TYPE:",
-            type(tool)
-        )
-
+        print("TOOL TYPE:", type(tool))
 
         if hasattr(tool, "invoke"):
-
             try:
-
-                return tool.invoke(
-                    args
-                )
+                return tool.invoke(args)
 
             except Exception as e:
-
-                return {
-                    "tool_error": str(e),
-                    "tool": name,
-                    "args": args
-                }
-
+                return {"tool_error": str(e), "tool": name, "args": args}
 
         try:
-
             return tool(**args)
 
         except Exception as e:
-
-            return {
-                "tool_error": str(e),
-                "tool": name,
-                "args": args
-            }
-
+            return {"tool_error": str(e), "tool": name, "args": args}
 
 
 registry = ToolRegistry()

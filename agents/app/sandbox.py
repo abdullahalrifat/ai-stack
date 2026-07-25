@@ -16,8 +16,11 @@ class Sandbox:
 
 def _git(directory: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(directory), *args], text=True, capture_output=True,
-        timeout=COMMAND_TIMEOUT_SECONDS, check=False,
+        ["git", "-C", str(directory), *args],
+        text=True,
+        capture_output=True,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+        check=False,
     )
 
 

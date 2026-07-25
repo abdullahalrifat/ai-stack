@@ -1,18 +1,13 @@
 import json
 
+from .config import MAX_AGENT_STEPS
 from .llm import chat
-
 from .parser import (
     extract_json,
     parse_tool_arguments,
-    validate_agent_response,
 )
-
-from .tool_registry import registry
-
 from .prompts import EXECUTOR_PROMPT
-from .config import MAX_AGENT_STEPS
-
+from .tool_registry import registry
 
 MAX_STEPS = MAX_AGENT_STEPS
 
@@ -22,38 +17,21 @@ MAX_STEPS = MAX_AGENT_STEPS
 MIN_TOOL_CALLS_BEFORE_FINAL = 0
 
 
-def normalize_tool_args(
-    tool_name,
-    args
-):
+def normalize_tool_args(tool_name, args):
 
     aliases = {
-
-        "read_file": {
-            "path": "file_path"
-        },
-
-        "tree": {
-            "path": "directory"
-        },
-
-        "search_text": {
-            "query": "keyword"
-        },
-
+        "read_file": {"path": "file_path"},
+        "tree": {"path": "directory"},
+        "search_text": {"query": "keyword"},
     }
 
-
     if tool_name in aliases:
-
-        for old,new in aliases[tool_name].items():
-
+        for old, new in aliases[tool_name].items():
             if old in args and new not in args:
-
                 args[new] = args.pop(old)
 
-
     return args
+
 
 def execute_plan(state):
 
@@ -61,24 +39,12 @@ def execute_plan(state):
     if not state.allow_write:
         available_tools = [name for name in available_tools if name != "write_file"]
 
-
     def observation_json():
 
-        return json.dumps(
-            state.observations[-10:],
-            indent=2,
-            default=str
-        )
-
-
+        return json.dumps(state.observations[-10:], indent=2, default=str)
 
     messages = [
-
-        {
-            "role": "system",
-            "content": EXECUTOR_PROMPT
-        },
-
+        {"role": "system", "content": EXECUTOR_PROMPT},
         {
             "role": "user",
             "content": f"""
@@ -150,45 +116,27 @@ Final format:
 {{
     "final_answer":"actual answer"
 }}
-"""
-        }
-
+""",
+        },
     ]
 
-
-
     for step in range(MAX_STEPS):
-
         state.steps += 1
-
 
         response = chat(messages, state.model)
 
-
-        print(
-            "EXECUTOR RESPONSE:",
-            response
-        )
-
+        print("EXECUTOR RESPONSE:", response)
 
         try:
-
             data = extract_json(response)
 
-
         except Exception as e:
-
-            print(
-                "INVALID JSON:",
-                e
-            )
-
+            print("INVALID JSON:", e)
 
             messages.append(
                 {
-                    "role":"user",
-                    "content":
-                    """
+                    "role": "user",
+                    "content": """
 Your output was invalid.
 
 Return ONLY JSON.
@@ -229,45 +177,29 @@ or
 {
  "final_answer":"answer"
 }
-"""
+""",
                 }
             )
 
             continue
-
-
 
         #
         # Handle wrong model format
         #
 
         if data.get("decision") == "final_answer":
-
-            data = {
-                "final_answer":
-                    data.get(
-                        "reason",
-                        "Investigation completed."
-                    )
-            }
-
-
+            data = {"final_answer": data.get("reason", "Investigation completed.")}
 
         #
         # Final answer validation
         #
 
         if "final_answer" in data:
-
-
             if len(state.observations) < MIN_TOOL_CALLS_BEFORE_FINAL:
-
-
                 messages.append(
                     {
-                        "role":"user",
-                        "content":
-                        """
+                        "role": "user",
+                        "content": """
 You finished too early.
 
 More investigation is required.
@@ -275,20 +207,15 @@ More investigation is required.
 Inspect repository files before answering.
 
 Return ONLY JSON.
-"""
+""",
                     }
                 )
 
                 continue
 
-
-
             state.finished = True
 
             return data["final_answer"]
-
-
-
 
         #
         # Tool call
@@ -296,21 +223,17 @@ Return ONLY JSON.
 
         tool = data.get("tool")
 
-
         if not tool:
-
-
             messages.append(
                 {
-                    "role":"user",
-                    "content":
-                    """
+                    "role": "user",
+                    "content": """
 No valid action.
 
 Continue investigation.
 
 Return ONLY JSON.
-"""
+""",
                 }
             )
 
@@ -325,70 +248,28 @@ Return ONLY JSON.
             )
             continue
 
+        args = parse_tool_arguments(data.get("args", {}))
 
+        args = normalize_tool_args(tool, args)
 
-        args = parse_tool_arguments(
-            data.get(
-                "args",
-                {}
-            )
-        )
-
-        args = normalize_tool_args(
-            tool,
-            args
-        )
-
-        print(
-            "EXECUTING TOOL:",
-            tool,
-            args
-        )
-
-
+        print("EXECUTING TOOL:", tool, args)
 
         try:
-
-            result = registry.execute(
-                tool,
-                args
-            )
-
+            result = registry.execute(tool, args)
 
         except Exception as e:
+            result = {"error": str(e)}
 
-            result = {
-                "error": str(e)
-            }
+        state.add_tool(tool, result)
 
+        tool_result = json.dumps(result, indent=2, default=str)
 
-
-        state.add_tool(
-            tool,
-            result
-        )
-
-
-        tool_result = json.dumps(
-            result,
-            indent=2,
-            default=str
-        )
-
-
+        messages.append({"role": "assistant", "content": response})
 
         messages.append(
             {
-                "role":"assistant",
-                "content":response
-            }
-        )
-
-
-        messages.append(
-            {
-                "role":"user",
-                "content":f"""
+                "role": "user",
+                "content": f"""
 Tool executed:
 
 {tool}
@@ -426,12 +307,8 @@ Return:
 
 
 ONLY JSON.
-"""
+""",
             }
         )
 
-
-
-    return (
-        "Maximum execution steps reached before completion."
-    )
+    return "Maximum execution steps reached before completion."

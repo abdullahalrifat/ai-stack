@@ -2,14 +2,13 @@ import pytest
 
 from app.parser import (
     ParserError,
-    extract_json,
-    parse_tool_arguments,
     extract_final_answer,
+    extract_json,
+    parse_plan,
+    parse_tool_arguments,
     validate_action,
     validate_agent_response,
-    parse_plan,
 )
-
 
 # ----------------------------------------------------
 # extract_json
@@ -82,9 +81,7 @@ def test_extract_json_not_found():
 
 def test_parse_tool_arguments_dict():
 
-    args = {
-        "directory": "."
-    }
+    args = {"directory": "."}
 
     assert parse_tool_arguments(args) == args
 
@@ -100,13 +97,9 @@ def test_parse_tool_arguments_json_string():
 
 def test_parse_tool_arguments_plain_string():
 
-    result = parse_tool_arguments(
-        "hello"
-    )
+    result = parse_tool_arguments("hello")
 
-    assert result == {
-        "input": "hello"
-    }
+    assert result == {"input": "hello"}
 
 
 def test_parse_tool_arguments_none():
@@ -127,18 +120,14 @@ def test_parse_tool_arguments_invalid_type():
 
 def test_extract_final_answer():
 
-    answer = extract_final_answer(
-        '{"final_answer":"Completed"}'
-    )
+    answer = extract_final_answer('{"final_answer":"Completed"}')
 
     assert answer == "Completed"
 
 
 def test_extract_final_answer_missing():
 
-    answer = extract_final_answer(
-        '{"tool":"list_files"}'
-    )
+    answer = extract_final_answer('{"tool":"list_files"}')
 
     assert answer is None
 
@@ -195,20 +184,13 @@ def test_validate_agent_response_invalid_tool():
 def test_validate_agent_response_final_answer():
 
     assert validate_agent_response(
-        {
-            "final_answer":
-                "This is a sufficiently long final answer for validation."
-        }
+        {"final_answer": "This is a sufficiently long final answer for validation."}
     )
 
 
 def test_validate_agent_response_short_answer():
 
-    assert not validate_agent_response(
-        {
-            "final_answer": "Too short"
-        }
-    )
+    assert not validate_agent_response({"final_answer": "Too short"})
 
 
 def test_validate_agent_response_invalid():

@@ -1,6 +1,5 @@
 """Durable PostgreSQL storage for agent runs and their observable events."""
 
-import json
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -54,8 +53,15 @@ class RunStore:
                     ON agent_run_events (run_id, id);
             """)
 
-    def create_run(self, *, task: str, model: str, workspace: str,
-                   conversation_id: str | None, allow_write: bool) -> str:
+    def create_run(
+        self,
+        *,
+        task: str,
+        model: str,
+        workspace: str,
+        conversation_id: str | None,
+        allow_write: bool,
+    ) -> str:
         run_id = str(uuid.uuid4())
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -67,7 +73,9 @@ class RunStore:
         self.append_event(run_id, "queued", {"message": "Run queued"})
         return run_id
 
-    def append_event(self, run_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    def append_event(
+        self, run_id: str, event_type: str, payload: dict[str, Any]
+    ) -> None:
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO agent_run_events (run_id, event_type, payload) VALUES (%s, %s, %s)",

@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from app.executor import execute_plan, normalize_tool_args
 
@@ -30,6 +30,7 @@ class DummyState:
 # normalize_tool_args
 # ----------------------------------------------------
 
+
 def test_normalize_tool_args_read_file():
     args = {"path": "README.md"}
 
@@ -58,6 +59,7 @@ def test_normalize_tool_args_no_change():
 # execute_plan
 # ----------------------------------------------------
 
+
 @patch("app.executor.registry")
 @patch("app.executor.extract_json")
 @patch("app.executor.chat")
@@ -72,9 +74,7 @@ def test_execute_plan_returns_final_answer(
 
     mock_chat.return_value = '{"final_answer":"Done"}'
 
-    mock_extract_json.return_value = {
-        "final_answer": "Done"
-    }
+    mock_extract_json.return_value = {"final_answer": "Done"}
 
     result = execute_plan(state)
 
@@ -104,24 +104,16 @@ def test_execute_plan_executes_tool(
     mock_extract_json.side_effect = [
         {
             "tool": "list_files",
-            "args": {
-                "directory": "."
-            },
+            "args": {"directory": "."},
         },
         {
             "final_answer": "Finished",
         },
     ]
 
-    mock_parse_args.return_value = {
-        "directory": "."
-    }
+    mock_parse_args.return_value = {"directory": "."}
 
-    mock_registry.execute.return_value = {
-        "files": [
-            "README.md"
-        ]
-    }
+    mock_registry.execute.return_value = {"files": ["README.md"]}
 
     result = execute_plan(state)
 

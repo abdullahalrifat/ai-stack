@@ -1,10 +1,12 @@
-from openai import OpenAI
 import os
+
 import requests
+from openai import OpenAI
+
 from .config import DEFAULT_MODEL
 
-
 _client = None
+
 
 def get_client():
     global _client
@@ -20,21 +22,13 @@ def get_client():
 
 def get_available_models():
 
-    
-    base_url = os.getenv(
-        "OPENAI_API_BASE",
-        "http://litellm:4000/v1"
-    )
+    base_url = os.getenv("OPENAI_API_BASE", "http://litellm:4000/v1")
 
-    api_key = os.getenv(
-        "OPENAI_API_KEY"
-    )
+    api_key = os.getenv("OPENAI_API_KEY")
 
     response = requests.get(
         f"{base_url}/models",
-        headers={
-            "Authorization": f"Bearer {api_key}"
-        },
+        headers={"Authorization": f"Bearer {api_key}"},
         timeout=10,
     )
 
@@ -42,10 +36,8 @@ def get_available_models():
 
     data = response.json()
 
-    return [
-        item["id"]
-        for item in data["data"]
-    ]
+    return [item["id"] for item in data["data"]]
+
 
 def chat(messages, model=DEFAULT_MODEL):
 
@@ -53,26 +45,12 @@ def chat(messages, model=DEFAULT_MODEL):
     client = get_client()
 
     if model not in available:
-
-        raise ValueError(
-            f"Model '{model}' not available. "
-            f"Available: {available}"
-        )
+        raise ValueError(f"Model '{model}' not available. Available: {available}")
     response = client.chat.completions.create(
-
         model=model,
-
         messages=messages,
-
         temperature=0,
         timeout=120,
-
     )
 
-
-    return (
-        response
-        .choices[0]
-        .message
-        .content
-    )
+    return response.choices[0].message.content

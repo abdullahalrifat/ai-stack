@@ -1,9 +1,8 @@
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 
 from fastapi import (
     Depends,
@@ -12,51 +11,37 @@ from fastapi import (
     HTTPException,
     Security,
 )
-
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
-
 
 # =====================================================
 # IMPORTANT
 # Load tools before registry usage
 # =====================================================
-
 import app.tools.register
-from app.config import AGENT_API_KEY, AGENT_MODEL_ID, ALLOW_INSECURE_NO_AUTH, DEFAULT_MODEL, validate_settings
-from app.llm import get_available_models
 from app.agent import (
-    run_agent,
     ingest_documents,
+    run_agent,
 )
-
-
-from app.state import AgentState
-
-
-from app.planner import create_plan
-
-
-from app.tool_registry import registry
-
-
-from app.tools.filesystem import list_files
-
-
+from app.config import (
+    AGENT_API_KEY,
+    AGENT_MODEL_ID,
+    ALLOW_INSECURE_NO_AUTH,
+    DEFAULT_MODEL,
+    validate_settings,
+)
+from app.memory.embeddings import create_embedding
 from app.memory.memory import (
     get_conversation,
     search_memory,
 )
-
-
-from app.memory.embeddings import create_embedding
-
+from app.planner import create_plan
+from app.state import AgentState
+from app.tool_registry import registry
+from app.tools.filesystem import list_files
 
 logger = logging.getLogger(__name__)
-
-
-
 
 
 # =====================================================
@@ -67,31 +52,17 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_settings()
-    print(
-        "REGISTERED TOOLS:",
-        registry.list_tools()
-    )
+    print("REGISTERED TOOLS:", registry.list_tools())
 
     yield
 
 
-
-
 app = FastAPI(
-
     title="Local AI Engineering Agent",
-
-    description=
-    "Private autonomous coding agent running in homelab",
-
+    description="Private autonomous coding agent running in homelab",
     version="2.0",
-
-    lifespan=lifespan
-
+    lifespan=lifespan,
 )
-
-
-
 
 
 # =====================================================
@@ -102,65 +73,28 @@ app = FastAPI(
 API_KEY = AGENT_API_KEY
 
 
-api_key_header = APIKeyHeader(
-
-    name="Authorization",
-
-    auto_error=False
-
-)
+api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 
-
-
-def verify_api_key(
-
-    key: Optional[str] = Security(api_key_header)
-
-):
+def verify_api_key(key: str | None = Security(api_key_header)):
 
     if not API_KEY and ALLOW_INSECURE_NO_AUTH:
         return True
 
     if not API_KEY:
-        raise HTTPException(status_code=503, detail="Agent authentication is not configured")
-
-
+        raise HTTPException(
+            status_code=503, detail="Agent authentication is not configured"
+        )
 
     if not key:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
 
-        raise HTTPException(
-
-            status_code=401,
-
-            detail="Missing authorization header"
-
-        )
-
-
-
-    token = key.replace(
-        "Bearer ",
-        ""
-    )
-
-
+    token = key.replace("Bearer ", "")
 
     if token != API_KEY:
-
-        raise HTTPException(
-
-            status_code=401,
-
-            detail="Invalid API key"
-
-        )
-
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
     return True
-
-
-
 
 
 # =====================================================
@@ -169,101 +103,75 @@ def verify_api_key(
 
 
 class ChatRequest(BaseModel):
-
     message: str
 
-    conversation_id: Optional[str] = None
+    conversation_id: str | None = None
 
-    workspace: Optional[str] = "/workspace"
+    workspace: str | None = "/workspace"
 
-    model: Optional[str] = None
+    model: str | None = None
     allow_write: bool = False
-
-
 
 
 class PlanRequest(BaseModel):
-
     message: str
 
-    conversation_id: Optional[str] = None
+    conversation_id: str | None = None
 
-    workspace: Optional[str] = "/workspace"
-
-
+    workspace: str | None = "/workspace"
 
 
 class ExecuteRequest(BaseModel):
-
     task: str
 
-    conversation_id: Optional[str] = None
+    conversation_id: str | None = None
 
-    workspace: Optional[str] = "/workspace"
+    workspace: str | None = "/workspace"
 
-    model: Optional[str] = None
+    model: str | None = None
     allow_write: bool = False
 
 
-
 class IngestRequest(BaseModel):
+    documents: list[str]
 
-    documents: List[str]
-
-    metadata: Optional[
-        Dict[str, Any]
-    ] = None
-
-
+    metadata: dict[str, Any] | None = None
 
 
 class MemoryQuery(BaseModel):
-
     query: str
 
     top_k: int = 5
 
 
-
-
 class OpenAIChatMessage(BaseModel):
-
     role: str
 
     content: str
 
 
-
-
 class OpenAIChatCompletionRequest(BaseModel):
+    model: str | None = None
 
-    model: Optional[str] = None
+    messages: list[OpenAIChatMessage]
 
-    messages: List[OpenAIChatMessage]
+    temperature: float | None = 0
 
-    temperature: Optional[float] = 0
+    max_tokens: int | None = None
 
-    max_tokens: Optional[int] = None
+    stream: bool | None = False
 
-    stream: Optional[bool] = False
+    workspace: str | None = "/workspace"
 
-    workspace: Optional[str] = "/workspace"
-
-    conversation_id: Optional[str] = None
+    conversation_id: str | None = None
 
     allow_write: bool = False
 
 
-
-
 class OpenAIEmbeddingRequest(BaseModel):
+    model: str | None = None
 
-    model: Optional[str] = None
-
-    input: List[str] | str
-
-
-
+    input: list[str] | str
 
 
 # =====================================================
@@ -275,16 +183,7 @@ class OpenAIEmbeddingRequest(BaseModel):
 @app.get("/health")
 def health():
 
-    return {
-
-        "status":"running",
-
-        "service":"local-ai-agent"
-
-    }
-
-
-
+    return {"status": "running", "service": "local-ai-agent"}
 
 
 # =====================================================
@@ -292,44 +191,20 @@ def health():
 # =====================================================
 
 
-@app.get(
-    "/tools",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
+@app.get("/tools", dependencies=[Depends(verify_api_key)])
 def tools():
 
-    return {
-
-        "tools":
-            registry.list_tools()
-
-    }
-
-
+    return {"tools": registry.list_tools()}
 
 
 @app.get("/debug/tools")
 def debug_tools():
 
     return {
-
-        "count":
-            len(registry.list_tools()),
-
-        "tools":
-            registry.list_tools(),
-
-        "workspace":
-            os.listdir("/workspace")
-            if os.path.exists("/workspace")
-            else []
-
+        "count": len(registry.list_tools()),
+        "tools": registry.list_tools(),
+        "workspace": os.listdir("/workspace") if os.path.exists("/workspace") else [],
     }
-
-
-
 
 
 # =====================================================
@@ -337,51 +212,27 @@ def debug_tools():
 # =====================================================
 
 
-@app.post(
-    "/chat",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-async def chat(
-
-    request: ChatRequest
-
-):
+@app.post("/chat", dependencies=[Depends(verify_api_key)])
+async def chat(request: ChatRequest):
 
     if not request.message.strip():
-
-        raise HTTPException(
-
-            400,
-
-            "Message cannot be empty"
-
-        )
-
+        raise HTTPException(400, "Message cannot be empty")
 
     try:
-
         return await run_in_threadpool(
-
             run_agent,
-
             request.message,
-
             request.conversation_id,
-
             request.workspace,
             request.model or DEFAULT_MODEL,
             request.allow_write,
-
         )
 
     except Exception as e:
         logger.exception("Agent chat failed")
-        raise HTTPException(500, "Agent request failed. Check service logs for details.") from e
-
-
-
+        raise HTTPException(
+            500, "Agent request failed. Check service logs for details."
+        ) from e
 
 
 # =====================================================
@@ -389,34 +240,17 @@ async def chat(
 # =====================================================
 
 
-@app.post(
-    "/execute",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-async def execute(
-
-    request: ExecuteRequest
-
-):
+@app.post("/execute", dependencies=[Depends(verify_api_key)])
+async def execute(request: ExecuteRequest):
 
     return await run_in_threadpool(
-
         run_agent,
-
         request.task,
-
         request.conversation_id,
-
         request.workspace,
         request.model or DEFAULT_MODEL,
         request.allow_write,
-
     )
-
-
-
 
 
 # =====================================================
@@ -424,115 +258,45 @@ async def execute(
 # =====================================================
 
 
-@app.post(
-    "/v1/chat/completions",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
+@app.post("/v1/chat/completions", dependencies=[Depends(verify_api_key)])
 async def openai_chat(
-
-    request: OpenAIChatCompletionRequest,
-
-    x_conversation_id:
-        Optional[str] = Header(None)
-
+    request: OpenAIChatCompletionRequest, x_conversation_id: str | None = Header(None)
 ):
 
-
     if request.stream:
-
-        raise HTTPException(
-
-            400,
-
-            "Streaming not supported yet"
-
-        )
+        raise HTTPException(400, "Streaming not supported yet")
 
     if request.model and request.model != AGENT_MODEL_ID:
-        raise HTTPException(400, f"This endpoint only serves the '{AGENT_MODEL_ID}' model")
+        raise HTTPException(
+            400, f"This endpoint only serves the '{AGENT_MODEL_ID}' model"
+        )
 
-
-    prompt = "\n".join(
-
-        f"{m.role}: {m.content}"
-
-        for m in request.messages
-
-    )
-
-
+    prompt = "\n".join(f"{m.role}: {m.content}" for m in request.messages)
 
     result = await run_in_threadpool(
-
         run_agent,
-
         prompt,
-
-        x_conversation_id
-        or request.conversation_id
-        or "default",
+        x_conversation_id or request.conversation_id or "default",
         request.workspace,
         DEFAULT_MODEL,
         request.allow_write,
-
     )
 
-
-
-    created = int(
-
-        datetime.now(
-            timezone.utc
-        ).timestamp()
-
-    )
-
-
+    created = int(datetime.now(timezone.utc).timestamp())
 
     return {
-
-        "id":
-            f"chatcmpl-{created}",
-
-        "object":
-            "chat.completion",
-
-        "created":
-            created,
-
-        "model":
-            request.model
-            or AGENT_MODEL_ID,
-
-        "choices":[
-
+        "id": f"chatcmpl-{created}",
+        "object": "chat.completion",
+        "created": created,
+        "model": request.model or AGENT_MODEL_ID,
+        "choices": [
             {
-
-                "index":0,
-
-                "message":{
-
-                    "role":
-                        "assistant",
-
-                    "content":
-                        result["answer"]
-
-                },
-
-                "finish_reason":
-                    "stop"
-
+                "index": 0,
+                "message": {"role": "assistant", "content": result["answer"]},
+                "finish_reason": "stop",
             }
-
-        ]
-
+        ],
     }
-
-
-
 
 
 # =====================================================
@@ -540,50 +304,22 @@ async def openai_chat(
 # =====================================================
 
 
-@app.get(
-    "/v1/models",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
+@app.get("/v1/models", dependencies=[Depends(verify_api_key)])
 @app.get("/v1/models")
 def models():
 
     return {
-        "object":"list",
-        "data":[
-            {
-                "id": AGENT_MODEL_ID,
-                "object": "model",
-                "owned_by": "ai-stack-agent"
-            }
-        ]
+        "object": "list",
+        "data": [
+            {"id": AGENT_MODEL_ID, "object": "model", "owned_by": "ai-stack-agent"}
+        ],
     }
 
 
+@app.get("/v1/models/{model_id}", dependencies=[Depends(verify_api_key)])
+def model_detail(model_id: str):
 
-
-
-@app.get(
-    "/v1/models/{model_id}",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-def model_detail(model_id:str):
-
-    return {
-
-        "id":model_id,
-
-        "object":"model",
-
-        "owned_by":"local"
-
-    }
-
-
-
+    return {"id": model_id, "object": "model", "owned_by": "local"}
 
 
 # =====================================================
@@ -591,76 +327,27 @@ def model_detail(model_id:str):
 # =====================================================
 
 
-@app.post(
-    "/v1/embeddings",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-async def embeddings(
-
-    request:OpenAIEmbeddingRequest
-
-):
-
+@app.post("/v1/embeddings", dependencies=[Depends(verify_api_key)])
+async def embeddings(request: OpenAIEmbeddingRequest):
 
     inputs = request.input
 
+    if isinstance(inputs, str):
+        inputs = [inputs]
 
-    if isinstance(inputs,str):
-
-        inputs=[inputs]
-
-
-
-    vectors=[]
-
+    vectors = []
 
     for text in inputs:
-
-        vectors.append(
-
-            await run_in_threadpool(
-
-                create_embedding,
-
-                text
-
-            )
-
-        )
-
-
+        vectors.append(await run_in_threadpool(create_embedding, text))
 
     return {
-
-        "object":"list",
-
-        "data":[
-
-            {
-
-                "object":"embedding",
-
-                "embedding":v,
-
-                "index":i
-
-            }
-
-            for i,v in enumerate(vectors)
-
+        "object": "list",
+        "data": [
+            {"object": "embedding", "embedding": v, "index": i}
+            for i, v in enumerate(vectors)
         ],
-
-        "model":
-
-            request.model
-            or "nomic-embed-text"
-
+        "model": request.model or "nomic-embed-text",
     }
-
-
-
 
 
 # =====================================================
@@ -668,50 +355,18 @@ async def embeddings(
 # =====================================================
 
 
-@app.post(
-    "/plan",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-async def plan(
-
-    request:PlanRequest
-
-):
+@app.post("/plan", dependencies=[Depends(verify_api_key)])
+async def plan(request: PlanRequest):
 
     state = AgentState(
-
-        conversation_id=
-            request.conversation_id
-            or "default",
-
-        user_message=
-            request.message,
-
-        workspace=
-        request.workspace
-
+        conversation_id=request.conversation_id or "default",
+        user_message=request.message,
+        workspace=request.workspace,
     )
 
+    result = await run_in_threadpool(create_plan, state)
 
-    result = await run_in_threadpool(
-
-        create_plan,
-
-        state
-
-    )
-
-
-    return {
-
-        "plan":result
-
-    }
-
-
-
+    return {"plan": result}
 
 
 # =====================================================
@@ -719,30 +374,12 @@ async def plan(
 # =====================================================
 
 
-@app.post(
-    "/ingest",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-async def ingest(
-
-    request:IngestRequest
-
-):
+@app.post("/ingest", dependencies=[Depends(verify_api_key)])
+async def ingest(request: IngestRequest):
 
     return await run_in_threadpool(
-
-        ingest_documents,
-
-        request.documents,
-
-        request.metadata
-
+        ingest_documents, request.documents, request.metadata
     )
-
-
-
 
 
 # =====================================================
@@ -750,65 +387,22 @@ async def ingest(
 # =====================================================
 
 
-@app.get(
-    "/conversation/{conversation_id}",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-def conversation(
-
-    conversation_id:str
-
-):
+@app.get("/conversation/{conversation_id}", dependencies=[Depends(verify_api_key)])
+def conversation(conversation_id: str):
 
     return {
-
-        "conversation_id":
-            conversation_id,
-
-        "history":
-            get_conversation(
-                conversation_id
-            )
-
+        "conversation_id": conversation_id,
+        "history": get_conversation(conversation_id),
     }
 
 
-
-
-
-@app.post(
-    "/memory/search",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-async def memory_search(
-
-    request:MemoryQuery
-
-):
+@app.post("/memory/search", dependencies=[Depends(verify_api_key)])
+async def memory_search(request: MemoryQuery):
 
     return {
-
-        "query":
-            request.query,
-
-        "results":
-
-            await run_in_threadpool(
-
-                search_memory,
-
-                request.query
-
-            )
-
+        "query": request.query,
+        "results": await run_in_threadpool(search_memory, request.query),
     }
-
-
-
 
 
 # =====================================================
@@ -816,22 +410,7 @@ async def memory_search(
 # =====================================================
 
 
-@app.get(
-    "/workspace/tree",
-    dependencies=[
-        Depends(verify_api_key)
-    ]
-)
-def workspace_tree(
-    path: str = "/workspace"
-):
+@app.get("/workspace/tree", dependencies=[Depends(verify_api_key)])
+def workspace_tree(path: str = "/workspace"):
 
-    return {
-
-        "workspace":
-            path,
-
-        "files":
-            list_files(path)
-
-    }
+    return {"workspace": path, "files": list_files(path)}

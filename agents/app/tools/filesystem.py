@@ -6,17 +6,11 @@ from pathlib import Path
 
 from langchain.tools import tool
 
-
 # ============================================================
 # Configuration
 # ============================================================
 
-DEFAULT_WORKSPACE = Path(
-    os.getenv(
-        "WORKSPACE_DIR",
-        "/workspace"
-    )
-).resolve()
+DEFAULT_WORKSPACE = Path(os.getenv("WORKSPACE_DIR", "/workspace")).resolve()
 
 
 # Context-local workspace prevents one HTTP request from changing another
@@ -48,22 +42,14 @@ MAX_FILE_SIZE = 100_000
 # Helpers
 # ============================================================
 
+
 def validate_workspace(path: str) -> Path:
     new_path = Path(path).resolve()
     if not new_path.exists():
-        raise ValueError(
-            f"Workspace does not exist: {new_path}"
-        )
+        raise ValueError(f"Workspace does not exist: {new_path}")
 
-
-    if (
-        new_path != DEFAULT_WORKSPACE
-        and DEFAULT_WORKSPACE not in new_path.parents
-    ):
-        raise PermissionError(
-            "Workspace must be inside mounted workspace"
-        )
-
+    if new_path != DEFAULT_WORKSPACE and DEFAULT_WORKSPACE not in new_path.parents:
+        raise PermissionError("Workspace must be inside mounted workspace")
 
     if not new_path.is_dir():
         raise ValueError(f"Workspace is not a directory: {new_path}")
@@ -102,31 +88,25 @@ def resolve_path(path: str) -> Path:
 
     workspace = current_workspace()
     if p != workspace and workspace not in p.parents:
-        raise PermissionError(
-            "Access outside workspace denied."
-        )
+        raise PermissionError("Access outside workspace denied.")
 
     return p
 
 
 def ignored(path: Path) -> bool:
 
-    return any(
-        part in IGNORE_DIRS
-        for part in path.parts
-    )
+    return any(part in IGNORE_DIRS for part in path.parts)
 
 
 def relative(path: Path):
 
-    return str(
-        path.relative_to(current_workspace())
-    )
+    return str(path.relative_to(current_workspace()))
 
 
 # ============================================================
 # Workspace
 # ============================================================
+
 
 @tool
 def workspace_root():
@@ -134,14 +114,13 @@ def workspace_root():
     Return the mounted workspace location.
     """
 
-    return {
-        "workspace": str(current_workspace())
-    }
+    return {"workspace": str(current_workspace())}
 
 
 # ============================================================
 # Tree
 # ============================================================
+
 
 @tool
 def tree(
@@ -153,7 +132,6 @@ def tree(
     """
 
     try:
-
         root = resolve_path(directory)
 
         output = []
@@ -172,17 +150,12 @@ def tree(
             )
 
             for entry in entries:
-
                 if ignored(entry):
                     continue
 
-                output.append(
-                    "  " * level +
-                    entry.name
-                )
+                output.append("  " * level + entry.name)
 
                 if entry.is_dir():
-
                     walk(
                         entry,
                         level + 1,
@@ -193,15 +166,13 @@ def tree(
         return "\n".join(output)
 
     except Exception as e:
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 
 # ============================================================
 # List Files
 # ============================================================
+
 
 @tool
 def list_files(
@@ -212,13 +183,11 @@ def list_files(
     """
 
     try:
-
         path = resolve_path(directory)
 
         files = []
 
         for file in sorted(path.iterdir()):
-
             if ignored(file):
                 continue
 
@@ -226,25 +195,20 @@ def list_files(
                 {
                     "name": file.name,
                     "path": relative(file),
-                    "type":
-                        "directory"
-                        if file.is_dir()
-                        else "file",
+                    "type": "directory" if file.is_dir() else "file",
                 }
             )
 
         return files
 
     except Exception as e:
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 
 # ============================================================
 # Read File
 # ============================================================
+
 
 @tool
 def read_file(
@@ -255,22 +219,13 @@ def read_file(
     """
 
     try:
-
         path = resolve_path(file_path)
 
         if not path.exists():
-
-            return {
-                "error":
-                    "File not found"
-            }
+            return {"error": "File not found"}
 
         if path.stat().st_size > MAX_FILE_SIZE:
-
-            return {
-                "error":
-                    "File exceeds maximum size."
-            }
+            return {"error": "File exceeds maximum size."}
 
         return path.read_text(
             encoding="utf-8",
@@ -278,15 +233,13 @@ def read_file(
         )
 
     except Exception as e:
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 
 # ============================================================
 # Find File
 # ============================================================
+
 
 @tool
 def find_file(
@@ -297,32 +250,25 @@ def find_file(
     """
 
     try:
-
         matches = []
 
         for file in current_workspace().rglob("*"):
-
             if ignored(file):
                 continue
 
             if filename.lower() in file.name.lower():
-
-                matches.append(
-                    relative(file)
-                )
+                matches.append(relative(file))
 
         return matches[:100]
 
     except Exception as e:
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 
 # ============================================================
 # Search Text
 # ============================================================
+
 
 @tool
 def search_text(
@@ -334,13 +280,11 @@ def search_text(
     """
 
     try:
-
         root = resolve_path(directory)
 
         matches = []
 
         for file in root.rglob("*"):
-
             if ignored(file):
                 continue
 
@@ -348,7 +292,6 @@ def search_text(
                 continue
 
             try:
-
                 text = file.read_text(
                     encoding="utf-8",
                     errors="ignore",
@@ -358,23 +301,18 @@ def search_text(
                 continue
 
             if keyword.lower() in text.lower():
-
-                matches.append(
-                    relative(file)
-                )
+                matches.append(relative(file))
 
         return matches[:100]
 
     except Exception as e:
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 
 # ============================================================
 # Project Summary
 # ============================================================
+
 
 @tool
 def project_summary():
@@ -387,7 +325,6 @@ def project_summary():
     important = []
 
     for file in current_workspace().rglob("*"):
-
         if ignored(file):
             continue
 
@@ -396,9 +333,7 @@ def project_summary():
 
         ext = file.suffix.lower()
 
-        extensions[ext] = (
-            extensions.get(ext, 0) + 1
-        )
+        extensions[ext] = extensions.get(ext, 0) + 1
 
         if file.name in {
             "docker-compose.yml",
@@ -409,10 +344,7 @@ def project_summary():
             "package.json",
             ".env.example",
         }:
-
-            important.append(
-                relative(file)
-            )
+            important.append(relative(file))
 
     return {
         "workspace": str(current_workspace()),
@@ -420,9 +352,11 @@ def project_summary():
         "languages": extensions,
     }
 
+
 # ============================================================
 # Inspect Multiple Files
 # ============================================================
+
 
 @tool
 def inspect_files(
@@ -437,85 +371,51 @@ def inspect_files(
     results = []
 
     try:
-
         for item in paths:
-
             path = resolve_path(item)
 
             if not path.exists():
-
-                results.append(
-                    {
-                        "path": item,
-                        "error": "Not found"
-                    }
-                )
+                results.append({"path": item, "error": "Not found"})
 
                 continue
 
-
             if path.is_dir():
-
                 files = []
 
                 for f in path.iterdir():
-
                     if ignored(f):
                         continue
 
-                    files.append(
-                        f.name
-                    )
+                    files.append(f.name)
 
                 results.append(
-                    {
-                        "path": item,
-                        "type": "directory",
-                        "contents": files[:100]
-                    }
+                    {"path": item, "type": "directory", "contents": files[:100]}
                 )
 
             else:
-
                 if path.stat().st_size > MAX_FILE_SIZE:
-
-                    results.append(
-                        {
-                            "path": item,
-                            "error":
-                                "File too large"
-                        }
-                    )
+                    results.append({"path": item, "error": "File too large"})
 
                     continue
-
 
                 results.append(
                     {
                         "path": item,
                         "type": "file",
-                        "content":
-                            path.read_text(
-                                encoding="utf-8",
-                                errors="ignore"
-                            )
+                        "content": path.read_text(encoding="utf-8", errors="ignore"),
                     }
                 )
 
-
         return results
 
-
     except Exception as e:
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
 
 # ============================================================
 # Controlled coding tools
 # ============================================================
+
 
 @tool
 def write_file(file_path: str, content: str, overwrite: bool = False):
@@ -528,12 +428,18 @@ def write_file(file_path: str, content: str, overwrite: bool = False):
     try:
         path = resolve_path(file_path)
         if path.exists() and not overwrite:
-            return {"error": "File exists; reread it and set overwrite=true to replace it."}
+            return {
+                "error": "File exists; reread it and set overwrite=true to replace it."
+            }
         if len(content.encode("utf-8")) > MAX_FILE_SIZE:
             return {"error": "Content exceeds maximum size."}
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-        return {"status": "written", "path": relative(path), "bytes": path.stat().st_size}
+        return {
+            "status": "written",
+            "path": relative(path),
+            "bytes": path.stat().st_size,
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -557,7 +463,10 @@ def run_tests(kind: str = "pytest", directory: str = "."):
         if not cwd.is_dir():
             return {"error": "Test directory is not a directory."}
         result = subprocess.run(
-            commands[kind], cwd=cwd, text=True, capture_output=True,
+            commands[kind],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
             timeout=int(os.getenv("COMMAND_TIMEOUT_SECONDS", "120")),
             check=False,
         )

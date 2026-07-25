@@ -2,7 +2,7 @@ import uuid
 from contextlib import nullcontext
 from unittest.mock import patch
 
-from app.agent import run_agent, ingest_documents
+from app.agent import ingest_documents, run_agent
 
 
 @patch("app.agent.workspace_context", return_value=nullcontext())

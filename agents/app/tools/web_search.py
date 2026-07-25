@@ -37,11 +37,19 @@ def web_search(query: str, domains: list[str] | None = None):
         for item in response.json().get("results", []):
             url = item.get("url", "")
             hostname = (urlparse(url).hostname or "").lower()
-            if domains and not any(hostname == domain.lower() or hostname.endswith("." + domain.lower()) for domain in domains):
+            if domains and not any(
+                hostname == domain.lower() or hostname.endswith("." + domain.lower())
+                for domain in domains
+            ):
                 continue
-            results.append({"title": item.get("title", "Untitled"), "url": url,
-                            "content": item.get("content", "")[:1000],
-                            "published_date": item.get("publishedDate")})
+            results.append(
+                {
+                    "title": item.get("title", "Untitled"),
+                    "url": url,
+                    "content": item.get("content", "")[:1000],
+                    "published_date": item.get("publishedDate"),
+                }
+            )
             if len(results) >= MAX_RESULTS:
                 break
         return {"query": query, "results": results}
