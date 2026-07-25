@@ -1,0 +1,15 @@
+use_default_settings: true
+
+general:
+  instance_name: "AI Stack Search"
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: "0.0.0.0"
+  limiter: false
+  image_proxy: true
