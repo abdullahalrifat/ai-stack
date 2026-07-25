@@ -22,6 +22,7 @@ from ..runs.store import get_run_store
 from ..runs.sandbox import Sandbox, create_sandbox, merge_sandbox, remove_sandbox, sandbox_diff
 from .state import AgentState
 from ..tools.filesystem import workspace_context
+from ..api.profiles import resolve_profile
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ def run_agent(
     on_event=None,
     on_token=None,
     force_research=False,
+    prompt_mode="code",
 ):
     """Synchronous, single-response agent turn.
 
@@ -96,6 +98,7 @@ def run_agent(
         conversation_id=conversation_id,
         user_message=message,
         model=_task_model(message, model),
+        prompt_mode=prompt_mode,
         allow_write=allow_write,
         workspace=workspace,
     )
@@ -152,7 +155,16 @@ def execute_run(run_id: str) -> None:
     conversation_id = run["conversation_id"] or run_id
     requested_workspace = run["requested_workspace"]
     allow_write = run["allow_write"]
-    model = run["model"]
+    requested_model = run["model"]
+    try:
+        profile = resolve_profile(requested_model)
+        model = profile.model
+        prompt_mode = profile.prompt_mode
+        force_research = profile.force_research
+    except ValueError:
+        model = requested_model
+        prompt_mode = "custom"
+        force_research = False
     task = run["task"]
 
     sandbox: Sandbox | None = None
@@ -175,6 +187,7 @@ def execute_run(run_id: str) -> None:
             conversation_id=conversation_id,
             user_message=task,
             model=_task_model(task, model),
+            prompt_mode=prompt_mode,
             allow_write=allow_write,
             workspace=active_workspace,
         )
@@ -185,7 +198,8 @@ def execute_run(run_id: str) -> None:
             state.memories = search_memory(task)
 
             on_event("planning", {})
-            state.plan = [] if requires_external_search(task) else create_plan(state)
+            research_mode = force_research or requires_external_search(task)
+            state.plan = [] if research_mode else create_plan(state)
             on_event("plan_ready", {"plan": state.plan})
 
             answer = execute_plan(
@@ -193,6 +207,7 @@ def execute_run(run_id: str) -> None:
                 on_event=on_event,
                 on_token=lambda content: on_event("output_delta", {"content": content}),
                 should_cancel=cancelled,
+                force_research=force_research,
             )
 
         diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None

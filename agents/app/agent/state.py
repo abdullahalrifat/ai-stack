@@ -20,6 +20,8 @@ class AgentState:
 
     model: str = DEFAULT_MODEL
 
+    prompt_mode: str = "code"
+
     allow_write: bool = False
 
     plan: list = field(default_factory=list)

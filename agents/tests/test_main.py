@@ -59,7 +59,7 @@ def test_openai_research_profile_forces_research_mode():
 def test_openai_models_include_task_profiles():
     ids = {model["id"] for model in routes.models()["data"]}
 
-    assert {"coding-agent", "auto", "code", "research", "finance", "deep", "vision"} <= ids
+    assert {"coding-agent", "auto", "quick", "code", "research", "finance", "deep", "vision"} <= ids
 
 
 def test_auto_profile_uses_fast_model_while_code_uses_default_model():

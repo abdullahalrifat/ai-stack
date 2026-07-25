@@ -62,7 +62,7 @@ export function App() {
   const follow = async (run: Run) => { cursor.current = 0; setEvents([]); setAnswer(""); setDiff(""); setActive(run); try { while (!terminal.has(run.status)) { cursor.current = await streamEvents(key, run.id, cursor.current, consume); const current = await api<Run>(key, `/runs/${run.id}`); run = current; setActive(current); if (terminal.has(current.status)) break; } await loadRuns(); } catch (e) { setError(String(e)); } };
   const start = async (event: FormEvent) => { event.preventDefault(); setError(""); if (!task.trim()) return; try {
     if (effectiveProfile === "image") { const data = await api<{ created: number; data: { url: string }[] }>(key, "/images/generations", { method: "POST", body: JSON.stringify({ prompt: task }) }); setImages((old) => [...data.data.map((item) => ({ url: item.url, created: data.created, prompt: task })), ...old]); return; }
-    const context = await attachmentContext(files); const selected = models.includes(recommendedModel) ? recommendedModel : models[0];
+    const context = await attachmentContext(files); const selected = effectiveProfile === "custom" ? customModel : effectiveProfile;
     const result = await api<{ run_id: string; status: string }>(key, "/runs", { method: "POST", body: JSON.stringify({ task: `${task}${context}`, workspace, model: selected, allow_write: effectiveProfile === "code" && write }) });
     await follow({ id: result.run_id, status: result.status, task, model: selected, requested_workspace: workspace, allow_write: effectiveProfile === "code" && write, created_at: new Date().toISOString() });
   } catch (e) { setError(String(e)); } };

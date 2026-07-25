@@ -10,6 +10,7 @@ from app.agent.executor import (
     financial_research_queries,
     normalize_tool_args,
 )
+from app.agent.prompts import executor_prompt
 
 
 class DummyState:
@@ -104,6 +105,21 @@ def test_financial_research_queries_cover_company_and_sector_evidence():
     assert "annual report" in queries[1]
     assert "latest company news" in queries[2]
     assert "pharmaceutical healthcare sector" in queries[3]
+
+
+@pytest.mark.parametrize(
+    ("mode", "research", "expected"),
+    [
+        ("quick", False, "fast personal assistant"),
+        ("code", False, "software engineering agent"),
+        ("research", True, "web-research agent"),
+        ("finance", True, "finance research request"),
+        ("deep", False, "careful analysis agent"),
+        ("vision", False, "image-aware assistant"),
+    ],
+)
+def test_executor_prompt_selects_profile_policy(mode, research, expected):
+    assert expected in executor_prompt(mode, research)
 
 
 # ----------------------------------------------------

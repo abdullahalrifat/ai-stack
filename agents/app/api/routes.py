@@ -73,13 +73,16 @@ async def chat(request: ChatRequest):
         raise HTTPException(400, "Message cannot be empty")
 
     try:
+        profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
         return await run_in_threadpool(
             run_agent,
             request.message,
             request.conversation_id,
             request.workspace,
-            request.model or DEFAULT_MODEL,
+            profile.model if profile else request.model or DEFAULT_MODEL,
             request.allow_write,
+            force_research=profile.force_research if profile else False,
+            prompt_mode=profile.prompt_mode if profile else "custom",
         )
 
     except Exception as e:
@@ -91,13 +94,16 @@ async def chat(request: ChatRequest):
 
 @router.post("/execute", dependencies=[Depends(verify_api_key)])
 async def execute(request: ExecuteRequest):
+    profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
     return await run_in_threadpool(
         run_agent,
         request.task,
         request.conversation_id,
         request.workspace,
-        request.model or DEFAULT_MODEL,
+        profile.model if profile else request.model or DEFAULT_MODEL,
         request.allow_write,
+        force_research=profile.force_research if profile else False,
+        prompt_mode=profile.prompt_mode if profile else "custom",
     )
 
 
@@ -311,6 +317,7 @@ async def openai_chat(
                         on_event=lambda kind, payload: updates.put(("event", (kind, payload))),
                         on_token=lambda content: updates.put(("token", content)),
                         force_research=profile.force_research,
+                        prompt_mode=profile.prompt_mode,
                     )
                     finished["answer"] = result["answer"]
                 except Exception as exc:
@@ -385,6 +392,7 @@ async def openai_chat(
         profile.model,
         request.allow_write,
         force_research=profile.force_research,
+        prompt_mode=profile.prompt_mode,
     )
 
     return {

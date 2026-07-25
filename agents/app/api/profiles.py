@@ -8,18 +8,20 @@ from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, FINANCE_M
 @dataclass(frozen=True)
 class AgentProfile:
     model: str
+    prompt_mode: str = "code"
     force_research: bool = False
 
 
 # `coding-agent` is retained for existing Open WebUI conversations.
 PROFILES: dict[str, AgentProfile] = {
-    AGENT_MODEL_ID: AgentProfile(DEFAULT_MODEL),
-    "auto": AgentProfile(FAST_MODEL),
-    "code": AgentProfile(DEFAULT_MODEL),
-    "research": AgentProfile(RESEARCH_MODEL, force_research=True),
-    "finance": AgentProfile(FINANCE_MODEL, force_research=True),
-    "deep": AgentProfile("reasoning"),
-    "vision": AgentProfile("vision"),
+    AGENT_MODEL_ID: AgentProfile(DEFAULT_MODEL, "code"),
+    "auto": AgentProfile(FAST_MODEL, "quick"),
+    "quick": AgentProfile(FAST_MODEL, "quick"),
+    "code": AgentProfile(DEFAULT_MODEL, "code"),
+    "research": AgentProfile(RESEARCH_MODEL, "research", force_research=True),
+    "finance": AgentProfile(FINANCE_MODEL, "finance", force_research=True),
+    "deep": AgentProfile("reasoning", "deep"),
+    "vision": AgentProfile("vision", "vision"),
 }
 
 

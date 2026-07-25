@@ -12,7 +12,7 @@ from ..core.config import (
 from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
-from .prompts import COMPACTION_PROMPT, EXECUTOR_PROMPT, WEB_RESEARCH_PROMPT
+from .prompts import COMPACTION_PROMPT, executor_prompt
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
 
@@ -336,7 +336,7 @@ Plan:
 """
 
     messages = [
-        {"role": "system", "content": WEB_RESEARCH_PROMPT if research_mode else EXECUTOR_PROMPT},
+        {"role": "system", "content": executor_prompt(getattr(state, "prompt_mode", "code"), research_mode)},
         {"role": "user", "content": task_context},
     ]
 
