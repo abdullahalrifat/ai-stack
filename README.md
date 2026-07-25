@@ -18,16 +18,17 @@ Open WebUI ---- Postgres / Redis / Qdrant
                  |
            Coding-agent API
                  |
-      request-scoped /workspace mount
+      request-scoped workspace mount(s)
 ```
 
 - **Ollama** runs local models.
 - **LiteLLM** provides the shared OpenAI-compatible inference endpoint.
 - **Open WebUI** is the human chat interface.
 - **Qdrant, Redis, and PostgreSQL** support retrieval, conversation state, and
-  application data.
-- **Coding agent** plans repository work, reads/searches files, can make
-  explicitly approved file changes, and runs a small allowlist of test commands.
+  durable agent run history.
+- **Coding agent** plans repository work, reads/searches/edits files, runs an
+  allowlisted set of commands, and can make explicitly approved file changes
+  inside a disposable, reviewable sandbox.
 - **SearXNG** provides private metasearch for agent web research; it is internal
   to the Docker network and never exposed as a public port.
 
@@ -41,6 +42,9 @@ Open WebUI ---- Postgres / Redis / Qdrant
 
    Generate long random values for all credentials. Set `WORKSPACE_PATH` to the
    smallest host directory that contains repositories you want the agent to see.
+   If you need the agent to see more than one directory, mount each one as its
+   own volume in `docker-compose.yaml` and list the in-container paths in
+   `WORKSPACE_ROOTS` (comma-separated).
 
 2. Build the two local images and start the stack:
 
@@ -49,6 +53,9 @@ Open WebUI ---- Postgres / Redis / Qdrant
    docker compose up -d
    ./download_models.sh
    ```
+
+   The agent image must include `git` -- it is required both for the
+   `run_command` tool's `git` operations and for sandboxed write-enabled runs.
 
 3. Open Open WebUI at `http://localhost:3000`. The gateway, vector database,
    Ollama, pipelines service, and agent bind to `127.0.0.1` by default. Put an
@@ -68,11 +75,51 @@ Use LiteLLM from IDE tools that support an OpenAI-compatible endpoint. Select
 `coder` for code work, `reasoning` for difficult analysis, `vision` for images,
 and `embedding` only for embeddings.
 
-The agent requires `Authorization: Bearer $AGENT_API_KEY`. Use `/chat` for
-analysis and `/execute` for a task. Set `allow_write: true` only when you want
-the agent to use `write_file`; it is false by default. The agent never receives
-the host Docker socket and cannot issue arbitrary shell commands. Its only test
-commands are `pytest`, `python_compile`, and `npm_test`, each with a timeout.
+The agent requires `Authorization: Bearer $AGENT_API_KEY` on every endpoint
+except `/health`. Tool calls are made through the model's native function
+calling rather than hand-written JSON, and the tools available to it are:
+`list_files`, `tree`, `read_file`, `find_file`, `search_text`,
+`project_summary`, `inspect_files`, `edit_file`, `write_file`, `run_command`,
+`run_tests`, and `web_search`. `edit_file`, `write_file`, and `run_command` are
+only exposed when a request explicitly sets `allow_write: true`; it is `false`
+by default.
+
+### Single-response requests
+
+`POST /chat` and `POST /execute` block until the agent finishes and return one
+answer. If `allow_write` is set on these endpoints, edits are applied directly
+to the request's workspace with no sandboxing or review step -- use them for
+read-only analysis, or for writes you're comfortable applying immediately.
+
+### Durable, streamed, reviewable runs
+
+`POST /runs` (requires `POSTGRES_URL` to be configured) starts a run in the
+background and returns a `run_id` immediately:
+
+- `GET /runs/{run_id}` -- current status and, once finished, the answer.
+- `GET /runs/{run_id}/events` -- a Server-Sent Events stream of every step,
+  tool call, tool result, and (for write-enabled runs) the generated diff, as
+  they happen.
+- `POST /runs/{run_id}/approve` -- for a write-enabled run, applies the
+  reviewed diff to the real repository.
+- `POST /runs/{run_id}/discard` -- discards a write-enabled run's sandbox
+  without merging it.
+
+Write-enabled `/runs` requests execute inside a disposable Git worktree
+(`SANDBOX_ROOT`) rather than the real repository. The run moves to
+`awaiting_approval` with a diff attached once investigation and edits are
+complete; nothing touches your actual files until you call `/approve`. This
+is the safer path for write-enabled work -- prefer it over `allow_write` on
+`/chat`/`/execute` when you want a chance to review changes first.
+
+### Commands the agent can run
+
+The agent does not have shell access. `run_command` executes a single,
+allowlisted executable (no `&&`, `|`, `;`, `>`, backticks, or subshells) with a
+timeout, configured via `ALLOWED_COMMANDS` (defaults to a set of common dev
+tools: `git`, `pytest`, `npm`, `make`, linters, etc.). `run_tests` remains
+available as a smaller, fixed-preset alternative (`pytest`, `python_compile`,
+`npm_test`).
 
 ### Agent in Open WebUI
 
@@ -88,6 +135,9 @@ Open WebUI also supports adding the agent manually at **Admin Settings →
 Connections → OpenAI → Add New Connection** using URL
 `http://agents:8000/v1`, the `AGENT_API_KEY`, and a prefix such as `agent/`.
 Keep this as an administrator-managed connection: it stores the key server-side.
+Note that Open WebUI's chat connection only talks to `/v1/chat/completions`,
+which is a single-response call; use the agent's own API directly (or a
+thin client) to use the streamed `/runs` workflow.
 
 ### Web research
 
@@ -101,9 +151,19 @@ them and to return the source URLs it relied on. Disable it with
 ## Security model
 
 - `AGENT_API_KEY` is mandatory. The only exception is explicit local
-  development mode with `ALLOW_INSECURE_NO_AUTH=true`.
-- Workspace paths are validated under `/workspace` for every request; one
-  request cannot alter another request's workspace selection.
+  development mode with `ALLOW_INSECURE_NO_AUTH=true`. Comparison against the
+  provided key is constant-time.
+- Workspace paths are validated against `WORKSPACE_DIR` and any additional
+  `WORKSPACE_ROOTS` on every request; one request cannot alter another
+  request's workspace selection, and a request cannot escape the configured
+  roots via `..` or symlinks.
+- The agent does not have general shell access. `run_command` only executes a
+  single command from an administrator-configured allowlist, with shell
+  metacharacters (chaining, redirection, subshells) rejected outright.
+- Write-enabled `/runs` requests execute inside a disposable Git worktree, not
+  the real repository, and require an explicit `/approve` call before changes
+  reach your actual files. `/chat` and `/execute` do not sandbox writes --
+  reserve `allow_write` on those for changes you're fine applying immediately.
 - The agent container has no Docker socket, all Linux capabilities are dropped,
   and `no-new-privileges` is enabled.
 - Do not expose the default ports directly to a LAN or the internet. Use a
@@ -111,6 +171,7 @@ them and to return the source URLs it relied on. Disable it with
 - Treat uploaded documents, retrieved text, and repository instructions as
   untrusted. They must not authorize tool use or secret access.
 - Back up PostgreSQL, Qdrant, Redis, Open WebUI data, and Ollama model storage.
+  PostgreSQL now also holds durable run/event history for `/runs`.
 
 ## Financial research roadmap
 
@@ -125,5 +186,6 @@ must require a user confirmation and an auditable approval record.
 
 Before relying on this beyond personal use, add an identity provider, per-user
 LiteLLM keys/quotas, centralized logs and metrics, backups with restore tests,
-model and tool-use evaluations, and a disposable per-task sandbox for code that
-is not already trusted. Pin container image digests after validating a release.
+model and tool-use evaluations, and stricter resource limits (CPU/memory) on
+the agent container given it now executes real commands, even if allowlisted.
+Pin container image digests after validating a release.

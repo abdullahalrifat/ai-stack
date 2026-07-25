@@ -6,12 +6,12 @@ model_list:
 
   - model_name: qwen3-8b
     litellm_params:
-      model: ollama/qwen3:8b
+      model: ollama_chat/qwen3:8b
       api_base: http://ollama:11434
 
   - model_name: qwen3-14b
     litellm_params:
-      model: ollama/qwen3:14b
+      model: ollama_chat/qwen3:14b
       api_base: http://ollama:11434
 
   ###########################################################
@@ -20,8 +20,10 @@ model_list:
 
   - model_name: coder
     litellm_params:
-      model: ollama/qwen3-coder:30b
+      model: ollama_chat/qwen3-coder:30b
       api_base: http://ollama:11434
+    model_info:
+      supports_function_calling: true
 
   ###########################################################
   # Reasoning
@@ -29,7 +31,7 @@ model_list:
 
   - model_name: reasoning
     litellm_params:
-      model: ollama/deepseek-r1:14b
+      model: ollama_chat/deepseek-r1:14b
       api_base: http://ollama:11434
 
   ###########################################################
@@ -38,7 +40,7 @@ model_list:
 
   - model_name: vision
     litellm_params:
-      model: ollama/gemma3:12b
+      model: ollama_chat/gemma3:12b
       api_base: http://ollama:11434
 
   ###########################################################
