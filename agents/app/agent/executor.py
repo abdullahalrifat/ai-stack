@@ -52,6 +52,42 @@ _LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
 # up with a clear diagnostic instead of quietly burning all MAX_STEPS.
 MAX_LEAKED_TOOL_CALLS = 2
 
+# Models with weak native tool calling commonly answer current-data questions
+# from their training cutoff.  These requests must use the local search tool
+# before the model is allowed to synthesize an answer.
+_CURRENT_EXTERNAL_INFO = re.compile(
+    r"\b(?:latest|current|today(?:'s)?|real[ -]?time|closing|close price|"
+    r"stock|share price|market price|financial data|dse|nasdaq|nyse|"
+    r"search (?:the )?(?:web|internet)|look up)\b",
+    re.IGNORECASE,
+)
+
+
+def _requires_external_search(message: str) -> bool:
+    return bool(_CURRENT_EXTERNAL_INFO.search(message))
+
+
+def _prefetch_external_search(state, available_tools: list[str], on_event):
+    """Fetch current evidence before a non-tool-capable model can decline.
+
+    The workspace tool loop remains model-driven. This narrow preflight is
+    only for explicit/time-sensitive external requests, where answering from
+    a model's training data is known to be incorrect.
+    """
+    if "web_search" not in available_tools or not _requires_external_search(state.user_message):
+        return None
+
+    args = {"query": state.user_message}
+    on_event("tool_call", {"tool": "web_search", "args": args, "prefetch": True})
+    try:
+        result = registry.execute("web_search", args)
+    except Exception as exc:
+        logger.exception("Prefetch web search failed")
+        result = {"error": str(exc)}
+    state.add_tool("web_search", result)
+    on_event("tool_result", {"tool": "web_search", "result": result, "prefetch": True})
+    return result
+
 
 def _leaked_tool_call(text: str) -> bool:
     """Detect a model that printed the tool call it "would" make as JSON text
@@ -208,6 +244,15 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None) -> str
         available_tools = [t for t in available_tools if t not in WRITE_TOOLS]
 
     tools = schemas_for(available_tools)
+    external_search = _prefetch_external_search(state, available_tools, on_event)
+
+    external_context = ""
+    if external_search is not None:
+        external_context = f"""
+
+Current external search results (retrieved for this request; cite their URLs):
+{_truncate(json.dumps(external_search, default=str))}
+"""
 
     task_context = f"""
 Workspace:
@@ -224,6 +269,7 @@ Relevant memory:
 
 Plan:
 {state.plan}
+{external_context}
 """
 
     messages = [

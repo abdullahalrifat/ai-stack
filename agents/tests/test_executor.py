@@ -142,6 +142,24 @@ def test_execute_plan_executes_tool(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_prefetches_current_external_information(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    state.user_message = "Search Renata last closing price on DSE today"
+    mock_registry.list_tools.return_value = ["web_search"]
+    mock_registry.execute.return_value = {
+        "results": [{"title": "RENATA", "url": "https://example.test/renata"}]
+    }
+    mock_chat_with_tools.return_value = make_message(content="Result", tool_calls=None)
+
+    result = execute_plan(state)
+
+    assert result == "Result"
+    mock_registry.execute.assert_called_once_with("web_search", {"query": state.user_message})
+    assert "https://example.test/renata" in mock_chat_with_tools.call_args.args[0][1]["content"]
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_unavailable_tool(
     mock_chat_with_tools,
     mock_registry,
