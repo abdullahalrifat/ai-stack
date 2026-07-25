@@ -13,7 +13,7 @@ const profileInfo: Record<Profile, { title: string; description: string; model: 
   auto: { title: "Auto", description: "Routes routine work to the fast local model.", model: "quick" },
   code: { title: "Code", description: "Repository tools, tests, and reviewable edits.", model: "coder" },
   research: { title: "Research", description: "Current web evidence with sources.", model: "quick" },
-  finance: { title: "Finance", description: "Current market research and cautious scenarios.", model: "quick" },
+  finance: { title: "Finance", description: "Current market research and cautious scenarios.", model: "coder" },
   quick: { title: "Quick chat", description: "Fast summaries and simple questions.", model: "quick" },
   deep: { title: "Deep analysis", description: "Slower investigation and tradeoffs.", model: "reasoning" },
   vision: { title: "Image analysis", description: "Image-aware prompt analysis.", model: "vision" },

@@ -20,6 +20,7 @@ def env_list(name: str, default: str = "") -> list[str]:
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3-8b")
 AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "coding-agent")
 FAST_MODEL = os.getenv("FAST_MODEL", "quick")
+FINANCE_MODEL = os.getenv("FINANCE_MODEL", DEFAULT_MODEL)
 # Used by the Open WebUI coding-agent for current web/financial research when
 # no per-run model was explicitly selected in the Runs UI.
 RESEARCH_MODEL = os.getenv("RESEARCH_MODEL", FAST_MODEL)

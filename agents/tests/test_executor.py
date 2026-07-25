@@ -154,7 +154,9 @@ def test_execute_plan_prefetches_current_external_information(mock_chat_with_too
     result = execute_plan(state)
 
     assert result == "Result"
-    mock_registry.execute.assert_called_once_with("web_search", {"query": state.user_message})
+    assert mock_registry.execute.call_args.args[0] == "web_search"
+    assert mock_registry.execute.call_args.args[1]["query"].startswith(state.user_message)
+    assert mock_registry.execute.call_args.args[1]["query"].endswith("latest closing price historical data")
     assert "https://example.test/renata" in mock_chat_with_tools.call_args.args[0][1]["content"]
     tools = mock_chat_with_tools.call_args.kwargs["tools"]
     assert [tool["function"]["name"] for tool in tools] == ["web_search"]

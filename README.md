@@ -296,8 +296,9 @@ rather than extending `main.py` with business logic.
 
 The React Runs UI queries the public `GET /models/available` catalog and
 records the selected LiteLLM model for each run. In CPU mode, Auto, Quick,
-Research, and Finance use `quick` (Qwen3 4B), while Code uses `coder`
-(Qwen3 8B). `reasoning` and `vision` are slower manual choices. Never choose
+and Research use `quick` (Qwen3 4B), while Code and Finance use `coder`
+(Qwen3 8B) for more reliable evidence synthesis. `reasoning` and `vision` are
+slower manual choices. Never choose
 `embedding` for an agent run; it exists only for retrieval.
 
 When `agent.coding-agent` receives a current web/financial research request,

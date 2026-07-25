@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.api import dependencies, routes, schemas
 from app.api.profiles import PROFILES
-from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL
+from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, FINANCE_MODEL
 
 
 def request(stream: bool = False) -> schemas.OpenAIChatCompletionRequest:
@@ -65,6 +65,7 @@ def test_openai_models_include_task_profiles():
 def test_auto_profile_uses_fast_model_while_code_uses_default_model():
     assert PROFILES["auto"].model == FAST_MODEL
     assert PROFILES["code"].model == DEFAULT_MODEL
+    assert PROFILES["finance"].model == FINANCE_MODEL
 
 
 def test_available_models_is_a_public_gateway_catalog():

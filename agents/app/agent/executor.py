@@ -61,6 +61,11 @@ _CURRENT_EXTERNAL_INFO = re.compile(
     r"search (?:the )?(?:web|internet)|look up)\b",
     re.IGNORECASE,
 )
+_FINANCIAL_QUERY = re.compile(
+    r"\b(?:stock|share price|market price|financial data|portfolio|dse|nasdaq|nyse|"
+    r"closing|close price)\b",
+    re.IGNORECASE,
+)
 _RESEARCH_REFUSAL = re.compile(
     r"(?:cannot|can't|do not)\s+(?:directly\s+)?(?:access|retrieve).*?(?:real[ -]?time|stock|market|data)|"
     r"do not have access to real[ -]?time",
@@ -70,6 +75,10 @@ _RESEARCH_REFUSAL = re.compile(
 
 def requires_external_search(message: str) -> bool:
     return bool(_CURRENT_EXTERNAL_INFO.search(message))
+
+
+def is_financial_query(message: str) -> bool:
+    return bool(_FINANCIAL_QUERY.search(message))
 
 
 def _prefetch_external_search(state, available_tools: list[str], on_event):
@@ -82,7 +91,10 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
     if "web_search" not in available_tools or not requires_external_search(state.user_message):
         return None
 
-    args = {"query": state.user_message}
+    query = state.user_message
+    if is_financial_query(query):
+        query = f"{query} latest closing price historical data"
+    args = {"query": query}
     on_event("tool_call", {"tool": "web_search", "args": args, "prefetch": True})
     try:
         result = registry.execute("web_search", args)

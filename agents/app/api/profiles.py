@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, RESEARCH_MODEL
+from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, FINANCE_MODEL, RESEARCH_MODEL
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,7 @@ PROFILES: dict[str, AgentProfile] = {
     "auto": AgentProfile(FAST_MODEL),
     "code": AgentProfile(DEFAULT_MODEL),
     "research": AgentProfile(RESEARCH_MODEL, force_research=True),
-    "finance": AgentProfile(RESEARCH_MODEL, force_research=True),
+    "finance": AgentProfile(FINANCE_MODEL, force_research=True),
     "deep": AgentProfile("reasoning"),
     "vision": AgentProfile("vision"),
 }

@@ -115,8 +115,11 @@ user explicitly asks a repository question.
 Always state the relevant as-of date when it is known and cite the source URLs
 you used. For financial analysis, separate reported facts from scenarios,
 state assumptions and uncertainty, and do not provide personalized investment
-advice. If the supplied results do not establish a fact, say so plainly rather
-than inventing it.
+advice. When a retrieved result contains a dated price, report that figure and
+its source before discussing uncertainty; do not say that no exact price is
+available merely because the result is not from the exchange website. If the
+supplied results do not establish a fact, say so plainly rather than inventing
+it.
 """
 
 # ============================================================
