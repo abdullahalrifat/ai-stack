@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from .config import (
     CONTEXT_COMPACT_EVERY_STEPS,
@@ -41,6 +42,48 @@ def normalize_tool_args(tool_name: str, args: dict) -> dict:
                 args[new] = args.pop(old)
 
     return args
+
+
+_LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
+
+# How many times a model may leak a tool call as text before the loop gives
+# up with a clear diagnostic instead of quietly burning all MAX_STEPS.
+MAX_LEAKED_TOOL_CALLS = 2
+
+
+def _leaked_tool_call(text: str) -> bool:
+    """Detect a model that printed the tool call it "would" make as JSON text
+    in its message content instead of using the API's native tool_calls
+    field. This happens when the configured backend/model does not actually
+    support OpenAI-style function calling even though it echoes the shape of
+    one -- most commonly an Ollama model/template served without real tool
+    support behind LiteLLM. Returning this text as a final answer would be
+    confusing and wrong, so it needs to be caught explicitly.
+    """
+
+    match = _LEAKED_TOOL_CALL_TAIL.search(text.strip())
+    if not match:
+        return False
+
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return False
+
+    items = data if isinstance(data, list) else [data]
+    if not items:
+        return False
+
+    for item in items:
+        if not isinstance(item, dict):
+            return False
+        if "function" in item or "tool_calls" in item or (
+            "tool" in item and "args" in item
+        ):
+            continue
+        return False
+
+    return True
 
 
 def _truncate(text: str) -> str:
@@ -136,6 +179,8 @@ Plan:
         {"role": "user", "content": task_context},
     ]
 
+    leaked_tool_call_count = 0
+
     for step in range(MAX_STEPS):
         state.steps += 1
         on_event("step_started", {"step": state.steps})
@@ -213,6 +258,48 @@ Plan:
                 {
                     "role": "user",
                     "content": "You must either call a tool or provide a complete final answer.",
+                }
+            )
+            continue
+
+        if _leaked_tool_call(answer):
+            leaked_tool_call_count += 1
+            logger.warning(
+                "Model produced a tool call as text content instead of using "
+                "native function calling (model=%s, occurrence=%d): %s",
+                state.model,
+                leaked_tool_call_count,
+                answer,
+            )
+            on_event(
+                "leaked_tool_call",
+                {"model": state.model, "content": answer},
+            )
+
+            if leaked_tool_call_count > MAX_LEAKED_TOOL_CALLS:
+                diagnostic = (
+                    f"The configured model ('{state.model}') is not using real "
+                    "function calling -- it keeps printing tool calls as text "
+                    "instead of invoking them. This is a model/gateway "
+                    "configuration issue, not a request problem: check that "
+                    "this model is served with native tool-calling support "
+                    "enabled (e.g. via LiteLLM's `ollama_chat` provider and a "
+                    "tool-capable model such as qwen2.5-coder or llama3.1), "
+                    "then retry."
+                )
+                state.finished = True
+                on_event("final_answer", {"answer": diagnostic})
+                return diagnostic
+
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Do not print tool calls as JSON text. Invoke the tool "
+                        "through the function-calling mechanism provided to "
+                        "you, or, if you are not calling a tool, respond with "
+                        "plain natural-language final_answer text only."
+                    ),
                 }
             )
             continue

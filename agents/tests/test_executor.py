@@ -1,4 +1,8 @@
+import json
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from app.executor import execute_plan, normalize_tool_args
 
@@ -24,6 +28,32 @@ class DummyState:
                 "result": result,
             }
         )
+
+
+def make_tool_call(call_id: str, name: str, arguments: dict):
+    """Build a stand-in for the OpenAI SDK's tool_call object: an object
+    with .id and .function.name / .function.arguments (a JSON string)."""
+    return SimpleNamespace(
+        id=call_id,
+        function=SimpleNamespace(name=name, arguments=json.dumps(arguments)),
+    )
+
+
+def make_message(content=None, tool_calls=None):
+    """Build a stand-in for the OpenAI SDK's response message object."""
+    return SimpleNamespace(content=content, tool_calls=tool_calls)
+
+
+@pytest.fixture(autouse=True)
+def no_real_compaction():
+    """Executor tests never run long enough to need real compaction, and
+    letting it run for real would call the live chat() completion. Keep the
+    history untouched instead."""
+    with patch(
+        "app.executor._compact_history",
+        side_effect=lambda messages, model: messages,
+    ):
+        yield
 
 
 # ----------------------------------------------------
@@ -61,20 +91,16 @@ def test_normalize_tool_args_no_change():
 
 
 @patch("app.executor.registry")
-@patch("app.executor.extract_json")
-@patch("app.executor.chat")
+@patch("app.executor.chat_with_tools")
 def test_execute_plan_returns_final_answer(
-    mock_chat,
-    mock_extract_json,
+    mock_chat_with_tools,
     mock_registry,
 ):
     state = DummyState()
 
     mock_registry.list_tools.return_value = []
 
-    mock_chat.return_value = '{"final_answer":"Done"}'
-
-    mock_extract_json.return_value = {"final_answer": "Done"}
+    mock_chat_with_tools.return_value = make_message(content="Done", tool_calls=None)
 
     result = execute_plan(state)
 
@@ -83,37 +109,23 @@ def test_execute_plan_returns_final_answer(
 
 
 @patch("app.executor.registry")
-@patch("app.executor.parse_tool_arguments")
-@patch("app.executor.extract_json")
-@patch("app.executor.chat")
+@patch("app.executor.chat_with_tools")
 def test_execute_plan_executes_tool(
-    mock_chat,
-    mock_extract_json,
-    mock_parse_args,
+    mock_chat_with_tools,
     mock_registry,
 ):
     state = DummyState()
 
     mock_registry.list_tools.return_value = ["list_files"]
-
-    mock_chat.side_effect = [
-        '{"tool":"list_files"}',
-        '{"final_answer":"Finished"}',
-    ]
-
-    mock_extract_json.side_effect = [
-        {
-            "tool": "list_files",
-            "args": {"directory": "."},
-        },
-        {
-            "final_answer": "Finished",
-        },
-    ]
-
-    mock_parse_args.return_value = {"directory": "."}
-
     mock_registry.execute.return_value = {"files": ["README.md"]}
+
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            content=None,
+            tool_calls=[make_tool_call("call_1", "list_files", {"directory": "."})],
+        ),
+        make_message(content="Finished", tool_calls=None),
+    ]
 
     result = execute_plan(state)
 
@@ -124,82 +136,101 @@ def test_execute_plan_executes_tool(
         {"directory": "."},
     )
 
+    assert state.observations[0]["tool"] == "list_files"
+    assert state.observations[0]["result"] == {"files": ["README.md"]}
+
 
 @patch("app.executor.registry")
-@patch("app.executor.extract_json")
-@patch("app.executor.chat")
+@patch("app.executor.chat_with_tools")
 def test_execute_plan_unavailable_tool(
-    mock_chat,
-    mock_extract_json,
+    mock_chat_with_tools,
     mock_registry,
 ):
     state = DummyState()
 
+    # write_file is not in the available tool list for this request.
     mock_registry.list_tools.return_value = []
 
-    mock_chat.return_value = "{}"
-
-    mock_extract_json.side_effect = [
-        {
-            "tool": "write_file",
-            "args": {},
-        },
-        {
-            "final_answer": "Done",
-        },
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            content=None,
+            tool_calls=[
+                make_tool_call(
+                    "call_1", "write_file", {"file_path": "x.py", "content": "y"}
+                )
+            ],
+        ),
+        make_message(content="Done", tool_calls=None),
     ]
 
     result = execute_plan(state)
 
     assert result == "Done"
+    mock_registry.execute.assert_not_called()
+    assert "unavailable" in state.observations[0]["result"]["error"]
 
 
 @patch("app.executor.registry")
-@patch("app.executor.extract_json")
-@patch("app.executor.chat")
-def test_execute_plan_invalid_json_retries(
-    mock_chat,
-    mock_extract_json,
+@patch("app.executor.chat_with_tools")
+def test_execute_plan_empty_content_retries(
+    mock_chat_with_tools,
     mock_registry,
 ):
     state = DummyState()
 
     mock_registry.list_tools.return_value = []
 
-    mock_chat.side_effect = [
-        "not json",
-        '{"final_answer":"Recovered"}',
-    ]
-
-    mock_extract_json.side_effect = [
-        ValueError("Invalid JSON"),
-        {
-            "final_answer": "Recovered",
-        },
+    # A response with neither tool_calls nor usable content must be treated
+    # as invalid and retried, rather than accepted as an empty final answer.
+    mock_chat_with_tools.side_effect = [
+        make_message(content="", tool_calls=None),
+        make_message(content="Recovered", tool_calls=None),
     ]
 
     result = execute_plan(state)
 
     assert result == "Recovered"
-    assert mock_chat.call_count == 2
+    assert mock_chat_with_tools.call_count == 2
 
 
 @patch("app.executor.registry")
-@patch("app.executor.chat")
-@patch("app.executor.extract_json")
+@patch("app.executor.chat_with_tools")
 def test_execute_plan_max_steps(
-    mock_extract_json,
-    mock_chat,
+    mock_chat_with_tools,
     mock_registry,
 ):
     state = DummyState()
 
     mock_registry.list_tools.return_value = []
 
-    mock_chat.return_value = "{}"
-
-    mock_extract_json.return_value = {}
+    # The model never calls a tool and never produces usable content, so
+    # every step is retried until MAX_STEPS is exhausted.
+    mock_chat_with_tools.return_value = make_message(content="", tool_calls=None)
 
     result = execute_plan(state)
 
     assert "Maximum execution steps" in result
+
+
+@patch("app.executor.registry")
+@patch("app.executor.chat_with_tools")
+def test_execute_plan_emits_events(
+    mock_chat_with_tools,
+    mock_registry,
+):
+    """The streaming hook used by durable /runs execution should observe at
+    least a step_started and a final_answer event."""
+    state = DummyState()
+
+    mock_registry.list_tools.return_value = []
+    mock_chat_with_tools.return_value = make_message(content="Done", tool_calls=None)
+
+    events = []
+    execute_plan(
+        state,
+        on_event=lambda event_type, payload: events.append((event_type, payload)),
+    )
+
+    event_types = [event_type for event_type, _ in events]
+    assert "step_started" in event_types
+    assert "final_answer" in event_types

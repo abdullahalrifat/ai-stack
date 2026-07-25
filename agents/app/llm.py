@@ -5,7 +5,7 @@ import time
 import requests
 from openai import OpenAI
 
-from .config import DEFAULT_MODEL, MODEL_LIST_CACHE_SECONDS
+from .config import DEFAULT_MODEL, MODEL_LIST_CACHE_SECONDS, AGENT_MODEL_ID
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ _model_cache: dict = {"models": None, "fetched_at": 0.0}
 
 
 def get_client():
+    
     global _client
 
     if _client is None:
@@ -24,6 +25,18 @@ def get_client():
 
     return _client
 
+
+def resolve_agent_model(model: str | None):
+
+    if not model:
+        return DEFAULT_MODEL
+
+    if model == AGENT_MODEL_ID:
+        return DEFAULT_MODEL
+
+    _ensure_model_available(model)
+
+    return model
 
 def get_available_models(force_refresh: bool = False):
     """Return the list of model ids the gateway currently serves.
