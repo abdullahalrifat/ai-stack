@@ -157,6 +157,15 @@ def report_pdf_link(result: dict) -> str | None:
     return None
 
 
+def financial_document_excerpt(text: str, limit: int = 3_000) -> str:
+    """Keep both report context and end-of-report audited statements."""
+
+    if len(text) <= limit:
+        return text
+    head = limit // 2
+    return f"{text[:head]}\n...[middle omitted]...\n{text[-(limit - head):]}"
+
+
 def _prefetch_external_search(state, available_tools: list[str], on_event):
     """Fetch current evidence before a non-tool-capable model can decline.
 
@@ -200,7 +209,7 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
                 result = {"error": str(exc)}
             if isinstance(result, dict) and isinstance(result.get("text"), str):
                 # Preserve room for both documents in the model context.
-                result = {**result, "text": result["text"][:3_000]}
+                result = {**result, "text": financial_document_excerpt(result["text"])}
             state.add_tool("web_fetch", result)
             on_event("tool_result", {"tool": "web_fetch", "result": result, "prefetch": True})
             documents.append(result)
@@ -217,7 +226,7 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
                     logger.exception("Prefetch report PDF fetch failed")
                     pdf_result = {"error": str(exc)}
                 if isinstance(pdf_result, dict) and isinstance(pdf_result.get("text"), str):
-                    pdf_result = {**pdf_result, "text": pdf_result["text"][:3_000]}
+                    pdf_result = {**pdf_result, "text": financial_document_excerpt(pdf_result["text"])}
                 state.add_tool("web_fetch", pdf_result)
                 on_event("tool_result", {"tool": "web_fetch", "result": pdf_result, "prefetch": True})
                 documents.append(pdf_result)

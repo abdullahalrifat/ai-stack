@@ -7,6 +7,7 @@ import pytest
 from app.agent.executor import (
     execute_plan,
     financial_document_urls,
+    financial_document_excerpt,
     report_pdf_link,
     financial_price_query,
     financial_research_queries,
@@ -142,6 +143,16 @@ def test_report_pdf_link_uses_annual_report_pdf_only():
     assert report_pdf_link({"links": ["https://company.test/about.pdf", "https://company.test/annual-report.pdf"]}) == (
         "https://company.test/annual-report.pdf"
     )
+
+
+def test_financial_document_excerpt_keeps_end_of_report():
+    text = "start" + ("x" * 4_000) + "audited statement"
+
+    excerpt = financial_document_excerpt(text, limit=1_000)
+
+    assert excerpt.startswith("start")
+    assert excerpt.endswith("audited statement")
+    assert "middle omitted" in excerpt
 
 
 @pytest.mark.parametrize(
