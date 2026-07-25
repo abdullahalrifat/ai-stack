@@ -92,8 +92,7 @@ def parse_plan(response: str) -> AgentPlan:
         )
 
     return AgentPlan(
-        thought=data.get("thought", ""),
-        actions=actions,
+        steps=actions,
     )
 
 

@@ -4,21 +4,23 @@ import requests
 from .config import DEFAULT_MODEL
 
 
-client = OpenAI(
+_client = None
 
-    base_url=os.getenv(
-        "OPENAI_API_BASE"
-    ),
+def get_client():
+    global _client
 
-    api_key=os.getenv(
-        "OPENAI_API_KEY"
-    )
+    if _client is None:
+        _client = OpenAI(
+            base_url=os.getenv("OPENAI_API_BASE"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+        )
 
-)
+    return _client
 
 
 def get_available_models():
 
+    
     base_url = os.getenv(
         "OPENAI_API_BASE",
         "http://litellm:4000/v1"
@@ -48,6 +50,8 @@ def get_available_models():
 def chat(messages, model=DEFAULT_MODEL):
 
     available = get_available_models()
+    client = get_client()
+
     if model not in available:
 
         raise ValueError(
