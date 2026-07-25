@@ -109,10 +109,52 @@ def financial_research_queries(message: str) -> list[str]:
     market = "Bangladesh" if re.search(r"\bdse\b", message, re.IGNORECASE) else ""
     return [
         price_query,
-        f"{subject} annual report revenue profit earnings financial statements pdf",
+        f"{subject} PLC annual report 2024 2025 revenue profit financial statements pdf",
         f"{subject} latest company news expansion earnings {market}",
         f"{market} pharmaceutical healthcare sector outlook inflation healthcare spending latest",
     ]
+
+
+def financial_document_urls(searches: list[dict]) -> list[str]:
+    """Choose one filing and one company-development source to read fully."""
+
+    chosen: list[str] = []
+    filing_query = searches[1].get("query", "") if len(searches) > 1 else ""
+    company = filing_query.split()[0].lower() if filing_query else ""
+    # Search positions: 1 = financial reports, 2 = company developments.
+    for index in (1, 2):
+        results = searches[index].get("results", []) if index < len(searches) else []
+        if not isinstance(results, list):
+            continue
+        candidates = [
+            item
+            for item in results
+            if company and company in f"{item.get('title', '')} {item.get('url', '')}".lower()
+        ]
+        if not company:
+            candidates = [item for item in results if isinstance(item, dict)]
+        # Never substitute an unrelated PDF when the company-specific source
+        # is absent. Prefer a company-matching PDF, then its report archive.
+        ordered = sorted(
+            candidates,
+            key=lambda item: 0 if ".pdf" in str(item.get("url", "")).lower() else 1,
+        )
+        for item in ordered:
+            url = item.get("url")
+            if isinstance(url, str) and url.startswith(("https://", "http://")):
+                chosen.append(url)
+                break
+    return chosen
+
+
+def report_pdf_link(result: dict) -> str | None:
+    """Find a report PDF linked by a fetched official archive page."""
+
+    for link in result.get("links", []) if isinstance(result, dict) else []:
+        lowered = str(link).lower()
+        if lowered.endswith(".pdf") and ("annual" in lowered or "report" in lowered):
+            return link
+    return None
 
 
 def _prefetch_external_search(state, available_tools: list[str], on_event):
@@ -143,7 +185,50 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
         on_event("tool_result", {"tool": "web_search", "result": result, "prefetch": True})
         searches.append(result)
 
-    return searches[0] if len(searches) == 1 else {"research_queries": searches}
+    if len(searches) == 1:
+        return searches[0]
+
+    documents = []
+    if "web_fetch" in available_tools:
+        for url in financial_document_urls(searches):
+            args = {"url": url}
+            on_event("tool_call", {"tool": "web_fetch", "args": args, "prefetch": True})
+            try:
+                result = registry.execute("web_fetch", args)
+            except Exception as exc:
+                logger.exception("Prefetch web fetch failed")
+                result = {"error": str(exc)}
+            if isinstance(result, dict) and isinstance(result.get("text"), str):
+                # Preserve room for both documents in the model context.
+                result = {**result, "text": result["text"][:3_000]}
+            state.add_tool("web_fetch", result)
+            on_event("tool_result", {"tool": "web_fetch", "result": result, "prefetch": True})
+            documents.append(result)
+            linked_pdf = report_pdf_link(result) if isinstance(result, dict) else None
+            if linked_pdf:
+                # The PDF is the substantive source; keep it in the bounded
+                # model context instead of spending that space on the archive.
+                documents.pop()
+                pdf_args = {"url": linked_pdf}
+                on_event("tool_call", {"tool": "web_fetch", "args": pdf_args, "prefetch": True})
+                try:
+                    pdf_result = registry.execute("web_fetch", pdf_args)
+                except Exception as exc:
+                    logger.exception("Prefetch report PDF fetch failed")
+                    pdf_result = {"error": str(exc)}
+                if isinstance(pdf_result, dict) and isinstance(pdf_result.get("text"), str):
+                    pdf_result = {**pdf_result, "text": pdf_result["text"][:3_000]}
+                state.add_tool("web_fetch", pdf_result)
+                on_event("tool_result", {"tool": "web_fetch", "result": pdf_result, "prefetch": True})
+                documents.append(pdf_result)
+
+    # Keep the price evidence and full-document extracts first: context is
+    # bounded later, so placement determines what the local model can use.
+    return {
+        "price_search": searches[0],
+        "documents": documents,
+        "other_research": searches[1:],
+    }
 
 
 def _leaked_tool_call(text: str) -> bool:

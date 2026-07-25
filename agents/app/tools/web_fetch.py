@@ -3,7 +3,7 @@
 from io import BytesIO
 from ipaddress import ip_address
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from langchain.tools import tool
@@ -12,7 +12,9 @@ import requests
 
 from app.core.config import WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS
 
-MAX_FETCH_BYTES = 2_000_000
+# Annual reports are commonly 3–7 MB because they include audited tables and
+# charts. Keep a firm cap while allowing typical public-company filings.
+MAX_FETCH_BYTES = 8_000_000
 MAX_TEXT_CHARS = 12_000
 MAX_PDF_PAGES = 12
 
@@ -39,7 +41,7 @@ def _read_bounded(response) -> bytes:
     for chunk in response.iter_content(chunk_size=32_768):
         size += len(chunk)
         if size > MAX_FETCH_BYTES:
-            raise ValueError("Document exceeds the 2 MB retrieval limit.")
+            raise ValueError("Document exceeds the 8 MB retrieval limit.")
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -72,21 +74,35 @@ def web_fetch(url: str):
         payload = _read_bounded(response)
         if "pdf" in content_type or url.lower().split("?", 1)[0].endswith(".pdf"):
             reader = PdfReader(BytesIO(payload))
-            text = "\n".join(
-                (page.extract_text() or "") for page in reader.pages[:MAX_PDF_PAGES]
-            )
+            # Annual reports place the business overview near the front and
+            # audited statements near the end. Sampling both is much more
+            # useful than blindly returning only the opening pages.
+            total_pages = len(reader.pages)
+            head = list(range(min(MAX_PDF_PAGES // 2, total_pages)))
+            tail_start = max(len(head), total_pages - (MAX_PDF_PAGES - len(head)))
+            page_numbers = head + list(range(tail_start, total_pages))
+            text = "\n".join((reader.pages[index].extract_text() or "") for index in page_numbers)
             document_type = "pdf"
         elif "html" in content_type or "text/" in content_type or not content_type:
-            text = BeautifulSoup(payload, "html.parser").get_text(" ", strip=True)
+            soup = BeautifulSoup(payload, "html.parser")
+            text = soup.get_text(" ", strip=True)
+            links = []
+            for anchor in soup.find_all("a", href=True):
+                link = urljoin(url, anchor["href"])
+                if link.startswith(("https://", "http://")) and link not in links:
+                    links.append(link)
             document_type = "html"
         else:
             return {"error": f"Unsupported content type: {content_type or 'unknown'}"}
-        return {
+        result = {
             "url": url,
             "document_type": document_type,
             "text": text[:MAX_TEXT_CHARS],
             "truncated": len(text) > MAX_TEXT_CHARS,
         }
+        if document_type == "html":
+            result["links"] = links[:50]
+        return result
     except (requests.RequestException, ValueError, OSError) as exc:
         return {"error": f"Web fetch failed: {exc.__class__.__name__}"}
     except Exception as exc:

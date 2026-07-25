@@ -6,6 +6,8 @@ import pytest
 
 from app.agent.executor import (
     execute_plan,
+    financial_document_urls,
+    report_pdf_link,
     financial_price_query,
     financial_research_queries,
     normalize_tool_args,
@@ -105,6 +107,41 @@ def test_financial_research_queries_cover_company_and_sector_evidence():
     assert "annual report" in queries[1]
     assert "latest company news" in queries[2]
     assert "pharmaceutical healthcare sector" in queries[3]
+
+
+def test_financial_document_urls_prefer_filing_pdf_and_company_news():
+    searches = [
+        {},
+        {"results": [{"url": "https://company.test/report"}, {"url": "https://company.test/report.pdf"}]},
+        {"results": [{"url": "https://news.test/company"}]},
+    ]
+
+    assert financial_document_urls(searches) == [
+        "https://company.test/report.pdf",
+        "https://news.test/company",
+    ]
+
+
+def test_financial_document_urls_reject_unrelated_pdf():
+    searches = [
+        {},
+        {"query": "Renata annual report", "results": [
+            {"title": "Renata annual report", "url": "https://renata.test/archive"},
+            {"title": "Other company annual report", "url": "https://other.test/report.pdf"},
+        ]},
+        {"results": [{"title": "Renata update", "url": "https://news.test/renata"}]},
+    ]
+
+    assert financial_document_urls(searches) == [
+        "https://renata.test/archive",
+        "https://news.test/renata",
+    ]
+
+
+def test_report_pdf_link_uses_annual_report_pdf_only():
+    assert report_pdf_link({"links": ["https://company.test/about.pdf", "https://company.test/annual-report.pdf"]}) == (
+        "https://company.test/annual-report.pdf"
+    )
 
 
 @pytest.mark.parametrize(
