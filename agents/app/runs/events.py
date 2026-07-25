@@ -11,7 +11,7 @@ from typing import Any
 
 import redis
 
-from .config import REDIS_URL
+from ..core.config import REDIS_URL
 
 
 def channel_for(run_id: str) -> str:

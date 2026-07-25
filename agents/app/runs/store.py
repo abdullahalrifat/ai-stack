@@ -10,7 +10,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .config import POSTGRES_URL
+from ..core.config import POSTGRES_URL
 
 
 class RunStore:

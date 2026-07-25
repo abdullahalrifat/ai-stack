@@ -1,5 +1,5 @@
-from .config import DEFAULT_MODEL
-from .llm import chat
+from ..core.config import DEFAULT_MODEL
+from ..llm.client import chat
 from .parser import extract_json
 from .prompts import PLANNER_PROMPT
 

@@ -1,6 +1,6 @@
 import pytest
 
-from app.parser import (
+from app.agent.parser import (
     ParserError,
     extract_final_answer,
     extract_json,

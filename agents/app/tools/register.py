@@ -10,7 +10,7 @@ Tool schemas for native function calling live in app/tool_schemas.py and
 must be kept in sync with the tool names registered below.
 """
 
-from app.tool_registry import registry
+from app.tools.registry import registry
 from app.tools.filesystem import (
     edit_file,
     find_file,

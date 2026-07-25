@@ -2,17 +2,17 @@ import uuid
 from contextlib import nullcontext
 from unittest.mock import patch
 
-from app.agent import ingest_documents, run_agent
-from app import agent
+from app.agent.service import ingest_documents, run_agent
+from app.agent import service as agent
 
 
-@patch("app.agent.workspace_context", return_value=nullcontext())
-@patch("app.agent.save_memory")
-@patch("app.agent.save_conversation")
-@patch("app.agent.execute_plan")
-@patch("app.agent.create_plan")
-@patch("app.agent.search_memory")
-@patch("app.agent.get_conversation")
+@patch("app.agent.service.workspace_context", return_value=nullcontext())
+@patch("app.agent.service.save_memory")
+@patch("app.agent.service.save_conversation")
+@patch("app.agent.service.execute_plan")
+@patch("app.agent.service.create_plan")
+@patch("app.agent.service.search_memory")
+@patch("app.agent.service.get_conversation")
 def test_run_agent(
     mock_get_conversation,
     mock_search_memory,
@@ -45,13 +45,13 @@ def test_run_agent(
     mock_save_memory.assert_called_once()
 
 
-@patch("app.agent.workspace_context", return_value=nullcontext())
-@patch("app.agent.save_memory")
-@patch("app.agent.save_conversation")
-@patch("app.agent.execute_plan")
-@patch("app.agent.create_plan")
-@patch("app.agent.search_memory")
-@patch("app.agent.get_conversation")
+@patch("app.agent.service.workspace_context", return_value=nullcontext())
+@patch("app.agent.service.save_memory")
+@patch("app.agent.service.save_conversation")
+@patch("app.agent.service.execute_plan")
+@patch("app.agent.service.create_plan")
+@patch("app.agent.service.search_memory")
+@patch("app.agent.service.get_conversation")
 def test_run_agent_generates_conversation_id(
     mock_get_conversation,
     mock_search_memory,
@@ -78,8 +78,8 @@ def test_run_agent_generates_conversation_id(
     mock_workspace.assert_called_once()
 
 
-@patch("app.agent.save_long_term_memory")
-@patch("app.agent.create_embedding")
+@patch("app.agent.service.save_long_term_memory")
+@patch("app.agent.service.create_embedding")
 def test_ingest_documents(
     mock_create_embedding,
     mock_save_long_term_memory,
@@ -100,8 +100,8 @@ def test_ingest_documents(
     assert mock_save_long_term_memory.call_count == 2
 
 
-@patch("app.agent.save_long_term_memory")
-@patch("app.agent.create_embedding")
+@patch("app.agent.service.save_long_term_memory")
+@patch("app.agent.service.create_embedding")
 def test_ingest_documents_skips_empty_documents(
     mock_create_embedding,
     mock_save_long_term_memory,
@@ -152,13 +152,13 @@ class FakeRunStore:
         return False
 
 
-@patch("app.agent.save_memory")
-@patch("app.agent.save_conversation")
-@patch("app.agent.execute_plan", return_value="completed answer")
-@patch("app.agent.create_plan", return_value=["inspect"])
-@patch("app.agent.search_memory", return_value=[])
-@patch("app.agent.get_conversation", return_value=[])
-@patch("app.agent.workspace_context", return_value=nullcontext())
+@patch("app.agent.service.save_memory")
+@patch("app.agent.service.save_conversation")
+@patch("app.agent.service.execute_plan", return_value="completed answer")
+@patch("app.agent.service.create_plan", return_value=["inspect"])
+@patch("app.agent.service.search_memory", return_value=[])
+@patch("app.agent.service.get_conversation", return_value=[])
+@patch("app.agent.service.workspace_context", return_value=nullcontext())
 def test_execute_read_only_run_persists_answer_and_events(
     mock_workspace,
     mock_history,
@@ -169,7 +169,7 @@ def test_execute_read_only_run_persists_answer_and_events(
     mock_save_memory,
 ):
     store = FakeRunStore()
-    with patch("app.agent.get_run_store", return_value=store):
+    with patch("app.agent.service.get_run_store", return_value=store):
         agent.execute_run("run-1")
 
     assert store.run["status"] == "completed"
@@ -219,7 +219,7 @@ def test_cancelled_before_start_is_not_executed(monkeypatch):
     store = FakeRunStore()
     store.is_cancel_requested = lambda _run_id: True
     monkeypatch.setattr(agent, "get_event_publisher", lambda: None)
-    with patch("app.agent.get_run_store", return_value=store), patch("app.agent.execute_plan") as execute:
+    with patch("app.agent.service.get_run_store", return_value=store), patch("app.agent.service.execute_plan") as execute:
         agent.execute_run("run-1")
 
     assert store.run["status"] == "cancelled"

@@ -26,15 +26,15 @@ from pydantic import BaseModel
 # Load tools before registry usage
 # =====================================================
 import app.tools.register
-from app.agent import (
+from app.agent.service import (
     approve_run,
     discard_run,
     execute_run,
     ingest_documents,
     run_agent,
 )
-from app.sandbox import remove_sandbox
-from app.config import (
+from app.runs.sandbox import remove_sandbox
+from app.core.config import (
     AGENT_API_KEY,
     AGENT_MODEL_ID,
     ALLOW_INSECURE_NO_AUTH,
@@ -43,17 +43,17 @@ from app.config import (
     WORKSPACE_ROOTS,
     validate_settings,
 )
-from app.events import get_event_publisher
+from app.runs.events import get_event_publisher
 from app.memory.embeddings import create_embedding
-from app.llm import get_available_models
+from app.llm.client import get_available_models
 from app.memory.memory import (
     get_conversation,
     search_memory,
 )
-from app.planner import create_plan
-from app.run_store import get_run_store
-from app.state import AgentState
-from app.tool_registry import registry
+from app.agent.planner import create_plan
+from app.runs.store import get_run_store
+from app.agent.state import AgentState
+from app.tools.registry import registry
 from app.tools.filesystem import list_files, validate_workspace
 
 logger = logging.getLogger(__name__)

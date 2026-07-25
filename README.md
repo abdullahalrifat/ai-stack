@@ -140,6 +140,34 @@ tools: `git`, `pytest`, `npm`, `make`, linters, etc.). `run_tests` remains
 available as a smaller, fixed-preset alternative (`pytest`, `python_compile`,
 `npm_test`).
 
+### Tests and coverage
+
+For a host IDE or terminal, install the agent test environment once:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+Then run the suite without requiring coverage output:
+
+```bash
+pytest
+```
+
+Coverage is opt-in, rather than a hidden requirement of every `pytest` call:
+
+```bash
+pytest --cov=app --cov-report=term-missing
+```
+
+The same dependencies, including `pytest-cov`, are already included in the
+agent image. From the agent container, execute from the mounted checkout so
+coverage measures the code under test:
+
+```bash
+docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tests --cov=app --cov-report=term-missing
+```
+
 ### Agent in Open WebUI
 
 For a new Open WebUI data directory, the Compose configuration seeds two
@@ -224,21 +252,18 @@ Pin container image digests after validating a release.
 
 ```text
 agents/app/
-  main.py          HTTP/OpenAI-compatible API and lifecycle wiring
-  agent.py         synchronous and durable run orchestration
-  executor.py      streamed native tool-calling loop
-  planner.py       model-driven task planning
-  llm.py           LiteLLM gateway client and model discovery
-  run_store.py     PostgreSQL runs, events, cancellation, recovery
-  events.py        Redis Pub/Sub delivery for connected clients
-  sandbox.py       Git worktrees, diffs, base-commit protection
-  tools/           filesystem, constrained commands, web search
+  main.py          stable FastAPI/OpenAI-compatible entry point
+  core/            configuration and shared exceptions
+  agent/           planning, prompts, state, parsing, tool loop, orchestration
+  llm/             LiteLLM gateway client and model discovery
+  runs/            PostgreSQL run store, live events, Git sandboxes
+  tools/           registry, schemas, filesystem, constrained commands, web search
   memory/          Redis conversations and Qdrant vector memory
 runs-ui/           main React/TypeScript coding-task application
 ```
 
-Keep HTTP routes, orchestration, persistence, sandboxing, tools, memory, and
-frontends separate. New capabilities should be added to the matching module
+Keep HTTP routes, agent behavior, persistence, sandboxing, tools, memory, and
+frontends separate. New capabilities should be added to the matching package
 rather than extending `main.py` with business logic.
 
 ## Model selection

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from app.planner import create_plan
+from app.agent.planner import create_plan
 
 
 class DummyState:
@@ -8,8 +8,8 @@ class DummyState:
         self.user_message = user_message
 
 
-@patch("app.planner.extract_json")
-@patch("app.planner.chat")
+@patch("app.agent.planner.extract_json")
+@patch("app.agent.planner.chat")
 def test_create_plan_success(
     mock_chat,
     mock_extract_json,
@@ -49,8 +49,8 @@ def test_create_plan_success(
     mock_extract_json.assert_called_once_with(mock_chat.return_value)
 
 
-@patch("app.planner.extract_json")
-@patch("app.planner.chat")
+@patch("app.agent.planner.extract_json")
+@patch("app.agent.planner.chat")
 def test_create_plan_returns_empty_when_no_plan(
     mock_chat,
     mock_extract_json,
@@ -65,8 +65,8 @@ def test_create_plan_returns_empty_when_no_plan(
     assert plan == []
 
 
-@patch("app.planner.extract_json")
-@patch("app.planner.chat")
+@patch("app.agent.planner.extract_json")
+@patch("app.agent.planner.chat")
 def test_create_plan_passes_correct_messages(
     mock_chat,
     mock_extract_json,

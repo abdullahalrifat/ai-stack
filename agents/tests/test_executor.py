@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.executor import execute_plan, normalize_tool_args
+from app.agent.executor import execute_plan, normalize_tool_args
 
 
 class DummyState:
@@ -50,7 +50,7 @@ def no_real_compaction():
     letting it run for real would call the live chat() completion. Keep the
     history untouched instead."""
     with patch(
-        "app.executor._compact_history",
+        "app.agent.executor._compact_history",
         side_effect=lambda messages, model: messages,
     ):
         yield
@@ -90,8 +90,8 @@ def test_normalize_tool_args_no_change():
 # ----------------------------------------------------
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_returns_final_answer(
     mock_chat_with_tools,
     mock_registry,
@@ -108,8 +108,8 @@ def test_execute_plan_returns_final_answer(
     assert state.finished is True
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_executes_tool(
     mock_chat_with_tools,
     mock_registry,
@@ -140,8 +140,8 @@ def test_execute_plan_executes_tool(
     assert state.observations[0]["result"] == {"files": ["README.md"]}
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_unavailable_tool(
     mock_chat_with_tools,
     mock_registry,
@@ -170,8 +170,8 @@ def test_execute_plan_unavailable_tool(
     assert "unavailable" in state.observations[0]["result"]["error"]
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_empty_content_retries(
     mock_chat_with_tools,
     mock_registry,
@@ -193,8 +193,8 @@ def test_execute_plan_empty_content_retries(
     assert mock_chat_with_tools.call_count == 2
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_max_steps(
     mock_chat_with_tools,
     mock_registry,
@@ -212,8 +212,8 @@ def test_execute_plan_max_steps(
     assert "Maximum execution steps" in result
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_emits_events(
     mock_chat_with_tools,
     mock_registry,
@@ -236,8 +236,8 @@ def test_execute_plan_emits_events(
     assert "final_answer" in event_types
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools_stream")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools_stream")
 def test_execute_plan_streams_text_deltas(mock_stream, mock_registry):
     state = DummyState()
     mock_registry.list_tools.return_value = []
@@ -257,8 +257,8 @@ def test_execute_plan_streams_text_deltas(mock_stream, mock_registry):
     assert tokens == ["Hel", "lo"]
 
 
-@patch("app.executor.registry")
-@patch("app.executor.chat_with_tools_stream")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools_stream")
 def test_execute_plan_reassembles_streamed_tool_arguments(mock_stream, mock_registry):
     state = DummyState()
     mock_registry.list_tools.return_value = ["list_files"]

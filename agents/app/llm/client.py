@@ -5,7 +5,7 @@ import time
 import requests
 from openai import OpenAI
 
-from .config import DEFAULT_MODEL, MODEL_LIST_CACHE_SECONDS, AGENT_MODEL_ID
+from ..core.config import DEFAULT_MODEL, MODEL_LIST_CACHE_SECONDS, AGENT_MODEL_ID
 
 logger = logging.getLogger(__name__)
 

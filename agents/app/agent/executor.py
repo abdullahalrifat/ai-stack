@@ -3,18 +3,18 @@ import logging
 import re
 from types import SimpleNamespace
 
-from .config import (
+from ..core.config import (
     CONTEXT_COMPACT_EVERY_STEPS,
     CONTEXT_COMPACT_KEEP_RECENT,
     MAX_AGENT_STEPS,
     MAX_TOOL_OUTPUT_CHARS,
 )
-from .exceptions import RunCancelled
-from .llm import chat, chat_with_tools, chat_with_tools_stream
+from ..core.exceptions import RunCancelled
+from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
 from .prompts import COMPACTION_PROMPT, EXECUTOR_PROMPT
-from .tool_registry import registry
-from .tool_schemas import schemas_for
+from ..tools.registry import registry
+from ..tools.schemas import schemas_for
 
 logger = logging.getLogger(__name__)
 

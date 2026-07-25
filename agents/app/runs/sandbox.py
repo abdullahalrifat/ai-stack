@@ -5,8 +5,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import COMMAND_TIMEOUT_SECONDS, SANDBOX_ROOT
-from .tools.filesystem import validate_workspace
+from ..core.config import COMMAND_TIMEOUT_SECONDS, SANDBOX_ROOT
+from ..tools.filesystem import validate_workspace
 
 
 @dataclass(frozen=True)

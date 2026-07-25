@@ -8,7 +8,7 @@ from pathlib import Path
 
 from langchain.tools import tool
 
-from app.config import (
+from app.core.config import (
     ALLOWED_COMMANDS,
     COMMAND_TIMEOUT_SECONDS,
     RUNNER_CPU_SECONDS,

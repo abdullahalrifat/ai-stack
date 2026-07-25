@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app import sandbox
+from app.runs import sandbox
 
 
 def make_repository(path: Path) -> None:

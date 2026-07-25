@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 import requests
 from langchain.tools import tool
 
-from app.config import WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS, WEB_SEARCH_URL
+from app.core.config import WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS, WEB_SEARCH_URL
 
 MAX_RESULTS = 5
 MAX_QUERY_LENGTH = 500

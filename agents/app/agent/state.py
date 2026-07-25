@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from .config import DEFAULT_MODEL
+from ..core.config import DEFAULT_MODEL
 
 
 @dataclass
