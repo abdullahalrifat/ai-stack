@@ -72,12 +72,13 @@ Open WebUI ---- Postgres / Redis / Qdrant
 | Ollama | `http://localhost:11434` | Local inference runtime |
 | Qdrant | `http://localhost:6333` | Vector store |
 
-Use LiteLLM from IDE tools that support an OpenAI-compatible endpoint. Select
-`coder` for code work, `reasoning` for difficult analysis, `vision` for images,
-and `embedding` only for embeddings.
+Use LiteLLM from IDE tools that support an OpenAI-compatible endpoint. In CPU
+mode, select `quick` for ordinary chat and research and `coder` for code work.
+`reasoning` and `vision` are deliberate heavyweight choices; `embedding` is
+only for embeddings.
 
 The agent requires `Authorization: Bearer $AGENT_API_KEY` on every endpoint
-except `/health`. Tool calls are made through the model's native function
+except `/health` and the read-only `/models/available` catalog. Tool calls are made through the model's native function
 calling rather than hand-written JSON, and the tools available to it are:
 `list_files`, `tree`, `read_file`, `find_file`, `search_text`,
 `project_summary`, `inspect_files`, `edit_file`, `write_file`, `run_command`,
@@ -293,16 +294,30 @@ rather than extending `main.py` with business logic.
 
 ## Model selection
 
-The React Runs UI queries `GET /models/available` and records the selected
-LiteLLM model for each run. The chosen model is used for both planning and
-execution. Use `coder` for normal coding, `reasoning` for slower investigation,
-and `vision` only for image-aware work. Never choose `embedding` for an agent
-run; it exists only for retrieval.
+The React Runs UI queries the public `GET /models/available` catalog and
+records the selected LiteLLM model for each run. In CPU mode, Auto, Quick,
+Research, and Finance use `quick` (Qwen3 4B), while Code uses `coder`
+(Qwen3 8B). `reasoning` and `vision` are slower manual choices. Never choose
+`embedding` for an agent run; it exists only for retrieval.
 
 When `agent.coding-agent` receives a current web/financial research request,
-it automatically uses `RESEARCH_MODEL` (default `qwen3-8b`) after collecting
-web evidence. Set `RESEARCH_MODEL=reasoning` if you prefer deeper, slower
-analysis.
+it automatically uses `RESEARCH_MODEL` (default `quick`) after collecting web
+evidence. Set `RESEARCH_MODEL=reasoning` if you prefer deeper, slower analysis.
+
+### CPU model management
+
+The Compose stack keeps at most one model loaded and unloads it after 10
+minutes. This prevents the 8B, 14B, and vision models all occupying RAM on a
+CPU-only host. Models are never deleted automatically. Use:
+
+```bash
+./scripts/manage-models.sh list
+./scripts/manage-models.sh active
+./scripts/manage-models.sh enable quick
+./scripts/manage-models.sh disable reasoning
+```
+
+`enable` downloads a model if required; `disable` only unloads it from RAM.
 
 `agent.coding-agent` in Open WebUI is intentionally a single repository-aware
 agent persona. Use normal LiteLLM models in Open WebUI for ordinary chat, and

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, RESEARCH_MODEL
+from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, RESEARCH_MODEL
 
 
 @dataclass(frozen=True)
@@ -14,7 +14,7 @@ class AgentProfile:
 # `coding-agent` is retained for existing Open WebUI conversations.
 PROFILES: dict[str, AgentProfile] = {
     AGENT_MODEL_ID: AgentProfile(DEFAULT_MODEL),
-    "auto": AgentProfile(DEFAULT_MODEL),
+    "auto": AgentProfile(FAST_MODEL),
     "code": AgentProfile(DEFAULT_MODEL),
     "research": AgentProfile(RESEARCH_MODEL, force_research=True),
     "finance": AgentProfile(RESEARCH_MODEL, force_research=True),

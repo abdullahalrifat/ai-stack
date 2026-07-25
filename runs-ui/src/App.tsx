@@ -8,13 +8,13 @@ const terminal = new Set(["completed", "awaiting_approval", "failed", "discarded
 // The API replaces this list as soon as an Agent API key is entered. Keeping
 // the local stack's chat-capable aliases here avoids a misleading one-option
 // Custom selector before the authenticated request can be made.
-const defaultModels = ["qwen3-8b", "qwen3-14b", "coder", "reasoning", "vision"];
+const defaultModels = ["quick", "qwen3-8b", "qwen3-14b", "coder", "reasoning", "vision"];
 const profileInfo: Record<Profile, { title: string; description: string; model: string }> = {
-  auto: { title: "Auto", description: "Routes by task intent.", model: "Automatic" },
+  auto: { title: "Auto", description: "Routes routine work to the fast local model.", model: "quick" },
   code: { title: "Code", description: "Repository tools, tests, and reviewable edits.", model: "coder" },
-  research: { title: "Research", description: "Current web evidence with sources.", model: "qwen3-8b" },
-  finance: { title: "Finance", description: "Current market research and cautious scenarios.", model: "qwen3-8b" },
-  quick: { title: "Quick chat", description: "Fast summaries and simple questions.", model: "qwen3-8b" },
+  research: { title: "Research", description: "Current web evidence with sources.", model: "quick" },
+  finance: { title: "Finance", description: "Current market research and cautious scenarios.", model: "quick" },
+  quick: { title: "Quick chat", description: "Fast summaries and simple questions.", model: "quick" },
   deep: { title: "Deep analysis", description: "Slower investigation and tradeoffs.", model: "reasoning" },
   vision: { title: "Image analysis", description: "Image-aware prompt analysis.", model: "vision" },
   image: { title: "Generate image", description: "Optional local image backend.", model: "image backend" },
@@ -55,7 +55,7 @@ export function App() {
 
   const loadRuns = async () => { if (!key) return; try { setRuns((await api<{ runs: Run[] }>(key, "/runs")).runs); } catch (e) { setError(String(e)); } };
   useEffect(() => { void loadRuns(); }, [key]);
-  useEffect(() => { if (!key) return; api<{ models: string[] }>(key, "/models/available").then((data) => { const available = data.models.filter((id) => id !== "embedding"); setModels(available); setCustomModel((current) => available.includes(current) ? current : available[0] || "qwen3-8b"); }).catch((e) => setError(String(e))); }, [key]);
+  useEffect(() => { api<{ models: string[] }>(key, "/models/available").then((data) => { const available = data.models.filter((id) => id !== "embedding"); setModels(available); setCustomModel((current) => available.includes(current) ? current : available[0] || "quick"); }).catch((e) => setError(String(e))); }, [key]);
   useEffect(() => { if (!key) return; api<{ available: boolean }>(key, "/images/status").then((data) => setImageAvailable(data.available)).catch(() => setImageAvailable(false)); }, [key]);
 
   const consume = (event: RunEvent) => { setEvents((old) => [...old, event]); if (event.event_type === "output_delta") setAnswer((old) => old + String(event.payload.content || "")); if (event.event_type === "diff_ready") setDiff(String(event.payload.diff || "")); if (event.event_type === "stream_closed") setActive((old) => old ? { ...old, status: event.status || old.status } : old); };

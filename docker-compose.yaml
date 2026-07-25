@@ -12,7 +12,10 @@ services:
       - "127.0.0.1:11434:11434"
 
     environment:
-      OLLAMA_KEEP_ALIVE: 24h
+      # CPU mode: retain only the recent model briefly, not every heavyweight
+      # model for a full day.
+      OLLAMA_KEEP_ALIVE: 10m
+      OLLAMA_MAX_LOADED_MODELS: 1
 
     volumes:
       - ./ollama:/root/.ollama
@@ -251,8 +254,10 @@ services:
       # expects to see -- keep it in sync with the model_ids entry in
       # open-webui's OPENAI_API_CONFIGS above if you change it.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3-8b}
+      # Fast CPU-mode model used for ordinary Auto / Quick chat requests.
+      FAST_MODEL: ${FAST_MODEL:-quick}
       # Used for current web/financial research through agent.coding-agent.
-      RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3-8b}
+      RESEARCH_MODEL: ${RESEARCH_MODEL:-quick}
       AGENT_MODEL_ID: ${AGENT_MODEL_ID:-coding-agent}
 
       QDRANT_URL: http://qdrant:6333

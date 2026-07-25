@@ -6,7 +6,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.api import dependencies, routes, schemas
-from app.core.config import AGENT_MODEL_ID
+from app.api.profiles import PROFILES
+from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL
 
 
 def request(stream: bool = False) -> schemas.OpenAIChatCompletionRequest:
@@ -59,6 +60,11 @@ def test_openai_models_include_task_profiles():
     ids = {model["id"] for model in routes.models()["data"]}
 
     assert {"coding-agent", "auto", "code", "research", "finance", "deep", "vision"} <= ids
+
+
+def test_auto_profile_uses_fast_model_while_code_uses_default_model():
+    assert PROFILES["auto"].model == FAST_MODEL
+    assert PROFILES["code"].model == DEFAULT_MODEL
 
 
 def test_available_models_is_a_public_gateway_catalog():
