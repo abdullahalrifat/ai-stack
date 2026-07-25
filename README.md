@@ -68,6 +68,7 @@ Open WebUI ---- Postgres / Redis / Qdrant
 | Open WebUI | `http://localhost:3000` | General chat and knowledge workflows |
 | LiteLLM | `http://localhost:4000/v1` | Central OpenAI-compatible model API |
 | Agent | `http://localhost:8000` | Repository-aware coding workflow |
+| Runs UI | `http://localhost:3001` | Live, reviewable coding-task console |
 | Ollama | `http://localhost:11434` | Local inference runtime |
 | Qdrant | `http://localhost:6333` | Vector store |
 
@@ -112,6 +113,24 @@ complete; nothing touches your actual files until you call `/approve`. This
 is the safer path for write-enabled work -- prefer it over `allow_write` on
 `/chat`/`/execute` when you want a chance to review changes first.
 
+### Live Runs UI
+
+The main React/TypeScript task UI is at `http://localhost:3001`. Enter
+the agent API key for the current browser tab, submit a task, and it will show
+planning, tool activity, streamed model output, and any reviewable diff. The
+UI uses the same authenticated `/runs` API; it does not store the key in local
+storage or send it to any third party.
+
+The UI proxies `/api` to the internal agent service, so browser SSE stays
+same-origin while still sending the user-provided API key.
+
+`/runs` is the API to use for a responsive coding UI: submitting the task does
+not hold the HTTP request open, and its event stream reports planning, tool
+calls/results, model output deltas, and a reviewable diff as they occur. The
+OpenAI-compatible `/v1/chat/completions` endpoint also accepts `stream: true`
+and forwards model-token deltas in standard OpenAI SSE chunks; tool activity is
+carried in SSE comments for compatible clients to ignore safely.
+
 ### Commands the agent can run
 
 The agent does not have shell access. `run_command` executes a single,
@@ -135,9 +154,10 @@ Open WebUI also supports adding the agent manually at **Admin Settings →
 Connections → OpenAI → Add New Connection** using URL
 `http://agents:8000/v1`, the `AGENT_API_KEY`, and a prefix such as `agent/`.
 Keep this as an administrator-managed connection: it stores the key server-side.
-Note that Open WebUI's chat connection only talks to `/v1/chat/completions`,
-which is a single-response call; use the agent's own API directly (or a
-thin client) to use the streamed `/runs` workflow.
+The compatibility endpoint accepts `stream: true` and sends SSE heartbeats
+and model-token deltas. For actual live agent progress (planning, tool
+calls/results, output, and diff review), use the non-blocking `POST /runs` +
+`GET /runs/{id}/events` workflow directly or through the Runs UI.
 
 ### Web research
 
@@ -164,6 +184,16 @@ them and to return the source URLs it relied on. Disable it with
   the real repository, and require an explicit `/approve` call before changes
   reach your actual files. `/chat` and `/execute` do not sandbox writes --
   reserve `allow_write` on those for changes you're fine applying immediately.
+- Run output is coalesced into short batches before PostgreSQL persistence and
+  Redis Pub/Sub publication. PostgreSQL remains the replay source after a
+  browser reconnects; Redis only provides low-latency delivery to connected
+  clients.
+- `POST /runs/{run_id}/cancel` requests cooperative cancellation. It is checked
+  between model/tool operations; an already-running subprocess stops when its
+  configured timeout or resource limit is reached.
+- A run records the repository HEAD at sandbox creation. Approval refuses a
+  stale diff if HEAD changed, avoiding an accidental apply onto a different
+  revision.
 - The agent container has no Docker socket, all Linux capabilities are dropped,
   and `no-new-privileges` is enabled.
 - Do not expose the default ports directly to a LAN or the internet. Use a
@@ -189,3 +219,70 @@ LiteLLM keys/quotas, centralized logs and metrics, backups with restore tests,
 model and tool-use evaluations, and stricter resource limits (CPU/memory) on
 the agent container given it now executes real commands, even if allowlisted.
 Pin container image digests after validating a release.
+
+## Project layout
+
+```text
+agents/app/
+  main.py          HTTP/OpenAI-compatible API and lifecycle wiring
+  agent.py         synchronous and durable run orchestration
+  executor.py      streamed native tool-calling loop
+  planner.py       model-driven task planning
+  llm.py           LiteLLM gateway client and model discovery
+  run_store.py     PostgreSQL runs, events, cancellation, recovery
+  events.py        Redis Pub/Sub delivery for connected clients
+  sandbox.py       Git worktrees, diffs, base-commit protection
+  tools/           filesystem, constrained commands, web search
+  memory/          Redis conversations and Qdrant vector memory
+runs-ui/           main React/TypeScript coding-task application
+```
+
+Keep HTTP routes, orchestration, persistence, sandboxing, tools, memory, and
+frontends separate. New capabilities should be added to the matching module
+rather than extending `main.py` with business logic.
+
+## Model selection
+
+The React Runs UI queries `GET /models/available` and records the selected
+LiteLLM model for each run. The chosen model is used for both planning and
+execution. Use `coder` for normal coding, `reasoning` for slower investigation,
+and `vision` only for image-aware work. Never choose `embedding` for an agent
+run; it exists only for retrieval.
+
+`agent/coding-agent` in Open WebUI is intentionally a single repository-aware
+agent persona. Use normal LiteLLM models in Open WebUI for ordinary chat, and
+use the Runs UI for per-task model selection and reviewable repository work.
+
+## Custom agent in Open WebUI
+
+The running agent exposes `coding-agent` at `/v1/models`. For an existing Open
+WebUI installation, persisted admin settings take precedence over Compose
+seeding, so add it once under **Admin Settings → Connections → OpenAI**:
+
+1. URL: `http://agents:8000/v1`
+2. API key: `AGENT_API_KEY`
+3. Prefix: `agent/`
+4. Start a new chat and select `agent/coding-agent`.
+
+## Documents, RAG, and financial analysis
+
+There are currently two separate retrieval paths. Open WebUI document uploads
+use Open WebUI's own document workflow. The coding-agent `/ingest` endpoint
+accepts text supplied by an API caller and stores embeddings in Qdrant.
+
+This is **not yet a proper financial-research RAG system**: the agent cannot
+upload/parse PDF, CSV, or XLSX files; does not chunk with page/table metadata;
+does not isolate collections by portfolio; and cannot cite retrieved passages.
+An Open WebUI upload is not automatically available to the custom coding
+agent. Build a separate research service before relying on this for portfolio
+analysis: use approved market/filing sources, as-of timestamps, deterministic
+calculations, portfolio-scoped retrieval, citations, and explicit human
+approval for any external action. Never use search snippets or model output as
+authoritative prices, filings, tax advice, or trade instructions.
+
+## Web-search verification
+
+SearXNG was verified from the agent network with a live `NASDAQ MSFT` query;
+it returned Yahoo Finance and Nasdaq results. Individual engines can fail or be
+suspended, so treat an empty or partial result set as normal, preserve returned
+source URLs, and do not let search-result text authorize tool use.

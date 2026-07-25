@@ -1,11 +1,14 @@
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .config import DEFAULT_MODEL
+from .config import DEFAULT_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
 from .executor import execute_plan
+from .events import get_event_publisher
+from .exceptions import RunCancelled
 from .memory import (
     get_conversation,
     save_conversation,
@@ -23,12 +26,53 @@ from .tools.filesystem import workspace_context
 logger = logging.getLogger(__name__)
 
 
+class RunEventBuffer:
+    """Batch output deltas while publishing durable events immediately enough for UI."""
+
+    def __init__(self, store, run_id: str):
+        self.store = store
+        self.run_id = run_id
+        self.pending_output = ""
+        self.last_flush = time.monotonic()
+
+    def _persist(self, event_type: str, payload: dict[str, Any]) -> None:
+        event = self.store.append_event(self.run_id, event_type, payload)
+        if not event:
+            return
+        try:
+            get_event_publisher().publish(event)
+        except Exception:
+            # Durable storage succeeded; a reconnecting client will replay it.
+            logger.exception("Could not publish live event for run %s", self.run_id)
+
+    def emit(self, event_type: str, payload: dict[str, Any]) -> None:
+        if event_type == "output_delta":
+            self.pending_output += str(payload.get("content", ""))
+            if (
+                len(self.pending_output) >= RUN_EVENT_BATCH_CHARS
+                or time.monotonic() - self.last_flush >= RUN_EVENT_BATCH_SECONDS
+            ):
+                self.flush()
+            return
+        self.flush()
+        self._persist(event_type, payload)
+
+    def flush(self) -> None:
+        if not self.pending_output:
+            return
+        self._persist("output_delta", {"content": self.pending_output})
+        self.pending_output = ""
+        self.last_flush = time.monotonic()
+
+
 def run_agent(
     message: str,
     conversation_id: str | None = None,
     workspace="/workspace",
     model=DEFAULT_MODEL,
     allow_write=False,
+    on_event=None,
+    on_token=None,
 ):
     """Synchronous, single-response agent turn.
 
@@ -52,7 +96,7 @@ def run_agent(
         state.history = get_conversation(conversation_id)
         state.memories = search_memory(message)
         state.plan = create_plan(state)
-        answer = execute_plan(state)
+        answer = execute_plan(state, on_event=on_event, on_token=on_token)
 
     state.answer = answer
 
@@ -79,8 +123,19 @@ def execute_run(run_id: str) -> None:
         logger.error("execute_run called for unknown run_id=%s", run_id)
         return
 
+    events = RunEventBuffer(store, run_id)
+
     def on_event(event_type: str, payload: dict[str, Any]):
-        store.append_event(run_id, event_type, payload)
+        events.emit(event_type, payload)
+
+    def cancelled() -> bool:
+        return store.is_cancel_requested(run_id)
+
+    if cancelled():
+        store.update_run(run_id, status="cancelled", completed_at=datetime.now(timezone.utc))
+        on_event("run_cancelled", {"before_start": True})
+        events.flush()
+        return
 
     store.update_run(run_id, status="running", started_at=datetime.now(timezone.utc))
     on_event("run_started", {})
@@ -103,6 +158,7 @@ def execute_run(run_id: str) -> None:
                 run_id,
                 sandbox_path=active_workspace,
                 repository_path=str(sandbox.repository),
+                base_commit=sandbox.base_commit,
             )
             on_event("sandbox_ready", {"sandbox_path": active_workspace})
 
@@ -123,7 +179,12 @@ def execute_run(run_id: str) -> None:
             state.plan = create_plan(state)
             on_event("plan_ready", {"plan": state.plan})
 
-            answer = execute_plan(state, on_event=on_event)
+            answer = execute_plan(
+                state,
+                on_event=on_event,
+                on_token=lambda content: on_event("output_delta", {"content": content}),
+                should_cancel=cancelled,
+            )
 
         diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
         has_pending_diff = bool(diff and diff.strip())
@@ -150,6 +211,17 @@ def execute_run(run_id: str) -> None:
             {"answer": answer, "has_pending_diff": has_pending_diff},
         )
 
+    except RunCancelled:
+        logger.info("Run %s cancelled", run_id)
+        if sandbox is not None:
+            remove_sandbox(str(sandbox.repository), str(sandbox.path))
+        store.update_run(
+            run_id,
+            status="cancelled",
+            sandbox_path=None,
+            completed_at=datetime.now(timezone.utc),
+        )
+        on_event("run_cancelled", {})
     except Exception as e:
         logger.exception("Run %s failed", run_id)
         if sandbox is not None:
@@ -164,6 +236,8 @@ def execute_run(run_id: str) -> None:
             completed_at=datetime.now(timezone.utc),
         )
         on_event("run_failed", {"error": str(e)})
+    finally:
+        events.flush()
 
 
 def approve_run(run_id: str) -> dict[str, Any]:
@@ -179,6 +253,7 @@ def approve_run(run_id: str) -> dict[str, Any]:
     sandbox = Sandbox(
         repository=Path(run["repository_path"]).resolve(),
         path=Path(run["sandbox_path"]).resolve(),
+        base_commit=run["base_commit"],
     )
     merge_sandbox(sandbox)
     remove_sandbox(str(sandbox.repository), str(sandbox.path))

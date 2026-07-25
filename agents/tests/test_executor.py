@@ -234,3 +234,80 @@ def test_execute_plan_emits_events(
     event_types = [event_type for event_type, _ in events]
     assert "step_started" in event_types
     assert "final_answer" in event_types
+
+
+@patch("app.executor.registry")
+@patch("app.executor.chat_with_tools_stream")
+def test_execute_plan_streams_text_deltas(mock_stream, mock_registry):
+    state = DummyState()
+    mock_registry.list_tools.return_value = []
+    mock_stream.return_value = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="Hel", tool_calls=None))]
+        ),
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="lo", tool_calls=None))]
+        ),
+    ]
+    tokens = []
+
+    result = execute_plan(state, on_token=tokens.append)
+
+    assert result == "Hello"
+    assert tokens == ["Hel", "lo"]
+
+
+@patch("app.executor.registry")
+@patch("app.executor.chat_with_tools_stream")
+def test_execute_plan_reassembles_streamed_tool_arguments(mock_stream, mock_registry):
+    state = DummyState()
+    mock_registry.list_tools.return_value = ["list_files"]
+    mock_registry.execute.return_value = {"files": ["README.md"]}
+    mock_stream.side_effect = [
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call-1",
+                                    function=SimpleNamespace(
+                                        name="list_files", arguments='{"directory":'
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id=None,
+                                    function=SimpleNamespace(name=None, arguments='"."}'),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+        ],
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="Done", tool_calls=None))]
+            )
+        ],
+    ]
+
+    result = execute_plan(state, on_token=lambda _: None)
+
+    assert result == "Done"
+    mock_registry.execute.assert_called_once_with("list_files", {"directory": "."})

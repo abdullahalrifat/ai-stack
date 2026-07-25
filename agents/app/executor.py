@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from types import SimpleNamespace
 
 from .config import (
     CONTEXT_COMPACT_EVERY_STEPS,
@@ -8,7 +9,8 @@ from .config import (
     MAX_AGENT_STEPS,
     MAX_TOOL_OUTPUT_CHARS,
 )
-from .llm import chat, chat_with_tools
+from .exceptions import RunCancelled
+from .llm import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
 from .prompts import COMPACTION_PROMPT, EXECUTOR_PROMPT
 from .tool_registry import registry
@@ -141,7 +143,56 @@ def _compact_history(messages: list, model: str) -> list:
     ]
 
 
-def execute_plan(state, on_event=None) -> str:
+def _stream_message(messages: list, tools: list, model: str, on_token) -> SimpleNamespace:
+    """Collect one streamed model turn while forwarding text deltas promptly.
+
+    OpenAI-compatible APIs stream a function call in fragments.  The tool
+    loop needs the completed call before it can execute it, whereas text can
+    be delivered to the caller immediately.  This keeps tool use reliable
+    without holding the final natural-language answer until the request ends.
+    """
+
+    content_parts: list[str] = []
+    calls: dict[int, dict] = {}
+
+    for chunk in chat_with_tools_stream(messages, tools=tools, model=model):
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        delta = getattr(choices[0], "delta", None)
+        if delta is None:
+            continue
+
+        content = getattr(delta, "content", None)
+        if content:
+            content_parts.append(content)
+            on_token(content)
+
+        for part in getattr(delta, "tool_calls", None) or []:
+            index = getattr(part, "index", None)
+            if index is None:
+                index = len(calls)
+            call = calls.setdefault(index, {"id": None, "name": "", "arguments": ""})
+            if getattr(part, "id", None):
+                call["id"] = part.id
+            function = getattr(part, "function", None)
+            if function is not None:
+                if getattr(function, "name", None):
+                    call["name"] = function.name
+                if getattr(function, "arguments", None):
+                    call["arguments"] += function.arguments
+
+    tool_calls = [
+        SimpleNamespace(
+            id=call["id"] or f"streamed-call-{index}",
+            function=SimpleNamespace(name=call["name"], arguments=call["arguments"]),
+        )
+        for index, call in sorted(calls.items())
+    ]
+    return SimpleNamespace(content="".join(content_parts), tool_calls=tool_calls or None)
+
+
+def execute_plan(state, on_event=None, on_token=None, should_cancel=None) -> str:
     """Run the tool-calling loop until the model produces a final answer.
 
     `on_event(event_type, payload)` is called for each notable step so a
@@ -150,6 +201,7 @@ def execute_plan(state, on_event=None) -> str:
     """
 
     on_event = on_event or _noop_event
+    should_cancel = should_cancel or (lambda: False)
 
     available_tools = registry.list_tools()
     if not state.allow_write:
@@ -182,6 +234,9 @@ Plan:
     leaked_tool_call_count = 0
 
     for step in range(MAX_STEPS):
+        if should_cancel():
+            on_event("run_cancelling", {})
+            raise RunCancelled()
         state.steps += 1
         on_event("step_started", {"step": state.steps})
 
@@ -194,7 +249,11 @@ Plan:
                     {"messages_before": before, "messages_after": len(messages)},
                 )
 
-        message = chat_with_tools(messages, tools=tools, model=state.model)
+        message = (
+            _stream_message(messages, tools, state.model, on_token)
+            if on_token is not None
+            else chat_with_tools(messages, tools=tools, model=state.model)
+        )
 
         tool_calls = getattr(message, "tool_calls", None)
 
@@ -218,6 +277,9 @@ Plan:
             )
 
             for call in tool_calls:
+                if should_cancel():
+                    on_event("run_cancelling", {})
+                    raise RunCancelled()
                 tool_name = call.function.name
                 raw_args = parse_tool_arguments(call.function.arguments)
                 args = normalize_tool_args(tool_name, raw_args)

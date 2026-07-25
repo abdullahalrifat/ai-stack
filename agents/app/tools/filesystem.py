@@ -1,4 +1,5 @@
 import os
+import resource
 import shlex
 import subprocess
 from contextlib import contextmanager
@@ -7,7 +8,14 @@ from pathlib import Path
 
 from langchain.tools import tool
 
-from app.config import ALLOWED_COMMANDS, COMMAND_TIMEOUT_SECONDS, WORKSPACE_ROOTS
+from app.config import (
+    ALLOWED_COMMANDS,
+    COMMAND_TIMEOUT_SECONDS,
+    RUNNER_CPU_SECONDS,
+    RUNNER_MAX_OPEN_FILES,
+    RUNNER_MEMORY_MB,
+    WORKSPACE_ROOTS,
+)
 
 # ============================================================
 # Configuration
@@ -39,6 +47,36 @@ IGNORE_DIRS = {
 
 
 MAX_FILE_SIZE = 100_000
+
+
+def _runner_preexec() -> None:
+    """Apply process-level limits inside the isolated agent container."""
+    os.setsid()
+    resource.setrlimit(resource.RLIMIT_CPU, (RUNNER_CPU_SECONDS, RUNNER_CPU_SECONDS))
+    memory = RUNNER_MEMORY_MB * 1024 * 1024
+    resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE_SIZE * 10, MAX_FILE_SIZE * 10))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (RUNNER_MAX_OPEN_FILES, RUNNER_MAX_OPEN_FILES))
+
+
+def _run_limited(parts: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    safe_env = {
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "HOME": "/tmp/agent-runner",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    return subprocess.run(
+        parts,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+        check=False,
+        env=safe_env,
+        preexec_fn=_runner_preexec,
+    )
 
 
 # ============================================================
@@ -537,14 +575,7 @@ def run_command(command: str, directory: str = "."):
         if not cwd.is_dir():
             return {"error": "directory is not a directory."}
 
-        result = subprocess.run(
-            parts,
-            cwd=cwd,
-            text=True,
-            capture_output=True,
-            timeout=COMMAND_TIMEOUT_SECONDS,
-            check=False,
-        )
+        result = _run_limited(parts, cwd)
         output = (result.stdout + "\n" + result.stderr).strip()
         return {
             "command": command,
@@ -577,14 +608,7 @@ def run_tests(kind: str = "pytest", directory: str = "."):
         cwd = resolve_path(directory)
         if not cwd.is_dir():
             return {"error": "Test directory is not a directory."}
-        result = subprocess.run(
-            commands[kind],
-            cwd=cwd,
-            text=True,
-            capture_output=True,
-            timeout=COMMAND_TIMEOUT_SECONDS,
-            check=False,
-        )
+        result = _run_limited(commands[kind], cwd)
         output = (result.stdout + "\n" + result.stderr).strip()
         return {"kind": kind, "exit_code": result.returncode, "output": output[-30000:]}
     except subprocess.TimeoutExpired:

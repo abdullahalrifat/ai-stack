@@ -36,6 +36,7 @@ class RunStore:
                     allow_write BOOLEAN NOT NULL DEFAULT FALSE,
                     sandbox_path TEXT,
                     repository_path TEXT,
+                    base_commit TEXT,
                     answer TEXT,
                     error TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -53,6 +54,7 @@ class RunStore:
                 CREATE INDEX IF NOT EXISTS agent_run_events_run_id_id_idx
                     ON agent_run_events (run_id, id);
                 ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS repository_path TEXT;
+                ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS base_commit TEXT;
             """)
 
     def create_run(
@@ -77,12 +79,21 @@ class RunStore:
 
     def append_event(
         self, run_id: str, event_type: str, payload: dict[str, Any]
-    ) -> None:
+    ) -> dict[str, Any]:
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO agent_run_events (run_id, event_type, payload) VALUES (%s, %s, %s)",
+                """INSERT INTO agent_run_events (run_id, event_type, payload)
+                   VALUES (%s, %s, %s) RETURNING id, created_at""",
                 (run_id, event_type, Jsonb(payload)),
             )
+            row = cursor.fetchone()
+        return {
+            "id": row["id"],
+            "run_id": run_id,
+            "event_type": event_type,
+            "payload": payload,
+            "created_at": row["created_at"],
+        }
 
     def update_run(self, run_id: str, **fields: Any) -> None:
         if not fields:
@@ -100,6 +111,14 @@ class RunStore:
             cursor.execute("SELECT * FROM agent_runs WHERE id = %s", (run_id,))
             return cursor.fetchone()
 
+    def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT %s""",
+                (min(max(limit, 1), 200),),
+            )
+            return cursor.fetchall()
+
     def events_after(self, run_id: str, event_id: int = 0) -> list[dict[str, Any]]:
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -108,6 +127,39 @@ class RunStore:
                 (run_id, event_id),
             )
             return cursor.fetchall()
+
+    def request_cancel(self, run_id: str) -> bool:
+        """Mark a queued/running run for cooperative cancellation."""
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_runs SET status = 'cancelling', updated_at = NOW()
+                   WHERE id = %s AND status IN ('queued', 'running')""",
+                (run_id,),
+            )
+            changed = cursor.rowcount == 1
+        return changed
+
+    def is_cancel_requested(self, run_id: str) -> bool:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT status = 'cancelling' AS cancelling FROM agent_runs WHERE id = %s", (run_id,))
+            row = cursor.fetchone()
+            return bool(row and row["cancelling"])
+
+    def recover_interrupted_runs(self) -> tuple[list[str], list[dict[str, Any]]]:
+        """Return queued runs to resume and interrupted runs for sandbox cleanup."""
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM agent_runs WHERE status = 'queued' ORDER BY created_at")
+            queued = [str(row["id"]) for row in cursor.fetchall()]
+            cursor.execute(
+                """UPDATE agent_runs SET status = 'failed', error = 'Agent service restarted while run was active',
+                       completed_at = NOW(), updated_at = NOW()
+                   WHERE status IN ('running', 'cancelling')
+                   RETURNING id, repository_path, sandbox_path"""
+            )
+            interrupted = list(cursor.fetchall())
+        for run in interrupted:
+            self.append_event(str(run["id"]), "run_interrupted", {"reason": "service_restart"})
+        return queued, interrupted
 
 
 @lru_cache(maxsize=1)

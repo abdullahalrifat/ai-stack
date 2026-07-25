@@ -124,3 +124,25 @@ def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto"):
     )
 
     return response.choices[0].message
+
+
+def chat_with_tools_stream(messages, tools, model=DEFAULT_MODEL, tool_choice="auto"):
+    """Return an OpenAI-compatible streaming tool-call response iterator.
+
+    The executor assembles streamed tool-call argument fragments before it
+    invokes a tool.  Keeping the transport helper here lets normal and
+    durable agent runs share the same model validation and client setup.
+    """
+
+    _ensure_model_available(model)
+    client = get_client()
+
+    return client.chat.completions.create(
+        model=model,
+        messages=messages,
+        tools=tools,
+        tool_choice=tool_choice,
+        temperature=0,
+        timeout=120,
+        stream=True,
+    )

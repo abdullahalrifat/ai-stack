@@ -37,15 +37,21 @@ MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "12"))
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "30000"))
 COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "120"))
 POSTGRES_URL = os.getenv("POSTGRES_URL")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 SANDBOX_ROOT = Path(os.getenv("SANDBOX_ROOT", "/tmp/agent-sandboxes")).resolve()
+RUNNER_CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "90"))
+RUNNER_MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "2048"))
+RUNNER_MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
+RUN_EVENT_BATCH_CHARS = int(os.getenv("RUN_EVENT_BATCH_CHARS", "256"))
+RUN_EVENT_BATCH_SECONDS = float(os.getenv("RUN_EVENT_BATCH_SECONDS", "0.10"))
 
 # Commands the run_command tool may execute. Only the first whitespace
 # token of a requested command is checked against this list; shell
 # chaining/redirection syntax is rejected outright regardless of allowlist.
 ALLOWED_COMMANDS = env_list(
     "ALLOWED_COMMANDS",
-    "git,ls,cat,pytest,python,python3,pip,npm,node,yarn,make,grep,find,"
-    "mypy,ruff,black,flake8,tsc",
+    "git,ls,cat,pytest,python,python3,npm,node,make,grep,find,"
+    "mypy,ruff,black,flake8",
 )
 
 # How long the cached model list from the inference gateway is trusted
