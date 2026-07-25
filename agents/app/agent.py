@@ -19,6 +19,7 @@ from .memory import (
 
 from .memory.embeddings import create_embedding
 from .config import DEFAULT_MODEL
+from .tools.filesystem import workspace_context
 
 
 
@@ -27,7 +28,8 @@ def run_agent(
     message: str,
     conversation_id: str | None = None,
     workspace="/workspace",
-    model=DEFAULT_MODEL
+    model=DEFAULT_MODEL,
+    allow_write=False,
 ):
 
     conversation_id = (
@@ -37,13 +39,10 @@ def run_agent(
 
 
     state = AgentState(
-
         conversation_id=conversation_id,
-
         user_message=message,
-
-        model=model
-
+        model=model,
+        allow_write=allow_write,
     )
 
     state.workspace = workspace
@@ -52,47 +51,13 @@ def run_agent(
     # Load short memory
     #
 
-    state.history = get_conversation(
-
-        conversation_id
-
-    )
-
-
-
-    #
-    # Load semantic memory
-    #
-
-    state.memories = search_memory(
-
-        message
-
-    )
-
-
-
-    #
-    # Create execution plan
-    #
-
-    state.plan = create_plan(
-
-        state
-
-    )
-
-
-
-    #
-    # Execute
-    #
-
-    answer = execute_plan(
-
-        state
-
-    )
+    # Workspace selection is request scoped. It is never stored as process
+    # global state, which keeps concurrent users from crossing repositories.
+    with workspace_context(workspace):
+        state.history = get_conversation(conversation_id)
+        state.memories = search_memory(message)
+        state.plan = create_plan(state)
+        answer = execute_plan(state)
 
 
 

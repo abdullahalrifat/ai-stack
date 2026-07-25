@@ -1,12 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-### Remobe OLD images ###
+set -euo pipefail
 
-docker rmi ai-agents:latest
-docker rmi custom-litellm:latest
-
-### Build NEW images ###
-docker build --no-cache -t ai-agents:latest ./agents
-docker build --no-cache -t custom-litellm:latest ./litellm
-
+# Build in place.  Do not delete existing images: they remain a useful rollback
+# target if a new build or deployment fails.
+docker build -t ai-agents:latest ./agents
+docker build -t custom-litellm:latest ./litellm
 

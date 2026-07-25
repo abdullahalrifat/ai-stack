@@ -1,4 +1,7 @@
 import os
+import subprocess
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from langchain.tools import tool
@@ -16,7 +19,11 @@ DEFAULT_WORKSPACE = Path(
 ).resolve()
 
 
-CURRENT_WORKSPACE = DEFAULT_WORKSPACE
+# Context-local workspace prevents one HTTP request from changing another
+# request's filesystem boundary.
+CURRENT_WORKSPACE: ContextVar[Path] = ContextVar(
+    "current_workspace", default=DEFAULT_WORKSPACE
+)
 
 
 IGNORE_DIRS = {
@@ -41,13 +48,8 @@ MAX_FILE_SIZE = 100_000
 # Helpers
 # ============================================================
 
-def set_workspace(path:str):
-
-    global CURRENT_WORKSPACE
-
+def validate_workspace(path: str) -> Path:
     new_path = Path(path).resolve()
-
-
     if not new_path.exists():
         raise ValueError(
             f"Workspace does not exist: {new_path}"
@@ -63,7 +65,22 @@ def set_workspace(path:str):
         )
 
 
-    CURRENT_WORKSPACE = new_path
+    if not new_path.is_dir():
+        raise ValueError(f"Workspace is not a directory: {new_path}")
+    return new_path
+
+
+@contextmanager
+def workspace_context(path: str):
+    token = CURRENT_WORKSPACE.set(validate_workspace(path))
+    try:
+        yield
+    finally:
+        CURRENT_WORKSPACE.reset(token)
+
+
+def current_workspace() -> Path:
+    return CURRENT_WORKSPACE.get()
 
 
 def resolve_path(path: str) -> Path:
@@ -79,11 +96,12 @@ def resolve_path(path: str) -> Path:
     p = Path(path)
 
     if not p.is_absolute():
-        p = CURRENT_WORKSPACE / p
+        p = current_workspace() / p
 
     p = p.resolve()
 
-    if p != CURRENT_WORKSPACE and CURRENT_WORKSPACE not in p.parents:
+    workspace = current_workspace()
+    if p != workspace and workspace not in p.parents:
         raise PermissionError(
             "Access outside workspace denied."
         )
@@ -102,7 +120,7 @@ def ignored(path: Path) -> bool:
 def relative(path: Path):
 
     return str(
-        path.relative_to(CURRENT_WORKSPACE)
+        path.relative_to(current_workspace())
     )
 
 
@@ -117,7 +135,7 @@ def workspace_root():
     """
 
     return {
-        "workspace": str(CURRENT_WORKSPACE)
+        "workspace": str(current_workspace())
     }
 
 
@@ -282,7 +300,7 @@ def find_file(
 
         matches = []
 
-        for file in CURRENT_WORKSPACE.rglob("*"):
+        for file in current_workspace().rglob("*"):
 
             if ignored(file):
                 continue
@@ -368,7 +386,7 @@ def project_summary():
 
     important = []
 
-    for file in CURRENT_WORKSPACE.rglob("*"):
+    for file in current_workspace().rglob("*"):
 
         if ignored(file):
             continue
@@ -397,7 +415,7 @@ def project_summary():
             )
 
     return {
-        "workspace": str(CURRENT_WORKSPACE),
+        "workspace": str(current_workspace()),
         "important_files": important,
         "languages": extensions,
     }
@@ -493,3 +511,61 @@ def inspect_files(
         return {
             "error": str(e)
         }
+
+
+# ============================================================
+# Controlled coding tools
+# ============================================================
+
+@tool
+def write_file(file_path: str, content: str, overwrite: bool = False):
+    """Create a UTF-8 text file in the active workspace.
+
+    This tool is deliberately small: it cannot access paths outside the
+    request-scoped workspace and refuses to replace an existing file unless
+    overwrite is explicitly true.
+    """
+    try:
+        path = resolve_path(file_path)
+        if path.exists() and not overwrite:
+            return {"error": "File exists; reread it and set overwrite=true to replace it."}
+        if len(content.encode("utf-8")) > MAX_FILE_SIZE:
+            return {"error": "Content exceeds maximum size."}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return {"status": "written", "path": relative(path), "bytes": path.stat().st_size}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@tool
+def run_tests(kind: str = "pytest", directory: str = "."):
+    """Run a small approved test command in the active workspace.
+
+    Supported kinds are pytest, python_compile, and npm_test. Arbitrary shell
+    commands are intentionally not exposed to the language model.
+    """
+    commands = {
+        "pytest": ["pytest", "-q"],
+        "python_compile": ["python", "-m", "compileall", "-q", "."],
+        "npm_test": ["npm", "test", "--", "--runInBand"],
+    }
+    if kind not in commands:
+        return {"error": f"Unsupported test kind: {kind}"}
+    try:
+        cwd = resolve_path(directory)
+        if not cwd.is_dir():
+            return {"error": "Test directory is not a directory."}
+        result = subprocess.run(
+            commands[kind], cwd=cwd, text=True, capture_output=True,
+            timeout=int(os.getenv("COMMAND_TIMEOUT_SECONDS", "120")),
+            check=False,
+        )
+        output = (result.stdout + "\n" + result.stderr).strip()
+        return {"kind": kind, "exit_code": result.returncode, "output": output[-30000:]}
+    except subprocess.TimeoutExpired:
+        return {"error": "Test command timed out."}
+    except FileNotFoundError:
+        return {"error": f"Required executable for {kind} is not installed."}
+    except Exception as e:
+        return {"error": str(e)}

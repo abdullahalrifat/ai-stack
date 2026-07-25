@@ -4,6 +4,7 @@
 .env
 .env.*
 *.env
+!.env.example
 
 # API keys / credentials
 *.key
@@ -28,6 +29,7 @@ ollama/
 postgres/
 redis/
 qdrant/
+searxng/data/
 
 # PostgreSQL files
 *.sql

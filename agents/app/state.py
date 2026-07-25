@@ -19,6 +19,8 @@ class AgentState:
 
     model: str = DEFAULT_MODEL
 
+    allow_write: bool = False
+
     plan: list = field(default_factory=list)
 
     messages: list = field(default_factory=list)

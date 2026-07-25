@@ -11,11 +11,15 @@ from .parser import (
 from .tool_registry import registry
 
 from .prompts import EXECUTOR_PROMPT
+from .config import MAX_AGENT_STEPS
 
 
-MAX_STEPS = 10
+MAX_STEPS = MAX_AGENT_STEPS
 
-MIN_TOOL_CALLS_BEFORE_FINAL = 3
+# The agent can answer ordinary conversational questions without forced tool
+# calls. Repository-analysis instructions in the prompt still require
+# inspection before claims about code are made.
+MIN_TOOL_CALLS_BEFORE_FINAL = 0
 
 
 def normalize_tool_args(
@@ -54,6 +58,8 @@ def normalize_tool_args(
 def execute_plan(state):
 
     available_tools = registry.list_tools()
+    if not state.allow_write:
+        available_tools = [name for name in available_tools if name != "write_file"]
 
 
     def observation_json():
@@ -84,6 +90,14 @@ Workspace:
 Task:
 
 {state.user_message}
+
+Recent conversation:
+
+{state.history[-10:]}
+
+Relevant memory:
+
+{state.memories[:5]}
 
 
 Plan:
@@ -300,6 +314,15 @@ Return ONLY JSON.
                 }
             )
 
+            continue
+
+        if tool not in available_tools:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "That tool is unavailable for this request. Choose an available tool and return only JSON.",
+                }
+            )
             continue
 
 

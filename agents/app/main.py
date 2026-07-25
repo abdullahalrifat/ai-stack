@@ -1,4 +1,5 @@
 import os
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -23,7 +24,7 @@ from pydantic import BaseModel
 # =====================================================
 
 import app.tools.register
-from app.config import DEFAULT_MODEL
+from app.config import AGENT_API_KEY, AGENT_MODEL_ID, ALLOW_INSECURE_NO_AUTH, DEFAULT_MODEL, validate_settings
 from app.llm import get_available_models
 from app.agent import (
     run_agent,
@@ -52,6 +53,9 @@ from app.memory.memory import (
 from app.memory.embeddings import create_embedding
 
 
+logger = logging.getLogger(__name__)
+
+
 
 
 
@@ -62,7 +66,7 @@ from app.memory.embeddings import create_embedding
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
+    validate_settings()
     print(
         "REGISTERED TOOLS:",
         registry.list_tools()
@@ -95,9 +99,7 @@ app = FastAPI(
 # =====================================================
 
 
-API_KEY = os.getenv(
-    "AGENT_API_KEY"
-)
+API_KEY = AGENT_API_KEY
 
 
 api_key_header = APIKeyHeader(
@@ -117,9 +119,11 @@ def verify_api_key(
 
 ):
 
-    if not API_KEY:
-
+    if not API_KEY and ALLOW_INSECURE_NO_AUTH:
         return True
+
+    if not API_KEY:
+        raise HTTPException(status_code=503, detail="Agent authentication is not configured")
 
 
 
@@ -172,6 +176,9 @@ class ChatRequest(BaseModel):
 
     workspace: Optional[str] = "/workspace"
 
+    model: Optional[str] = None
+    allow_write: bool = False
+
 
 
 
@@ -193,6 +200,9 @@ class ExecuteRequest(BaseModel):
     conversation_id: Optional[str] = None
 
     workspace: Optional[str] = "/workspace"
+
+    model: Optional[str] = None
+    allow_write: bool = False
 
 
 
@@ -240,6 +250,8 @@ class OpenAIChatCompletionRequest(BaseModel):
     workspace: Optional[str] = "/workspace"
 
     conversation_id: Optional[str] = None
+
+    allow_write: bool = False
 
 
 
@@ -359,20 +371,14 @@ async def chat(
             request.conversation_id,
 
             request.workspace,
-
-            request.model or DEFAULT_MODEL
+            request.model or DEFAULT_MODEL,
+            request.allow_write,
 
         )
 
     except Exception as e:
-
-        raise HTTPException(
-
-            500,
-
-            str(e)
-
-        )
+        logger.exception("Agent chat failed")
+        raise HTTPException(500, "Agent request failed. Check service logs for details.") from e
 
 
 
@@ -404,8 +410,8 @@ async def execute(
         request.conversation_id,
 
         request.workspace,
-
-        request.model or DEFAULT_MODEL
+        request.model or DEFAULT_MODEL,
+        request.allow_write,
 
     )
 
@@ -444,6 +450,9 @@ async def openai_chat(
 
         )
 
+    if request.model and request.model != AGENT_MODEL_ID:
+        raise HTTPException(400, f"This endpoint only serves the '{AGENT_MODEL_ID}' model")
+
 
     prompt = "\n".join(
 
@@ -465,8 +474,8 @@ async def openai_chat(
         or request.conversation_id
         or "default",
         request.workspace,
-
-        request.model or DEFAULT_MODEL
+        DEFAULT_MODEL,
+        request.allow_write,
 
     )
 
@@ -495,7 +504,7 @@ async def openai_chat(
 
         "model":
             request.model
-            or "qwen3-8b",
+            or AGENT_MODEL_ID,
 
         "choices":[
 
@@ -544,11 +553,10 @@ def models():
         "object":"list",
         "data":[
             {
-                "id":m,
-                "object":"model",
-                "owned_by":"local"
+                "id": AGENT_MODEL_ID,
+                "object": "model",
+                "owned_by": "ai-stack-agent"
             }
-            for m in get_available_models()
         ]
     }
 

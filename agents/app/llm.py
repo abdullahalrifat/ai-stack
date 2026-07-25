@@ -1,5 +1,6 @@
 from openai import OpenAI
 import os
+import requests
 from .config import DEFAULT_MODEL
 
 
@@ -14,8 +15,6 @@ client = OpenAI(
     )
 
 )
-
-import requests
 
 
 def get_available_models():
@@ -33,7 +32,8 @@ def get_available_models():
         f"{base_url}/models",
         headers={
             "Authorization": f"Bearer {api_key}"
-        }
+        },
+        timeout=10,
     )
 
     response.raise_for_status()
@@ -60,7 +60,8 @@ def chat(messages, model=DEFAULT_MODEL):
 
         messages=messages,
 
-        temperature=0
+        temperature=0,
+        timeout=120,
 
     )
 

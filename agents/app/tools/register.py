@@ -19,16 +19,12 @@ from app.tools.filesystem import (
     workspace_root,
     find_file,
     project_summary,
-    inspect_files
+    inspect_files,
+    write_file,
+    run_tests,
 )
+from app.tools.web_search import web_search
 
-
-from app.tools.docker import (
-    list_docker_containers,
-    docker_logs,
-    restart_container,
-    docker_health,
-)
 
 
 
@@ -82,36 +78,10 @@ registry.register(
     name="inspect_files",
     function=inspect_files
 )
-# =====================================================
-# Docker Tools
-# =====================================================
 
-registry.register(
-    name="list_docker_containers",
-    function=list_docker_containers
-)
-
-
-registry.register(
-    name="docker_logs",
-    function=docker_logs
-)
-
-
-registry.register(
-    name="restart_container",
-    function=restart_container
-)
-
-
-registry.register(
-    name="docker_health",
-    function=docker_health
-)
-
-
-
-# =====================================================
+registry.register(name="write_file", function=write_file)
+registry.register(name="run_tests", function=run_tests)
+registry.register(name="web_search", function=web_search)
 # LangChain compatibility
 # =====================================================
 #
@@ -135,13 +105,8 @@ TOOLS = [
     project_summary,
 
     inspect_files,
+    write_file,
+    run_tests,
+    web_search,
     
-    list_docker_containers,
-
-    docker_logs,
-
-    restart_container,
-
-    docker_health,
-
 ]
