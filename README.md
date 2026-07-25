@@ -194,8 +194,10 @@ docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tes
 
 For a new Open WebUI data directory, the Compose configuration seeds two
 OpenAI-compatible connections: LiteLLM for regular model chats and this agent
-for `agent.coding-agent`. Choose **agent.coding-agent** whenever you want a
-repository-aware agent. Use the normal LiteLLM models for ordinary chat.
+for task profiles. Choose **agent.auto**, **agent.code**, **agent.research**,
+**agent.finance**, **agent.deep**, or **agent.vision** as appropriate.
+`agent.coding-agent` remains a compatible alias for the code profile. Use the
+normal LiteLLM models for ordinary chat.
 
 Existing Open WebUI installations retain connection settings in their data
 directory, so add the agent manually if it does not appear after a restart.
@@ -315,7 +317,13 @@ seeding, so add it once under **Admin Settings → Connections → OpenAI**:
 1. URL: `http://agents:8000/v1`
 2. API key: `AGENT_API_KEY`
 3. Prefix: `agent`
-4. Start a new chat and select `agent.coding-agent`.
+4. Start a new chat and select an `agent.*` profile.
+
+Profiles map to the same protected agent API: `agent.auto` and `agent.code`
+use the lightweight default model; `agent.research` and `agent.finance` force
+web-research mode; `agent.deep` uses the reasoning model; and `agent.vision`
+uses the vision model. The Runs UI remains the place for file attachments,
+custom model selection, sandbox diffs, and image generation.
 
 ## Documents, RAG, and financial analysis
 

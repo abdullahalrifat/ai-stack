@@ -80,6 +80,7 @@ def run_agent(
     allow_write=False,
     on_event=None,
     on_token=None,
+    force_research=False,
 ):
     """Synchronous, single-response agent turn.
 
@@ -102,8 +103,9 @@ def run_agent(
     with workspace_context(workspace):
         state.history = get_conversation(conversation_id)
         state.memories = search_memory(message)
-        state.plan = [] if requires_external_search(message) else create_plan(state)
-        answer = execute_plan(state, on_event=on_event, on_token=on_token)
+        research_mode = force_research or requires_external_search(message)
+        state.plan = [] if research_mode else create_plan(state)
+        answer = execute_plan(state, on_event=on_event, on_token=on_token, force_research=force_research)
 
     state.answer = answer
 

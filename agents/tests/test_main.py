@@ -33,7 +33,7 @@ def test_openai_chat_rejects_unknown_model():
         model="unknown", messages=[schemas.OpenAIChatMessage(role="user", content="hello")]
     )
 
-    with pytest.raises(HTTPException, match="only serves"):
+    with pytest.raises(HTTPException, match="Unknown agent profile"):
         asyncio.run(routes.openai_chat(bad_request, None))
 
 
@@ -43,6 +43,22 @@ def test_openai_chat_returns_openai_shape():
 
     assert response["object"] == "chat.completion"
     assert response["choices"][0]["message"] == {"role": "assistant", "content": "done"}
+
+
+def test_openai_research_profile_forces_research_mode():
+    research_request = schemas.OpenAIChatCompletionRequest(
+        model="research", messages=[schemas.OpenAIChatMessage(role="user", content="summarize this")]
+    )
+    with patch("app.api.routes.run_in_threadpool", new=AsyncMock(return_value={"answer": "done"})) as runner:
+        asyncio.run(routes.openai_chat(research_request, None))
+
+    assert runner.call_args.kwargs["force_research"] is True
+
+
+def test_openai_models_include_task_profiles():
+    ids = {model["id"] for model in routes.models()["data"]}
+
+    assert {"coding-agent", "auto", "code", "research", "finance", "deep", "vision"} <= ids
 
 
 def test_image_generation_status_is_explicit_when_unconfigured(monkeypatch):

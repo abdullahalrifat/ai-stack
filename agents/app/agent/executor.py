@@ -233,7 +233,7 @@ def _stream_message(messages: list, tools: list, model: str, on_token) -> Simple
     return SimpleNamespace(content="".join(content_parts), tool_calls=tool_calls or None)
 
 
-def execute_plan(state, on_event=None, on_token=None, should_cancel=None) -> str:
+def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_research=False) -> str:
     """Run the tool-calling loop until the model produces a final answer.
 
     `on_event(event_type, payload)` is called for each notable step so a
@@ -248,7 +248,7 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None) -> str
     if not state.allow_write:
         available_tools = [t for t in available_tools if t not in WRITE_TOOLS]
 
-    research_mode = requires_external_search(state.user_message)
+    research_mode = force_research or requires_external_search(state.user_message)
     if research_mode and "web_search" in available_tools:
         # Prevent a coding-oriented model from wandering through the mounted
         # repository when the user asked for current external information.

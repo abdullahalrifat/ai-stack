@@ -28,6 +28,7 @@ from app.tools.filesystem import list_files, validate_workspace
 from app.tools.registry import registry
 
 from .dependencies import require_run_store, verify_api_key
+from .profiles import PROFILES, resolve_profile
 from .schemas import ChatRequest, ExecuteRequest, ImageGenerationRequest, IngestRequest, MemoryQuery, OpenAIChatCompletionRequest, OpenAIEmbeddingRequest, PlanRequest, RunRequest
 
 logger = logging.getLogger(__name__)
@@ -284,10 +285,10 @@ async def openai_chat(
     request: OpenAIChatCompletionRequest, x_conversation_id: str | None = Header(None)
 ):
 
-    if request.model and request.model != AGENT_MODEL_ID:
-        raise HTTPException(
-            400, f"This endpoint only serves the '{AGENT_MODEL_ID}' model"
-        )
+    try:
+        profile = resolve_profile(request.model)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     prompt = "\n".join(f"{m.role}: {m.content}" for m in request.messages)
 
@@ -305,10 +306,11 @@ async def openai_chat(
                         prompt,
                         x_conversation_id or request.conversation_id or "default",
                         request.workspace,
-                        DEFAULT_MODEL,
+                        profile.model,
                         request.allow_write,
                         on_event=lambda kind, payload: updates.put(("event", (kind, payload))),
                         on_token=lambda content: updates.put(("token", content)),
+                        force_research=profile.force_research,
                     )
                     finished["answer"] = result["answer"]
                 except Exception as exc:
@@ -380,8 +382,9 @@ async def openai_chat(
         prompt,
         x_conversation_id or request.conversation_id or "default",
         request.workspace,
-        DEFAULT_MODEL,
+        profile.model,
         request.allow_write,
+        force_research=profile.force_research,
     )
 
     return {
@@ -408,9 +411,7 @@ async def openai_chat(
 def models():
     return {
         "object": "list",
-        "data": [
-            {"id": AGENT_MODEL_ID, "object": "model", "owned_by": "ai-stack-agent"}
-        ],
+        "data": [{"id": model_id, "object": "model", "owned_by": "ai-stack-agent"} for model_id in PROFILES],
     }
 
 
