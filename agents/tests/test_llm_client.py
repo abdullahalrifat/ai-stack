@@ -23,6 +23,16 @@ def test_tool_completion_has_bounded_local_inference_settings(_available):
     assert completion.call_args.kwargs["timeout"] == client.LLM_TIMEOUT_SECONDS
 
 
+@patch("app.llm.client._ensure_model_available")
+def test_tool_completion_accepts_profile_output_budget(_available):
+    fake_client, completion = _completion_client()
+
+    with patch("app.llm.client.get_client", return_value=fake_client):
+        client.chat_with_tools([], [], model="coder", max_tokens=640)
+
+    assert completion.call_args.kwargs["max_tokens"] == 640
+
+
 @patch("app.llm.client.OpenAI")
 def test_client_disables_sdk_retries_for_local_inference(openai):
     previous = client._client

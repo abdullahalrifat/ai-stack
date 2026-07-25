@@ -22,6 +22,8 @@ class AgentState:
 
     prompt_mode: str = "code"
 
+    max_completion_tokens: int | None = None
+
     allow_write: bool = False
 
     plan: list = field(default_factory=list)

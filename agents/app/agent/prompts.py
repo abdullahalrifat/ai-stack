@@ -165,9 +165,10 @@ claiming you cannot access current data.
 FINANCE_RESEARCH_PROMPT = WEB_RESEARCH_PROMPT + """
 
 This is a finance research request. Build the answer from the supplied price,
-filing/earnings, company-news, and macro/sector evidence. Report a compact
-evidence table before the scenario analysis. A scenario must name the company
-and macro assumptions that support it; do not invent a numeric target price.
+filing/earnings, company-news, and macro/sector evidence. Use no more than six
+evidence rows and reserve at least half the answer for a concise base, bullish,
+and bearish scenario. A scenario must name the company and macro assumptions
+that support it; do not invent a numeric target price.
 Treat all output as informational research, not a recommendation to buy, sell,
 or hold.
 """

@@ -330,7 +330,7 @@ def _compact_history(messages: list, model: str) -> list:
     ]
 
 
-def _stream_message(messages: list, tools: list, model: str, on_token) -> SimpleNamespace:
+def _stream_message(messages: list, tools: list, model: str, on_token, max_tokens: int | None = None) -> SimpleNamespace:
     """Collect one streamed model turn while forwarding text deltas promptly.
 
     OpenAI-compatible APIs stream a function call in fragments.  The tool
@@ -342,7 +342,7 @@ def _stream_message(messages: list, tools: list, model: str, on_token) -> Simple
     content_parts: list[str] = []
     calls: dict[int, dict] = {}
 
-    for chunk in chat_with_tools_stream(messages, tools=tools, model=model):
+    for chunk in chat_with_tools_stream(messages, tools=tools, model=model, max_tokens=max_tokens):
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             continue
@@ -454,9 +454,20 @@ Plan:
                 )
 
         message = (
-            _stream_message(messages, tools, state.model, on_token)
+            _stream_message(
+                messages,
+                tools,
+                state.model,
+                on_token,
+                getattr(state, "max_completion_tokens", None),
+            )
             if on_token is not None
-            else chat_with_tools(messages, tools=tools, model=state.model)
+            else chat_with_tools(
+                messages,
+                tools=tools,
+                model=state.model,
+                max_tokens=getattr(state, "max_completion_tokens", None),
+            )
         )
 
         tool_calls = getattr(message, "tool_calls", None)

@@ -83,6 +83,7 @@ async def chat(request: ChatRequest):
             request.allow_write,
             force_research=profile.force_research if profile else False,
             prompt_mode=profile.prompt_mode if profile else "custom",
+            max_completion_tokens=profile.max_completion_tokens if profile else None,
         )
 
     except Exception as e:
@@ -104,6 +105,7 @@ async def execute(request: ExecuteRequest):
         request.allow_write,
         force_research=profile.force_research if profile else False,
         prompt_mode=profile.prompt_mode if profile else "custom",
+        max_completion_tokens=profile.max_completion_tokens if profile else None,
     )
 
 
@@ -318,6 +320,7 @@ async def openai_chat(
                         on_token=lambda content: updates.put(("token", content)),
                         force_research=profile.force_research,
                         prompt_mode=profile.prompt_mode,
+                        max_completion_tokens=profile.max_completion_tokens,
                     )
                     finished["answer"] = result["answer"]
                 except Exception as exc:
@@ -393,6 +396,7 @@ async def openai_chat(
         request.allow_write,
         force_research=profile.force_research,
         prompt_mode=profile.prompt_mode,
+        max_completion_tokens=profile.max_completion_tokens,
     )
 
     return {

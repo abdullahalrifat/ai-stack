@@ -83,6 +83,7 @@ def run_agent(
     on_token=None,
     force_research=False,
     prompt_mode="code",
+    max_completion_tokens=None,
 ):
     """Synchronous, single-response agent turn.
 
@@ -99,6 +100,7 @@ def run_agent(
         user_message=message,
         model=_task_model(message, model),
         prompt_mode=prompt_mode,
+        max_completion_tokens=max_completion_tokens,
         allow_write=allow_write,
         workspace=workspace,
     )
@@ -161,10 +163,12 @@ def execute_run(run_id: str) -> None:
         model = profile.model
         prompt_mode = profile.prompt_mode
         force_research = profile.force_research
+        max_completion_tokens = profile.max_completion_tokens
     except ValueError:
         model = requested_model
         prompt_mode = "custom"
         force_research = False
+        max_completion_tokens = None
     task = run["task"]
 
     sandbox: Sandbox | None = None
@@ -188,6 +192,7 @@ def execute_run(run_id: str) -> None:
             user_message=task,
             model=_task_model(task, model),
             prompt_mode=prompt_mode,
+            max_completion_tokens=max_completion_tokens,
             allow_write=allow_write,
             workspace=active_workspace,
         )
