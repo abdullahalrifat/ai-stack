@@ -59,7 +59,26 @@ export function App() {
   useEffect(() => { if (!key) return; api<{ available: boolean }>(key, "/images/status").then((data) => setImageAvailable(data.available)).catch(() => setImageAvailable(false)); }, [key]);
 
   const consume = (event: RunEvent) => { setEvents((old) => [...old, event]); if (event.event_type === "output_delta") setAnswer((old) => old + String(event.payload.content || "")); if (event.event_type === "diff_ready") setDiff(String(event.payload.diff || "")); if (event.event_type === "stream_closed") setActive((old) => old ? { ...old, status: event.status || old.status } : old); };
-  const follow = async (run: Run) => { cursor.current = 0; setEvents([]); setAnswer(""); setDiff(""); setActive(run); try { while (!terminal.has(run.status)) { cursor.current = await streamEvents(key, run.id, cursor.current, consume); const current = await api<Run>(key, `/runs/${run.id}`); run = current; setActive(current); if (terminal.has(current.status)) break; } await loadRuns(); } catch (e) { setError(String(e)); } };
+  const follow = async (run: Run) => {
+    cursor.current = 0; setEvents([]); setAnswer(""); setDiff(""); setActive(run);
+    let retries = 0;
+    try {
+      while (!terminal.has(run.status)) {
+        try {
+          cursor.current = await streamEvents(key, run.id, cursor.current, consume);
+          const current = await api<Run>(key, `/runs/${run.id}`);
+          run = current; setActive(current); retries = 0;
+        } catch (e) {
+          retries += 1;
+          if (retries > 5) throw e;
+          const waitMs = Math.min(1_000 * 2 ** (retries - 1), 10_000);
+          setError(`Live connection interrupted; retrying in ${Math.round(waitMs / 1_000)}s (${retries}/5)…`);
+          await new Promise((resolve) => window.setTimeout(resolve, waitMs));
+        }
+      }
+      setError(""); await loadRuns();
+    } catch (e) { setError(`Could not reconnect to this run: ${String(e)}`); }
+  };
   const start = async (event: FormEvent) => { event.preventDefault(); setError(""); if (!task.trim()) return; try {
     if (effectiveProfile === "image") { const data = await api<{ created: number; data: { url: string }[] }>(key, "/images/generations", { method: "POST", body: JSON.stringify({ prompt: task }) }); setImages((old) => [...data.data.map((item) => ({ url: item.url, created: data.created, prompt: task })), ...old]); return; }
     const context = await attachmentContext(files); const selected = effectiveProfile === "custom" ? customModel : effectiveProfile;
