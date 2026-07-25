@@ -28,6 +28,9 @@ RESEARCH_MODEL = os.getenv("RESEARCH_MODEL", FAST_MODEL)
 WEB_SEARCH_ENABLED = env_flag("WEB_SEARCH_ENABLED", True)
 WEB_SEARCH_URL = os.getenv("WEB_SEARCH_URL", "http://searxng:8080/search")
 WEB_SEARCH_TIMEOUT_SECONDS = int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "15"))
+# Maximum size of an externally retrieved HTML/PDF document. This is separate
+# from MAX_TOOL_OUTPUT_CHARS, which bounds only the text given to the model.
+WEB_FETCH_MAX_BYTES = int(os.getenv("WEB_FETCH_MAX_BYTES", "8000000"))
 
 # Optional Automatic1111/Forge-compatible image generation API. Ollama vision
 # models analyze images but do not create them, so generation stays separate.
@@ -95,3 +98,5 @@ def validate_settings() -> None:
     for root in WORKSPACE_ROOTS:
         if not root.exists():
             raise RuntimeError(f"Configured workspace root does not exist: {root}")
+    if WEB_FETCH_MAX_BYTES <= 0:
+        raise RuntimeError("WEB_FETCH_MAX_BYTES must be greater than zero")

@@ -221,6 +221,13 @@ untrusted text; the agent is instructed not to follow instructions found in
 them and to return the source URLs it relied on. Disable it with
 `WEB_SEARCH_ENABLED=false` if no query text may leave your network.
 
+For finance and document research, `web_fetch` can retrieve public HTML and
+PDF sources returned by search. Its download cap defaults to 8 MB so typical
+annual reports work; change `WEB_FETCH_MAX_BYTES` in `.env` (for example,
+`WEB_FETCH_MAX_BYTES=12000000`) before recreating `agents` if you need to
+support larger filings. `MAX_TOOL_OUTPUT_CHARS` remains a separate cap on the
+amount of retrieved text sent to the local model.
+
 ## Security model
 
 - `AGENT_API_KEY` is mandatory. The only exception is explicit local

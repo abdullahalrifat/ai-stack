@@ -10,11 +10,8 @@ from langchain.tools import tool
 from pypdf import PdfReader
 import requests
 
-from app.core.config import WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS
+from app.core.config import WEB_FETCH_MAX_BYTES, WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS
 
-# Annual reports are commonly 3–7 MB because they include audited tables and
-# charts. Keep a firm cap while allowing typical public-company filings.
-MAX_FETCH_BYTES = 8_000_000
 MAX_TEXT_CHARS = 12_000
 MAX_PDF_PAGES = 12
 
@@ -40,8 +37,8 @@ def _read_bounded(response) -> bytes:
     size = 0
     for chunk in response.iter_content(chunk_size=32_768):
         size += len(chunk)
-        if size > MAX_FETCH_BYTES:
-            raise ValueError("Document exceeds the 8 MB retrieval limit.")
+        if size > WEB_FETCH_MAX_BYTES:
+            raise ValueError("Document exceeds the configured retrieval limit.")
         chunks.append(chunk)
     return b"".join(chunks)
 

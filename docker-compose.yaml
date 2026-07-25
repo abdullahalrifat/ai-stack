@@ -300,6 +300,9 @@ services:
 
       WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-true}
       WEB_SEARCH_URL: http://searxng:8080/search
+      # 8 MB accommodates typical audited annual-report PDFs. Lower this on
+      # constrained networks or raise it for unusually large filings.
+      WEB_FETCH_MAX_BYTES: ${WEB_FETCH_MAX_BYTES:-8000000}
 
       # Optional Automatic1111/Forge-compatible local image generator.
       IMAGE_GENERATION_URL: ${IMAGE_GENERATION_URL:-}
