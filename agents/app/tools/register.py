@@ -6,15 +6,19 @@ All tools available to the executor must be registered here.
 The executor only interacts with:
     tool_registry.registry
 
+Tool schemas for native function calling live in app/tool_schemas.py and
+must be kept in sync with the tool names registered below.
 """
 
 from app.tool_registry import registry
 from app.tools.filesystem import (
+    edit_file,
     find_file,
     inspect_files,
     list_files,
     project_summary,
     read_file,
+    run_command,
     run_tests,
     search_text,
     tree,
@@ -29,30 +33,31 @@ from app.tools.web_search import web_search
 
 registry.register(name="workspace_root", function=workspace_root)
 
-
 registry.register(name="tree", function=tree)
-
 
 registry.register(name="list_files", function=list_files)
 
-
 registry.register(name="read_file", function=read_file)
-
 
 registry.register(name="find_file", function=find_file)
 
-
 registry.register(name="search_text", function=search_text)
 
-
 registry.register(name="project_summary", function=project_summary)
-
 
 registry.register(name="inspect_files", function=inspect_files)
 
 registry.register(name="write_file", function=write_file)
+
+registry.register(name="edit_file", function=edit_file)
+
+registry.register(name="run_command", function=run_command)
+
 registry.register(name="run_tests", function=run_tests)
+
 registry.register(name="web_search", function=web_search)
+
+# =====================================================
 # LangChain compatibility
 # =====================================================
 #
@@ -69,6 +74,8 @@ TOOLS = [
     project_summary,
     inspect_files,
     write_file,
+    edit_file,
+    run_command,
     run_tests,
     web_search,
 ]

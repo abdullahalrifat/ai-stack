@@ -35,38 +35,27 @@ class AgentState:
     answer: str | None = None
 
     def add_user(self, content: str):
-
         self.messages.append({"role": "user", "content": content})
 
     def add_assistant(self, content: str):
-
         self.messages.append({"role": "assistant", "content": content})
 
     def add_tool(self, name: str, result: Any):
-
         self.observations.append({"tool": name, "result": result})
-
         self.messages.append({"role": "tool", "name": name, "content": str(result)})
 
     def reset(self):
-
         self.steps = 0
-
         self.finished = False
-
         self.answer = None
-
         self.plan.clear()
-
         self.observations.clear()
-
         self.messages.clear()
 
 
 @dataclass
 class AgentAction:
     tool: str
-
     args: dict = field(default_factory=dict)
 
 

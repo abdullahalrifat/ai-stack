@@ -1,7 +1,7 @@
 """Runtime configuration for the agent service.
 
 All settings are environment driven so the same image can be used locally and
-in a more restricted deployment.  Secrets must never have application defaults.
+in a more restricted deployment. Secrets must never have application defaults.
 """
 
 import os
@@ -12,20 +12,53 @@ def env_flag(name: str, default: bool = False) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_list(name: str, default: str = "") -> list[str]:
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "coder")
 AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "coding-agent")
+
 WEB_SEARCH_ENABLED = env_flag("WEB_SEARCH_ENABLED", True)
 WEB_SEARCH_URL = os.getenv("WEB_SEARCH_URL", "http://searxng:8080/search")
 WEB_SEARCH_TIMEOUT_SECONDS = int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "15"))
+
+# Multiple workspace roots can be mounted (e.g. several repositories).
+# WORKSPACE_DIR is kept for backward compatibility and is always included as
+# the first allowed root. Add more with a comma-separated WORKSPACE_ROOTS.
 WORKSPACE_ROOT = Path(os.getenv("WORKSPACE_DIR", "/workspace")).resolve()
+_extra_roots = [Path(p).resolve() for p in env_list("WORKSPACE_ROOTS")]
+WORKSPACE_ROOTS: list[Path] = [WORKSPACE_ROOT] + [
+    p for p in _extra_roots if p != WORKSPACE_ROOT
+]
+
 MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "12"))
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "30000"))
 COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "120"))
 POSTGRES_URL = os.getenv("POSTGRES_URL")
 SANDBOX_ROOT = Path(os.getenv("SANDBOX_ROOT", "/tmp/agent-sandboxes")).resolve()
 
+# Commands the run_command tool may execute. Only the first whitespace
+# token of a requested command is checked against this list; shell
+# chaining/redirection syntax is rejected outright regardless of allowlist.
+ALLOWED_COMMANDS = env_list(
+    "ALLOWED_COMMANDS",
+    "git,ls,cat,pytest,python,python3,pip,npm,node,yarn,make,grep,find,"
+    "mypy,ruff,black,flake8,tsc",
+)
+
+# How long the cached model list from the inference gateway is trusted
+# before being refreshed, to avoid an extra HTTP round trip on every call.
+MODEL_LIST_CACHE_SECONDS = int(os.getenv("MODEL_LIST_CACHE_SECONDS", "300"))
+
+# Executor context management: after this many tool-call steps, older
+# transcript entries are summarized down to keep context bounded.
+CONTEXT_COMPACT_EVERY_STEPS = int(os.getenv("CONTEXT_COMPACT_EVERY_STEPS", "6"))
+CONTEXT_COMPACT_KEEP_RECENT = int(os.getenv("CONTEXT_COMPACT_KEEP_RECENT", "4"))
+
 # Authentication is mandatory unless a developer explicitly opts into an
-# insecure, local-only mode.  This avoids accidentally publishing an agent
+# insecure, local-only mode. This avoids accidentally publishing an agent
 # with filesystem write capabilities without authentication.
 AGENT_API_KEY = os.getenv("AGENT_API_KEY")
 ALLOW_INSECURE_NO_AUTH = env_flag("ALLOW_INSECURE_NO_AUTH")
@@ -39,3 +72,6 @@ def validate_settings() -> None:
         )
     if not WORKSPACE_ROOT.exists():
         raise RuntimeError(f"WORKSPACE_DIR does not exist: {WORKSPACE_ROOT}")
+    for root in WORKSPACE_ROOTS:
+        if not root.exists():
+            raise RuntimeError(f"Configured workspace root does not exist: {root}")

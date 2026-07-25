@@ -50,6 +50,30 @@ def sandbox_diff(path: str) -> str:
     return result.stdout
 
 
+def merge_sandbox(sandbox: Sandbox) -> None:
+    """Apply a reviewed sandbox diff onto the real repository.
+
+    Uses `git apply` against the original repository rather than merging the
+    worktree branch, since the sandbox is a detached, disposable worktree
+    with no branch of its own -- the diff is the reviewable, approvable
+    artifact.
+    """
+    diff = sandbox_diff(str(sandbox.path))
+    if not diff.strip():
+        return
+
+    result = subprocess.run(
+        ["git", "-C", str(sandbox.repository), "apply", "--whitespace=nowarn", "-"],
+        input=diff,
+        text=True,
+        capture_output=True,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Could not apply sandbox diff: {result.stderr.strip()}")
+
+
 def remove_sandbox(repository: str, path: str) -> None:
     repo = Path(repository).resolve()
     directory = Path(path).resolve()

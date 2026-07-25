@@ -35,6 +35,7 @@ class RunStore:
                     conversation_id TEXT,
                     allow_write BOOLEAN NOT NULL DEFAULT FALSE,
                     sandbox_path TEXT,
+                    repository_path TEXT,
                     answer TEXT,
                     error TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -51,6 +52,7 @@ class RunStore:
                 );
                 CREATE INDEX IF NOT EXISTS agent_run_events_run_id_id_idx
                     ON agent_run_events (run_id, id);
+                ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS repository_path TEXT;
             """)
 
     def create_run(
