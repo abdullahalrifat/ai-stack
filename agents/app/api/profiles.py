@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, FINANCE_MAX_COMPLETION_TOKENS, FINANCE_MODEL, RESEARCH_MODEL
+from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, FINANCE_LLM_TIMEOUT_SECONDS, FINANCE_MAX_COMPLETION_TOKENS, FINANCE_MODEL, RESEARCH_MODEL
 
 
 @dataclass(frozen=True)
@@ -11,6 +11,7 @@ class AgentProfile:
     prompt_mode: str = "code"
     force_research: bool = False
     max_completion_tokens: int | None = None
+    timeout_seconds: int | None = None
 
 
 # `coding-agent` is retained for existing Open WebUI conversations.
@@ -20,7 +21,7 @@ PROFILES: dict[str, AgentProfile] = {
     "quick": AgentProfile(FAST_MODEL, "quick"),
     "code": AgentProfile(DEFAULT_MODEL, "code"),
     "research": AgentProfile(RESEARCH_MODEL, "research", force_research=True),
-    "finance": AgentProfile(FINANCE_MODEL, "finance", force_research=True, max_completion_tokens=FINANCE_MAX_COMPLETION_TOKENS),
+    "finance": AgentProfile(FINANCE_MODEL, "finance", force_research=True, max_completion_tokens=FINANCE_MAX_COMPLETION_TOKENS, timeout_seconds=FINANCE_LLM_TIMEOUT_SECONDS),
     "deep": AgentProfile("reasoning", "deep"),
     "vision": AgentProfile("vision", "vision"),
 }

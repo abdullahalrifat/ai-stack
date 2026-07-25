@@ -24,6 +24,8 @@ class AgentState:
 
     max_completion_tokens: int | None = None
 
+    timeout_seconds: int | None = None
+
     allow_write: bool = False
 
     plan: list = field(default_factory=list)

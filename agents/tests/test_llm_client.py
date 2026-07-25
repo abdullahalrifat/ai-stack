@@ -33,6 +33,16 @@ def test_tool_completion_accepts_profile_output_budget(_available):
     assert completion.call_args.kwargs["max_tokens"] == 640
 
 
+@patch("app.llm.client._ensure_model_available")
+def test_tool_completion_accepts_profile_timeout(_available):
+    fake_client, completion = _completion_client()
+
+    with patch("app.llm.client.get_client", return_value=fake_client):
+        client.chat_with_tools([], [], model="coder", timeout_seconds=300)
+
+    assert completion.call_args.kwargs["timeout"] == 300
+
+
 @patch("app.llm.client.OpenAI")
 def test_client_disables_sdk_retries_for_local_inference(openai):
     previous = client._client

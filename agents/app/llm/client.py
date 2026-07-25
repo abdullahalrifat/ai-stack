@@ -113,7 +113,7 @@ def chat(messages, model=DEFAULT_MODEL) -> str:
     return response.choices[0].message.content
 
 
-def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", max_tokens: int | None = None):
+def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", max_tokens: int | None = None, timeout_seconds: int | None = None):
     """Completion using native function calling.
 
     Returns the raw response message object, exposing both `.content` and
@@ -131,13 +131,13 @@ def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", ma
         tool_choice=tool_choice,
         temperature=0,
         max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
-        timeout=LLM_TIMEOUT_SECONDS,
+        timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
     )
 
     return response.choices[0].message
 
 
-def chat_with_tools_stream(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", max_tokens: int | None = None):
+def chat_with_tools_stream(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", max_tokens: int | None = None, timeout_seconds: int | None = None):
     """Return an OpenAI-compatible streaming tool-call response iterator.
 
     The executor assembles streamed tool-call argument fragments before it
@@ -155,6 +155,6 @@ def chat_with_tools_stream(messages, tools, model=DEFAULT_MODEL, tool_choice="au
         tool_choice=tool_choice,
         temperature=0,
         max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
-        timeout=LLM_TIMEOUT_SECONDS,
+        timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
         stream=True,
     )
