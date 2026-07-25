@@ -12,7 +12,7 @@ from ..core.config import (
 from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
-from .prompts import COMPACTION_PROMPT, EXECUTOR_PROMPT
+from .prompts import COMPACTION_PROMPT, EXECUTOR_PROMPT, WEB_RESEARCH_PROMPT
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
 
@@ -63,7 +63,7 @@ _CURRENT_EXTERNAL_INFO = re.compile(
 )
 
 
-def _requires_external_search(message: str) -> bool:
+def requires_external_search(message: str) -> bool:
     return bool(_CURRENT_EXTERNAL_INFO.search(message))
 
 
@@ -74,7 +74,7 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
     only for explicit/time-sensitive external requests, where answering from
     a model's training data is known to be incorrect.
     """
-    if "web_search" not in available_tools or not _requires_external_search(state.user_message):
+    if "web_search" not in available_tools or not requires_external_search(state.user_message):
         return None
 
     args = {"query": state.user_message}
@@ -243,6 +243,12 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None) -> str
     if not state.allow_write:
         available_tools = [t for t in available_tools if t not in WRITE_TOOLS]
 
+    research_mode = requires_external_search(state.user_message)
+    if research_mode and "web_search" in available_tools:
+        # Prevent a coding-oriented model from wandering through the mounted
+        # repository when the user asked for current external information.
+        available_tools = ["web_search"]
+
     tools = schemas_for(available_tools)
     external_search = _prefetch_external_search(state, available_tools, on_event)
 
@@ -273,7 +279,7 @@ Plan:
 """
 
     messages = [
-        {"role": "system", "content": EXECUTOR_PROMPT},
+        {"role": "system", "content": WEB_RESEARCH_PROMPT if research_mode else EXECUTOR_PROMPT},
         {"role": "user", "content": task_context},
     ]
 

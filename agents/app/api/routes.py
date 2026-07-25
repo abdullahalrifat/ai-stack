@@ -12,12 +12,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
+import requests
 
 import app.tools.register
 from app.agent.planner import create_plan
 from app.agent.service import approve_run, discard_run, execute_run, ingest_documents, run_agent
 from app.agent.state import AgentState
-from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, WORKSPACE_ROOTS
+from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, IMAGE_GENERATION_TIMEOUT_SECONDS, IMAGE_GENERATION_URL, WORKSPACE_ROOTS
 from app.llm.client import get_available_models
 from app.memory.embeddings import create_embedding
 from app.memory.memory import get_conversation, search_memory
@@ -27,7 +28,7 @@ from app.tools.filesystem import list_files, validate_workspace
 from app.tools.registry import registry
 
 from .dependencies import require_run_store, verify_api_key
-from .schemas import ChatRequest, ExecuteRequest, IngestRequest, MemoryQuery, OpenAIChatCompletionRequest, OpenAIEmbeddingRequest, PlanRequest, RunRequest
+from .schemas import ChatRequest, ExecuteRequest, ImageGenerationRequest, IngestRequest, MemoryQuery, OpenAIChatCompletionRequest, OpenAIEmbeddingRequest, PlanRequest, RunRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -421,6 +422,38 @@ def available_models():
     except Exception as exc:
         logger.exception("Could not load gateway model list")
         raise HTTPException(503, "Model gateway is unavailable") from exc
+
+
+@router.get("/images/status", dependencies=[Depends(verify_api_key)])
+def image_generation_status():
+    return {"available": bool(IMAGE_GENERATION_URL), "provider": "automatic1111" if IMAGE_GENERATION_URL else None}
+
+
+@router.post("/images/generations", dependencies=[Depends(verify_api_key)])
+async def generate_image(request: ImageGenerationRequest):
+    """Proxy an optional local Automatic1111/Forge image backend.
+
+    The backend URL is administrator-configured; callers cannot choose an
+    arbitrary destination. Returned images remain data URLs for the local UI.
+    """
+    if not IMAGE_GENERATION_URL:
+        raise HTTPException(503, "Image generation is not configured. Set IMAGE_GENERATION_URL to an Automatic1111/Forge API.")
+    if not request.prompt.strip():
+        raise HTTPException(400, "Image prompt cannot be empty")
+    payload = request.model_dump()
+    try:
+        response = await run_in_threadpool(
+            requests.post,
+            f"{IMAGE_GENERATION_URL}/sdapi/v1/txt2img",
+            json=payload,
+            timeout=IMAGE_GENERATION_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        images = response.json().get("images", [])
+    except requests.RequestException as exc:
+        logger.exception("Image generation backend failed")
+        raise HTTPException(502, "Image generation backend is unavailable") from exc
+    return {"created": int(datetime.now(timezone.utc).timestamp()), "data": [{"url": f"data:image/png;base64,{image}"} for image in images]}
 
 
 @router.get("/v1/models/{model_id}", dependencies=[Depends(verify_api_key)])

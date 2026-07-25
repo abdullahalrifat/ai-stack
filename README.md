@@ -121,6 +121,28 @@ planning, tool activity, streamed model output, and any reviewable diff. The
 UI uses the same authenticated `/runs` API; it does not store the key in local
 storage or send it to any third party.
 
+The Task Router provides Auto, Code, Research, Finance, Quick Chat, Deep
+Analysis, Image Analysis, and Image Generation profiles. Text attachments
+(`.md`, `.txt`, `.csv`, source/config files) are included as bounded task
+context. Research and Finance profiles use current web evidence and do not
+inspect the mounted repository unless the task asks for it. Source URLs found
+in an answer are displayed below live output.
+
+### Optional image generation
+
+`vision` is for image analysis only. To enable the Image Generation profile,
+run an Automatic1111/Forge-compatible image server and set its trusted local
+URL before recreating the agent service:
+
+```bash
+IMAGE_GENERATION_URL=http://host.docker.internal:7860
+docker compose up -d --force-recreate agents
+```
+
+The agent proxies only its administrator-configured URL to
+`/sdapi/v1/txt2img`; users cannot supply arbitrary backend URLs. Generated
+images appear in the Task Router gallery for the current browser session.
+
 The UI proxies `/api` to the internal agent service, so browser SSE stays
 same-origin while still sending the user-provided API key.
 

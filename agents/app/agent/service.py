@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.config import DEFAULT_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
-from .executor import execute_plan
+from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
 from ..memory import (
@@ -95,7 +95,7 @@ def run_agent(
     with workspace_context(workspace):
         state.history = get_conversation(conversation_id)
         state.memories = search_memory(message)
-        state.plan = create_plan(state)
+        state.plan = [] if requires_external_search(message) else create_plan(state)
         answer = execute_plan(state, on_event=on_event, on_token=on_token)
 
     state.answer = answer
@@ -176,7 +176,7 @@ def execute_run(run_id: str) -> None:
             state.memories = search_memory(task)
 
             on_event("planning", {})
-            state.plan = create_plan(state)
+            state.plan = [] if requires_external_search(task) else create_plan(state)
             on_event("plan_ready", {"plan": state.plan})
 
             answer = execute_plan(

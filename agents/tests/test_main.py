@@ -45,6 +45,12 @@ def test_openai_chat_returns_openai_shape():
     assert response["choices"][0]["message"] == {"role": "assistant", "content": "done"}
 
 
+def test_image_generation_status_is_explicit_when_unconfigured(monkeypatch):
+    monkeypatch.setattr(routes, "IMAGE_GENERATION_URL", "")
+
+    assert routes.image_generation_status() == {"available": False, "provider": None}
+
+
 def test_openai_stream_returns_sse_and_done_marker():
     def streamed_agent(*args, **kwargs):
         kwargs["on_token"]("done")

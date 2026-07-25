@@ -285,6 +285,10 @@ services:
       WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-true}
       WEB_SEARCH_URL: http://searxng:8080/search
 
+      # Optional Automatic1111/Forge-compatible local image generator.
+      IMAGE_GENERATION_URL: ${IMAGE_GENERATION_URL:-}
+      IMAGE_GENERATION_TIMEOUT_SECONDS: ${IMAGE_GENERATION_TIMEOUT_SECONDS:-180}
+
     ports:
       - "127.0.0.1:8000:8000"
 

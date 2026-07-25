@@ -24,6 +24,11 @@ WEB_SEARCH_ENABLED = env_flag("WEB_SEARCH_ENABLED", True)
 WEB_SEARCH_URL = os.getenv("WEB_SEARCH_URL", "http://searxng:8080/search")
 WEB_SEARCH_TIMEOUT_SECONDS = int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "15"))
 
+# Optional Automatic1111/Forge-compatible image generation API. Ollama vision
+# models analyze images but do not create them, so generation stays separate.
+IMAGE_GENERATION_URL = os.getenv("IMAGE_GENERATION_URL", "").rstrip("/")
+IMAGE_GENERATION_TIMEOUT_SECONDS = int(os.getenv("IMAGE_GENERATION_TIMEOUT_SECONDS", "180"))
+
 # Multiple workspace roots can be mounted (e.g. several repositories).
 # WORKSPACE_DIR is kept for backward compatibility and is always included as
 # the first allowed root. Add more with a comma-separated WORKSPACE_ROOTS.

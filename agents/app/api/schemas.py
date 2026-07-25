@@ -60,3 +60,12 @@ class OpenAIChatCompletionRequest(BaseModel):
 class OpenAIEmbeddingRequest(BaseModel):
     model: str | None = None
     input: list[str] | str
+
+
+class ImageGenerationRequest(BaseModel):
+    prompt: str
+    negative_prompt: str = ""
+    width: int = 1024
+    height: int = 1024
+    steps: int = 28
+    seed: int = -1
