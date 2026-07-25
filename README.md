@@ -253,6 +253,7 @@ Pin container image digests after validating a release.
 ```text
 agents/app/
   main.py          stable FastAPI/OpenAI-compatible entry point
+  api/             routes, request/response schemas, authentication dependencies
   core/            configuration and shared exceptions
   agent/           planning, prompts, state, parsing, tool loop, orchestration
   llm/             LiteLLM gateway client and model discovery

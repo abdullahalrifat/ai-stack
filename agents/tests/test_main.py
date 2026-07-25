@@ -5,40 +5,41 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app import main
+from app.api import dependencies, routes, schemas
+from app.core.config import AGENT_MODEL_ID
 
 
-def request(stream: bool = False) -> main.OpenAIChatCompletionRequest:
-    return main.OpenAIChatCompletionRequest(
-        model=main.AGENT_MODEL_ID,
-        messages=[main.OpenAIChatMessage(role="user", content="hello")],
+def request(stream: bool = False) -> schemas.OpenAIChatCompletionRequest:
+    return schemas.OpenAIChatCompletionRequest(
+        model=AGENT_MODEL_ID,
+        messages=[schemas.OpenAIChatMessage(role="user", content="hello")],
         stream=stream,
     )
 
 
 def test_verify_api_key_requires_valid_bearer_token(monkeypatch):
-    monkeypatch.setattr(main, "API_KEY", "secret")
-    monkeypatch.setattr(main, "ALLOW_INSECURE_NO_AUTH", False)
+    monkeypatch.setattr(dependencies, "AGENT_API_KEY", "secret")
+    monkeypatch.setattr(dependencies, "ALLOW_INSECURE_NO_AUTH", False)
 
-    assert main.verify_api_key("Bearer secret") is True
+    assert dependencies.verify_api_key("Bearer secret") is True
     with pytest.raises(HTTPException, match="Invalid API key"):
-        main.verify_api_key("Bearer wrong")
+        dependencies.verify_api_key("Bearer wrong")
     with pytest.raises(HTTPException, match="Missing authorization"):
-        main.verify_api_key(None)
+        dependencies.verify_api_key(None)
 
 
 def test_openai_chat_rejects_unknown_model():
-    bad_request = main.OpenAIChatCompletionRequest(
-        model="unknown", messages=[main.OpenAIChatMessage(role="user", content="hello")]
+    bad_request = schemas.OpenAIChatCompletionRequest(
+        model="unknown", messages=[schemas.OpenAIChatMessage(role="user", content="hello")]
     )
 
     with pytest.raises(HTTPException, match="only serves"):
-        asyncio.run(main.openai_chat(bad_request, None))
+        asyncio.run(routes.openai_chat(bad_request, None))
 
 
 def test_openai_chat_returns_openai_shape():
-    with patch("app.main.run_in_threadpool", new=AsyncMock(return_value={"answer": "done"})):
-        response = asyncio.run(main.openai_chat(request(), None))
+    with patch("app.api.routes.run_in_threadpool", new=AsyncMock(return_value={"answer": "done"})):
+        response = asyncio.run(routes.openai_chat(request(), None))
 
     assert response["object"] == "chat.completion"
     assert response["choices"][0]["message"] == {"role": "assistant", "content": "done"}
@@ -50,8 +51,8 @@ def test_openai_stream_returns_sse_and_done_marker():
         return {"answer": "done"}
 
     async def collect():
-        with patch("app.main.run_agent", side_effect=streamed_agent):
-            response = await main.openai_chat(request(stream=True), None)
+        with patch("app.api.routes.run_agent", side_effect=streamed_agent):
+            response = await routes.openai_chat(request(stream=True), None)
             return [chunk async for chunk in response.body_iterator]
 
     chunks = asyncio.run(collect())
