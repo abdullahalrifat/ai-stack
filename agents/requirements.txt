@@ -1,0 +1,27 @@
+fastapi
+uvicorn
+requests
+
+langgraph
+langchain
+langchain-openai
+
+qdrant-client
+
+redis
+
+openai
+langchain-qdrant
+
+pydantic
+python-dotenv
+psycopg[binary]
+
+# These are intentionally installed in the runner image because they are
+# present in ALLOWED_COMMANDS and run_tests.
+pytest
+pytest-cov
+mypy
+ruff
+black
+flake8
