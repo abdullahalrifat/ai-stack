@@ -172,7 +172,7 @@ docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tes
 
 For a new Open WebUI data directory, the Compose configuration seeds two
 OpenAI-compatible connections: LiteLLM for regular model chats and this agent
-for `agent/coding-agent`. Choose **agent/coding-agent** whenever you want a
+for `agent.coding-agent`. Choose **agent.coding-agent** whenever you want a
 repository-aware agent. Use the normal LiteLLM models for ordinary chat.
 
 Existing Open WebUI installations retain connection settings in their data
@@ -180,7 +180,7 @@ directory, so add the agent manually if it does not appear after a restart.
 
 Open WebUI also supports adding the agent manually at **Admin Settings →
 Connections → OpenAI → Add New Connection** using URL
-`http://agents:8000/v1`, the `AGENT_API_KEY`, and a prefix such as `agent/`.
+`http://agents:8000/v1`, the `AGENT_API_KEY`, and the prefix `agent`.
 Keep this as an administrator-managed connection: it stores the key server-side.
 The compatibility endpoint accepts `stream: true` and sends SSE heartbeats
 and model-token deltas. For actual live agent progress (planning, tool
@@ -275,7 +275,7 @@ execution. Use `coder` for normal coding, `reasoning` for slower investigation,
 and `vision` only for image-aware work. Never choose `embedding` for an agent
 run; it exists only for retrieval.
 
-`agent/coding-agent` in Open WebUI is intentionally a single repository-aware
+`agent.coding-agent` in Open WebUI is intentionally a single repository-aware
 agent persona. Use normal LiteLLM models in Open WebUI for ordinary chat, and
 use the Runs UI for per-task model selection and reviewable repository work.
 
@@ -287,8 +287,8 @@ seeding, so add it once under **Admin Settings → Connections → OpenAI**:
 
 1. URL: `http://agents:8000/v1`
 2. API key: `AGENT_API_KEY`
-3. Prefix: `agent/`
-4. Start a new chat and select `agent/coding-agent`.
+3. Prefix: `agent`
+4. Start a new chat and select `agent.coding-agent`.
 
 ## Documents, RAG, and financial analysis
 

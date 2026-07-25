@@ -209,7 +209,9 @@ services:
       # endpoint has its own key; leaving this blank makes the seeded
       # connection unusable.
       OPENAI_API_KEYS: ${LITELLM_MASTER_KEY};${AGENT_API_KEY}
-      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent/","model_ids":["coding-agent"]}}'
+      # Open WebUI joins an OpenAI connection prefix with a dot, producing
+      # the displayed model id "agent.coding-agent".
+      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["coding-agent"]}}'
 
     volumes:
       - ./open-webui:/app/backend/data
@@ -245,7 +247,7 @@ services:
 
       # DEFAULT_MODEL is what /chat, /execute, and /runs use unless a request
       # overrides it. AGENT_MODEL_ID is the id the agent advertises at
-      # /v1/models and is what Open WebUI's "agent/coding-agent" connection
+      # /v1/models and is what Open WebUI's "agent.coding-agent" connection
       # expects to see -- keep it in sync with the model_ids entry in
       # open-webui's OPENAI_API_CONFIGS above if you change it.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-coder}
