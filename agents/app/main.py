@@ -19,7 +19,6 @@ from pydantic import BaseModel
 # IMPORTANT
 # Load tools before registry usage
 # =====================================================
-import app.tools.register
 from app.agent import (
     ingest_documents,
     run_agent,
