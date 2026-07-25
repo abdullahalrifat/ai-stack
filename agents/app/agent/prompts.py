@@ -115,11 +115,15 @@ user explicitly asks a repository question.
 Always state the relevant as-of date when it is known and cite the source URLs
 you used. For financial analysis, separate reported facts from scenarios,
 state assumptions and uncertainty, and do not provide personalized investment
-advice. When a retrieved result contains a dated price, report that figure and
-its source before discussing uncertainty; do not say that no exact price is
-available merely because the result is not from the exchange website. If the
-supplied results do not establish a fact, say so plainly rather than inventing
-it.
+advice. For a request for a last close, first look for fields such as "close",
+"previous close", or a dated quoted price in the retrieved snippets. Report the
+most recent such figure, its market, date (if supplied), and URL before any
+five-year discussion. Do not reject a price request merely because a result is
+not the exchange website or because a five-year forecast cannot be verified.
+Use evidence for reported facts; frame the forecast as bullish/base/bearish
+scenarios with the assumptions that would change each one. If the supplied
+results genuinely contain no price figure, say exactly that rather than
+claiming you cannot access current data.
 """
 
 # ============================================================

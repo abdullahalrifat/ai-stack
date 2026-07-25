@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.agent.executor import execute_plan, normalize_tool_args
+from app.agent.executor import execute_plan, financial_price_query, normalize_tool_args
 
 
 class DummyState:
@@ -85,6 +85,12 @@ def test_normalize_tool_args_no_change():
     assert result == {"directory": "."}
 
 
+def test_financial_price_query_keeps_company_and_market():
+    assert financial_price_query(
+        "search renata last closing day price from DSE also analyze it in five years"
+    ) == "renata DSE latest closing price previous close historical data"
+
+
 # ----------------------------------------------------
 # execute_plan
 # ----------------------------------------------------
@@ -155,8 +161,9 @@ def test_execute_plan_prefetches_current_external_information(mock_chat_with_too
 
     assert result == "Result"
     assert mock_registry.execute.call_args.args[0] == "web_search"
-    assert mock_registry.execute.call_args.args[1]["query"].startswith(state.user_message)
-    assert mock_registry.execute.call_args.args[1]["query"].endswith("latest closing price historical data")
+    assert mock_registry.execute.call_args.args[1]["query"] == (
+        "Renata DSE latest closing price previous close historical data"
+    )
     assert "https://example.test/renata" in mock_chat_with_tools.call_args.args[0][1]["content"]
     tools = mock_chat_with_tools.call_args.kwargs["tools"]
     assert [tool["function"]["name"] for tool in tools] == ["web_search"]
@@ -175,6 +182,24 @@ def test_execute_plan_retries_research_refusal(mock_chat_with_tools, mock_regist
     ]
 
     assert execute_plan(state) == "The retrieved result reports a previous close of 470.60."
+    assert mock_chat_with_tools.call_count == 2
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_retries_price_refusal_with_retrieved_evidence(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    state.user_message = "Search Renata last closing price on DSE"
+    mock_registry.list_tools.return_value = ["web_search"]
+    mock_registry.execute.return_value = {
+        "results": [{"url": "https://example.test", "content": "Previous close 470.60"}]
+    }
+    mock_chat_with_tools.side_effect = [
+        make_message(content="I cannot provide the last closing day price based on current information."),
+        make_message(content="The source reports a previous close of 470.60.", tool_calls=None),
+    ]
+
+    assert execute_plan(state) == "The source reports a previous close of 470.60."
     assert mock_chat_with_tools.call_count == 2
 
 

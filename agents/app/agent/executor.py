@@ -68,6 +68,9 @@ _FINANCIAL_QUERY = re.compile(
 )
 _RESEARCH_REFUSAL = re.compile(
     r"(?:cannot|can't|do not)\s+(?:directly\s+)?(?:access|retrieve).*?(?:real[ -]?time|stock|market|data)|"
+    r"(?:cannot|can't|do not)\s+(?:provide|find|verify).*?(?:closing|price|stock|market|data)|"
+    r"(?:no|lack of)\s+(?:real[ -]?time|timestamped|verified).*?(?:data|price)|"
+    r"(?:do not|does not)\s+(?:contain|include).*?(?:closing|price)|"
     r"do not have access to real[ -]?time",
     re.IGNORECASE | re.DOTALL,
 )
@@ -79,6 +82,23 @@ def requires_external_search(message: str) -> bool:
 
 def is_financial_query(message: str) -> bool:
     return bool(_FINANCIAL_QUERY.search(message))
+
+
+def financial_price_query(message: str) -> str:
+    """Turn a conversational stock request into a compact price lookup.
+
+    Passing the entire request (often including a five-year analysis question)
+    to a search engine dilutes the result ranking.  Keep the named company and
+    market, then explicitly ask for the two fields that establish a last close.
+    """
+
+    subject = message
+    match = re.search(r"\b(?:search|find|look\s+up)\s+([\w.-]+)", message, re.IGNORECASE)
+    if match:
+        subject = match.group(1)
+
+    market = "DSE" if re.search(r"\bdse\b", message, re.IGNORECASE) else "stock market"
+    return f"{subject} {market} latest closing price previous close historical data"
 
 
 def _prefetch_external_search(state, available_tools: list[str], on_event):
@@ -93,7 +113,7 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
 
     query = state.user_message
     if is_financial_query(query):
-        query = f"{query} latest closing price historical data"
+        query = financial_price_query(query)
     args = {"query": query}
     on_event("tool_call", {"tool": "web_search", "args": args, "prefetch": True})
     try:
@@ -404,8 +424,9 @@ Plan:
                         "content": (
                             "Your draft contradicts the retrieved search results. Do not say you lack "
                             "real-time access and do not tell the user to search elsewhere. Use the result "
-                            "snippets and URLs already provided, distinguish verified facts from uncertainty, "
-                            "and answer the requested analysis now."
+                            "snippets and URLs already provided. For a price request, extract the most recent "
+                            "reported close or previous-close figure, name its source and date when supplied. "
+                            "Then distinguish verified facts from an uncertain scenario analysis and answer now."
                         ),
                     }
                 )
