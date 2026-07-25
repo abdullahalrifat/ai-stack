@@ -415,9 +415,13 @@ def models():
     }
 
 
-@router.get("/models/available", dependencies=[Depends(verify_api_key)])
+@router.get("/models/available")
 def available_models():
-    """Gateway models available for task planning and execution."""
+    """Public, non-sensitive catalog for the Task Router model selector.
+
+    Starting a run and all run data remain authenticated; this endpoint only
+    returns gateway model aliases and never exposes credentials or settings.
+    """
     try:
         return {"models": get_available_models()}
     except Exception as exc:

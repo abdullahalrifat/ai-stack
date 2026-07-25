@@ -61,6 +61,11 @@ def test_openai_models_include_task_profiles():
     assert {"coding-agent", "auto", "code", "research", "finance", "deep", "vision"} <= ids
 
 
+def test_available_models_is_a_public_gateway_catalog():
+    with patch("app.api.routes.get_available_models", return_value=["qwen3-8b", "reasoning"]):
+        assert routes.available_models() == {"models": ["qwen3-8b", "reasoning"]}
+
+
 def test_image_generation_status_is_explicit_when_unconfigured(monkeypatch):
     monkeypatch.setattr(routes, "IMAGE_GENERATION_URL", "")
 
