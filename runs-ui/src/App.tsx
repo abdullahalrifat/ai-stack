@@ -8,8 +8,8 @@ const terminal = new Set(["completed", "awaiting_approval", "failed", "discarded
 const profileInfo: Record<Profile, { title: string; description: string; model: string }> = {
   auto: { title: "Auto", description: "Routes by task intent.", model: "Automatic" },
   code: { title: "Code", description: "Repository tools, tests, and reviewable edits.", model: "coder" },
-  research: { title: "Research", description: "Current web evidence with sources.", model: "reasoning" },
-  finance: { title: "Finance", description: "Current market research and cautious scenarios.", model: "reasoning" },
+  research: { title: "Research", description: "Current web evidence with sources.", model: "qwen3-8b" },
+  finance: { title: "Finance", description: "Current market research and cautious scenarios.", model: "qwen3-8b" },
   quick: { title: "Quick chat", description: "Fast summaries and simple questions.", model: "qwen3-8b" },
   deep: { title: "Deep analysis", description: "Slower investigation and tradeoffs.", model: "reasoning" },
   vision: { title: "Image analysis", description: "Image-aware prompt analysis.", model: "vision" },

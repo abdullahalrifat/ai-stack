@@ -17,11 +17,11 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "coder")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3-8b")
 AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "coding-agent")
 # Used by the Open WebUI coding-agent for current web/financial research when
 # no per-run model was explicitly selected in the Runs UI.
-RESEARCH_MODEL = os.getenv("RESEARCH_MODEL", "qwen3-14b")
+RESEARCH_MODEL = os.getenv("RESEARCH_MODEL", "qwen3-8b")
 
 WEB_SEARCH_ENABLED = env_flag("WEB_SEARCH_ENABLED", True)
 WEB_SEARCH_URL = os.getenv("WEB_SEARCH_URL", "http://searxng:8080/search")

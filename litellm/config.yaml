@@ -20,7 +20,9 @@ model_list:
 
   - model_name: coder
     litellm_params:
-      model: ollama_chat/qwen3-coder:30b
+      # Lightweight compatibility alias for coding-profile requests. The
+      # dedicated 30B coder model is intentionally not kept on this host.
+      model: ollama_chat/qwen3:8b
       api_base: http://ollama:11434
     model_info:
       supports_function_calling: true

@@ -298,7 +298,7 @@ and `vision` only for image-aware work. Never choose `embedding` for an agent
 run; it exists only for retrieval.
 
 When `agent.coding-agent` receives a current web/financial research request,
-it automatically uses `RESEARCH_MODEL` (default `qwen3-14b`) after collecting
+it automatically uses `RESEARCH_MODEL` (default `qwen3-8b`) after collecting
 web evidence. Set `RESEARCH_MODEL=reasoning` if you prefer deeper, slower
 analysis.
 
