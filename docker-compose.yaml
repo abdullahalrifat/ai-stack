@@ -16,6 +16,10 @@ services:
       # model for a full day.
       OLLAMA_KEEP_ALIVE: 10m
       OLLAMA_MAX_LOADED_MODELS: 1
+      # Open WebUI can attach several tool schemas to one request.  4096 is
+      # too small for those prompts; 8192 fits them while remaining practical
+      # with this host's 62 GiB of RAM and one loaded CPU model.
+      OLLAMA_CONTEXT_LENGTH: 8192
 
     volumes:
       - ./ollama:/root/.ollama

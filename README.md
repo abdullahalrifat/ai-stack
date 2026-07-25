@@ -307,8 +307,10 @@ evidence. Set `RESEARCH_MODEL=reasoning` if you prefer deeper, slower analysis.
 ### CPU model management
 
 The Compose stack keeps at most one model loaded and unloads it after 10
-minutes. This prevents the 8B, 14B, and vision models all occupying RAM on a
-CPU-only host. Models are never deleted automatically. Use:
+minutes. It uses an 8192-token context so Open WebUI's attached tool schemas
+fit without a context-size error. This prevents the 8B, 14B, and vision models
+all occupying RAM on a CPU-only host. Models are never deleted automatically.
+Use:
 
 ```bash
 ./scripts/manage-models.sh list
