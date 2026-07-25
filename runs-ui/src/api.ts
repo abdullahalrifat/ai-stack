@@ -1,4 +1,4 @@
-export type Run = { id: string; status: string; task: string; model: string; requested_workspace: string; allow_write: boolean; answer?: string; error?: string; created_at: string; completed_at?: string };
+export type Run = { id: string; status: string; task: string; model: string; requested_workspace: string; allow_write: boolean; conversation_id?: string | null; answer?: string; error?: string; created_at: string; completed_at?: string };
 export type RunEvent = { id?: number; event_type: string; payload: Record<string, unknown>; created_at?: string; status?: string };
 
 const base = "/api";
