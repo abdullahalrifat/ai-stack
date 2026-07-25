@@ -61,6 +61,11 @@ _CURRENT_EXTERNAL_INFO = re.compile(
     r"search (?:the )?(?:web|internet)|look up)\b",
     re.IGNORECASE,
 )
+_RESEARCH_REFUSAL = re.compile(
+    r"(?:cannot|can't|do not)\s+(?:directly\s+)?(?:access|retrieve).*?(?:real[ -]?time|stock|market|data)|"
+    r"do not have access to real[ -]?time",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def requires_external_search(message: str) -> bool:
@@ -284,6 +289,7 @@ Plan:
     ]
 
     leaked_tool_call_count = 0
+    research_retry_count = 0
 
     for step in range(MAX_STEPS):
         if should_cancel():
@@ -375,6 +381,23 @@ Plan:
                 }
             )
             continue
+
+        if research_mode and external_search and _RESEARCH_REFUSAL.search(answer):
+            research_retry_count += 1
+            if research_retry_count <= 1:
+                on_event("research_answer_retry", {"reason": "model ignored retrieved evidence"})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your draft contradicts the retrieved search results. Do not say you lack "
+                            "real-time access and do not tell the user to search elsewhere. Use the result "
+                            "snippets and URLs already provided, distinguish verified facts from uncertainty, "
+                            "and answer the requested analysis now."
+                        ),
+                    }
+                )
+                continue
 
         if _leaked_tool_call(answer):
             leaked_tool_call_count += 1

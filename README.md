@@ -297,6 +297,11 @@ execution. Use `coder` for normal coding, `reasoning` for slower investigation,
 and `vision` only for image-aware work. Never choose `embedding` for an agent
 run; it exists only for retrieval.
 
+When `agent.coding-agent` receives a current web/financial research request,
+it automatically uses `RESEARCH_MODEL` (default `qwen3-14b`) after collecting
+web evidence. Set `RESEARCH_MODEL=reasoning` if you prefer deeper, slower
+analysis.
+
 `agent.coding-agent` in Open WebUI is intentionally a single repository-aware
 agent persona. Use normal LiteLLM models in Open WebUI for ordinary chat, and
 use the Runs UI for per-task model selection and reviewable repository work.

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.config import DEFAULT_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
+from ..core.config import DEFAULT_MODEL, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
 from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
@@ -24,6 +24,13 @@ from .state import AgentState
 from ..tools.filesystem import workspace_context
 
 logger = logging.getLogger(__name__)
+
+
+def _task_model(message: str, requested_model: str) -> str:
+    """Keep explicit Runs UI selection, but route default agent research."""
+    if requested_model == DEFAULT_MODEL and requires_external_search(message):
+        return RESEARCH_MODEL
+    return requested_model
 
 
 class RunEventBuffer:
@@ -87,7 +94,7 @@ def run_agent(
     state = AgentState(
         conversation_id=conversation_id,
         user_message=message,
-        model=model,
+        model=_task_model(message, model),
         allow_write=allow_write,
         workspace=workspace,
     )
@@ -165,7 +172,7 @@ def execute_run(run_id: str) -> None:
         state = AgentState(
             conversation_id=conversation_id,
             user_message=task,
-            model=model,
+            model=_task_model(task, model),
             allow_write=allow_write,
             workspace=active_workspace,
         )

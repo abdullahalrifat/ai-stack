@@ -162,6 +162,22 @@ def test_execute_plan_prefetches_current_external_information(mock_chat_with_too
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_retries_research_refusal(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    state.user_message = "DSE stock closing price today"
+    mock_registry.list_tools.return_value = ["web_search"]
+    mock_registry.execute.return_value = {"results": [{"url": "https://example.test", "content": "Previous close 470.60"}]}
+    mock_chat_with_tools.side_effect = [
+        make_message(content="I cannot directly access real-time stock market data.", tool_calls=None),
+        make_message(content="The retrieved result reports a previous close of 470.60.", tool_calls=None),
+    ]
+
+    assert execute_plan(state) == "The retrieved result reports a previous close of 470.60."
+    assert mock_chat_with_tools.call_count == 2
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_unavailable_tool(
     mock_chat_with_tools,
     mock_registry,
