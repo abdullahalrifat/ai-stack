@@ -5,6 +5,10 @@ type Profile = "auto" | "code" | "research" | "finance" | "quick" | "deep" | "vi
 type ImageResult = { url: string; created: number; prompt: string };
 
 const terminal = new Set(["completed", "awaiting_approval", "failed", "discarded", "cancelled"]);
+// The API replaces this list as soon as an Agent API key is entered. Keeping
+// the local stack's chat-capable aliases here avoids a misleading one-option
+// Custom selector before the authenticated request can be made.
+const defaultModels = ["qwen3-8b", "qwen3-14b", "coder", "reasoning", "vision"];
 const profileInfo: Record<Profile, { title: string; description: string; model: string }> = {
   auto: { title: "Auto", description: "Routes by task intent.", model: "Automatic" },
   code: { title: "Code", description: "Repository tools, tests, and reviewable edits.", model: "coder" },
@@ -42,7 +46,7 @@ async function attachmentContext(files: File[]): Promise<string> {
 
 export function App() {
   const [key, setKey] = useState(""); const [task, setTask] = useState(""); const [workspace, setWorkspace] = useState("/workspace");
-  const [profile, setProfile] = useState<Profile>("auto"); const [customModel, setCustomModel] = useState("qwen3-8b"); const [models, setModels] = useState<string[]>(["qwen3-8b"]);
+  const [profile, setProfile] = useState<Profile>("auto"); const [customModel, setCustomModel] = useState("qwen3-8b"); const [models, setModels] = useState<string[]>(defaultModels);
   const [write, setWrite] = useState(false); const [files, setFiles] = useState<File[]>([]); const [runs, setRuns] = useState<Run[]>([]); const [active, setActive] = useState<Run | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]); const [answer, setAnswer] = useState(""); const [diff, setDiff] = useState(""); const [error, setError] = useState(""); const [imageAvailable, setImageAvailable] = useState(false); const [images, setImages] = useState<ImageResult[]>([]); const cursor = useRef(0);
   const effectiveProfile = profile === "auto" ? pickProfile(task) : profile;
