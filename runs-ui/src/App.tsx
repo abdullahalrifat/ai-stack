@@ -63,7 +63,9 @@ export function App() {
     cursor.current = 0; setEvents([]); setAnswer(""); setDiff(""); setActive(run);
     let retries = 0;
     try {
-      while (!terminal.has(run.status)) {
+      // Always open the stream once. Completed runs have durable historical
+      // events that must be replayed when selected from the Recent runs list.
+      do {
         try {
           cursor.current = await streamEvents(key, run.id, cursor.current, consume);
           const current = await api<Run>(key, `/runs/${run.id}`);
@@ -75,7 +77,7 @@ export function App() {
           setError(`Live connection interrupted; retrying in ${Math.round(waitMs / 1_000)}s (${retries}/5)…`);
           await new Promise((resolve) => window.setTimeout(resolve, waitMs));
         }
-      }
+      } while (!terminal.has(run.status));
       setError(""); await loadRuns();
     } catch (e) { setError(`Could not reconnect to this run: ${String(e)}`); }
   };
