@@ -168,7 +168,12 @@ This is a finance research request. Build the answer from the supplied price,
 filing/earnings, company-news, and macro/sector evidence. Use no more than six
 evidence rows and reserve at least half the answer for a concise base, bullish,
 and bearish scenario. A scenario must name the company and macro assumptions
-that support it; do not invent a numeric target price.
+that support it. Determine the company's industry from the retrieved evidence;
+never reuse a generic stock template or introduce unrelated sectors (such as
+real estate or infrastructure) without a cited company source. For a 10–20
+year horizon, analyze business drivers, competitive position, reinvestment,
+and risks rather than inventing price targets or CAGRs. Do not claim that
+financial or sector data is absent when it appears in the supplied reports.
 Treat all output as informational research, not a recommendation to buy, sell,
 or hold.
 """

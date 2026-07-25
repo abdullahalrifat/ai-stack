@@ -89,7 +89,10 @@ export function App() {
   } catch (e) { setError(String(e)); } };
   const continueConversation = async (event: FormEvent) => { event.preventDefault(); if (!active || !followUp.trim()) return; setError(""); try {
     const session = active.conversation_id || conversationId || crypto.randomUUID(); setConversationId(session);
-    const result = await api<{ run_id: string; status: string }>(key, "/runs", { method: "POST", body: JSON.stringify({ task: followUp, workspace: active.requested_workspace, model: active.model, conversation_id: session, allow_write: false }) });
+    // Runs created before conversation IDs existed cannot be recovered from
+    // durable history. Seed their first follow-up with the prior exchange.
+    const taskWithLegacyContext = active.conversation_id ? followUp : `Earlier user request:\n${active.task}\n\nEarlier agent answer:\n${active.answer || answer}\n\nFollow-up request:\n${followUp}`;
+    const result = await api<{ run_id: string; status: string }>(key, "/runs", { method: "POST", body: JSON.stringify({ task: taskWithLegacyContext, workspace: active.requested_workspace, model: active.model, conversation_id: session, allow_write: false }) });
     setFollowUp(""); await follow({ id: result.run_id, status: result.status, task: followUp, model: active.model, conversation_id: session, requested_workspace: active.requested_workspace, allow_write: false, created_at: new Date().toISOString() });
   } catch (e) { setError(String(e)); } };
   const newConversation = () => { setConversationId(null); setActive(null); setEvents([]); setAnswer(""); setDiff(""); setFollowUp(""); setError(""); };
