@@ -5,7 +5,13 @@ import time
 import requests
 from openai import OpenAI
 
-from ..core.config import DEFAULT_MODEL, MODEL_LIST_CACHE_SECONDS, AGENT_MODEL_ID
+from ..core.config import (
+    AGENT_MODEL_ID,
+    DEFAULT_MODEL,
+    LLM_MAX_COMPLETION_TOKENS,
+    LLM_TIMEOUT_SECONDS,
+    MODEL_LIST_CACHE_SECONDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +27,9 @@ def get_client():
         _client = OpenAI(
             base_url=os.getenv("OPENAI_API_BASE"),
             api_key=os.getenv("OPENAI_API_KEY"),
+            # Retrying a timed-out local inference request duplicates work on
+            # Ollama's single queue, making every subsequent response slower.
+            max_retries=0,
         )
 
     return _client
@@ -97,7 +106,8 @@ def chat(messages, model=DEFAULT_MODEL) -> str:
         model=model,
         messages=messages,
         temperature=0,
-        timeout=120,
+        max_tokens=LLM_MAX_COMPLETION_TOKENS,
+        timeout=LLM_TIMEOUT_SECONDS,
     )
 
     return response.choices[0].message.content
@@ -120,7 +130,8 @@ def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto"):
         tools=tools,
         tool_choice=tool_choice,
         temperature=0,
-        timeout=120,
+        max_tokens=LLM_MAX_COMPLETION_TOKENS,
+        timeout=LLM_TIMEOUT_SECONDS,
     )
 
     return response.choices[0].message
@@ -143,6 +154,7 @@ def chat_with_tools_stream(messages, tools, model=DEFAULT_MODEL, tool_choice="au
         tools=tools,
         tool_choice=tool_choice,
         temperature=0,
-        timeout=120,
+        max_tokens=LLM_MAX_COMPLETION_TOKENS,
+        timeout=LLM_TIMEOUT_SECONDS,
         stream=True,
     )

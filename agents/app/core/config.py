@@ -42,7 +42,11 @@ WORKSPACE_ROOTS: list[Path] = [WORKSPACE_ROOT] + [
 ]
 
 MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "12"))
-MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "30000"))
+# A local 8B model has a finite context window.  Keep individual tool payloads
+# compact so the model sees the task and evidence rather than a truncated tail.
+MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "90"))
+LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "384"))
 COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "120"))
 POSTGRES_URL = os.getenv("POSTGRES_URL")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")

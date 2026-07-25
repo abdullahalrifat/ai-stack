@@ -270,6 +270,9 @@ services:
       SANDBOX_ROOT: /sandboxes
 
       MAX_AGENT_STEPS: ${MAX_AGENT_STEPS:-12}
+      MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-8000}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
+      LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-384}
       COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-120}
 
       # Executables the run_command tool may invoke (no shell metacharacters

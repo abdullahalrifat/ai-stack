@@ -7,7 +7,10 @@ from langchain.tools import tool
 
 from app.core.config import WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS, WEB_SEARCH_URL
 
-MAX_RESULTS = 5
+# Search snippets are evidence, not a document dump.  A small, focused set
+# keeps local-model prompts inside their usable context window.
+MAX_RESULTS = 3
+MAX_RESULT_CONTENT_CHARS = 350
 MAX_QUERY_LENGTH = 500
 
 
@@ -46,7 +49,7 @@ def web_search(query: str, domains: list[str] | None = None):
                 {
                     "title": item.get("title", "Untitled"),
                     "url": url,
-                    "content": item.get("content", "")[:1000],
+                    "content": item.get("content", "")[:MAX_RESULT_CONTENT_CHARS],
                     "published_date": item.get("publishedDate"),
                 }
             )
