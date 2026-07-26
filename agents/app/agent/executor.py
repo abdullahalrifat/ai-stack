@@ -7,13 +7,14 @@ from ..core.config import (
     CONTEXT_COMPACT_EVERY_STEPS,
     CONTEXT_COMPACT_KEEP_RECENT,
     MAX_AGENT_STEPS,
+    MAX_EMPTY_MODEL_TURNS,
     MAX_TOOL_OUTPUT_CHARS,
 )
 from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
 from .context_budget import fit_user_context
-from .prompts import COMPACTION_PROMPT, executor_prompt
+from .prompts import COMPACTION_PROMPT, PARTIAL_SYNTHESIS_PROMPT, executor_prompt
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
 
@@ -353,6 +354,39 @@ def _compact_history(messages: list, model: str) -> list:
     ]
 
 
+def _synthesize_partial_answer(state) -> str:
+    """Return a useful answer from evidence when the tool loop loses progress."""
+
+    evidence = _bounded_context(state.observations[-8:], 8_000)
+    prompt = f"""Task:
+{state.user_message}
+
+Collected tool evidence:
+{evidence}
+"""
+    try:
+        answer = chat(
+            [
+                {"role": "system", "content": PARTIAL_SYNTHESIS_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            model=state.model,
+            max_tokens=getattr(state, "max_completion_tokens", None),
+        ).strip()
+        if answer:
+            return answer
+    except Exception:
+        logger.exception("Partial-answer synthesis failed")
+
+    if state.observations:
+        tools = ", ".join(item["tool"] for item in state.observations)
+        return (
+            "I could not complete another tool-call turn, but I did inspect: "
+            f"{tools}. Please retry the request for a fuller analysis."
+        )
+    return "I could not complete the investigation. Please retry the request."
+
+
 def _stream_message(messages: list, tools: list, model: str, on_token, max_tokens: int | None = None, timeout_seconds: int | None = None) -> SimpleNamespace:
     """Collect one streamed model turn while forwarding text deltas promptly.
 
@@ -363,6 +397,7 @@ def _stream_message(messages: list, tools: list, model: str, on_token, max_token
     """
 
     content_parts: list[str] = []
+    reasoning_parts: list[str] = []
     calls: dict[int, dict] = {}
 
     for chunk in chat_with_tools_stream(messages, tools=tools, model=model, max_tokens=max_tokens, timeout_seconds=timeout_seconds):
@@ -377,6 +412,14 @@ def _stream_message(messages: list, tools: list, model: str, on_token, max_token
         if content:
             content_parts.append(content)
             on_token(content)
+
+        # Qwen-family OpenAI-compatible streams can emit thought tokens on a
+        # separate field. They are not an answer or a tool call, but recording
+        # them prevents us from treating the stream shape as mysterious when
+        # debugging a model/provider mismatch.
+        reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+        if reasoning:
+            reasoning_parts.append(reasoning)
 
         for part in getattr(delta, "tool_calls", None) or []:
             index = getattr(part, "index", None)
@@ -399,7 +442,11 @@ def _stream_message(messages: list, tools: list, model: str, on_token, max_token
         )
         for index, call in sorted(calls.items())
     ]
-    return SimpleNamespace(content="".join(content_parts), tool_calls=tool_calls or None)
+    return SimpleNamespace(
+        content="".join(content_parts),
+        tool_calls=tool_calls or None,
+        reasoning_content="".join(reasoning_parts),
+    )
 
 
 def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_research=False) -> str:
@@ -463,6 +510,7 @@ Plan:
 
     leaked_tool_call_count = 0
     research_retry_count = 0
+    empty_turn_count = 0
 
     for step in range(MAX_STEPS):
         if should_cancel():
@@ -502,6 +550,7 @@ Plan:
         tool_calls = getattr(message, "tool_calls", None)
 
         if tool_calls:
+            empty_turn_count = 0
             messages.append(
                 {
                     "role": "assistant",
@@ -560,6 +609,19 @@ Plan:
         answer = (message.content or "").strip()
 
         if not answer:
+            empty_turn_count += 1
+            on_event(
+                "empty_model_turn",
+                {
+                    "count": empty_turn_count,
+                    "reasoning_chars": len(getattr(message, "reasoning_content", "") or ""),
+                },
+            )
+            if empty_turn_count >= MAX_EMPTY_MODEL_TURNS:
+                answer = _synthesize_partial_answer(state)
+                state.finished = True
+                on_event("final_answer", {"answer": answer, "partial": True})
+                return answer
             messages.append(
                 {
                     "role": "user",
@@ -567,6 +629,8 @@ Plan:
                 }
             )
             continue
+
+        empty_turn_count = 0
 
         if research_mode and external_search and _RESEARCH_REFUSAL.search(answer):
             research_retry_count += 1
@@ -632,5 +696,8 @@ Plan:
         on_event("final_answer", {"answer": answer})
         return answer
 
+    answer = _synthesize_partial_answer(state)
+    state.finished = True
     on_event("max_steps_reached", {"steps": state.steps})
-    return "Maximum execution steps reached before completion."
+    on_event("final_answer", {"answer": answer, "partial": True})
+    return answer

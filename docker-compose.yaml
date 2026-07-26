@@ -287,6 +287,7 @@ services:
       SANDBOX_ROOT: /sandboxes
 
       MAX_AGENT_STEPS: ${MAX_AGENT_STEPS:-24}
+      MAX_EMPTY_MODEL_TURNS: ${MAX_EMPTY_MODEL_TURNS:-3}
       # One local CPU/GPU inference worker by default; concurrent requests
       # queue instead of competing for Ollama and appearing stalled.
       MAX_CONCURRENT_AGENT_RUNS: ${MAX_CONCURRENT_AGENT_RUNS:-1}

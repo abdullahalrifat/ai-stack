@@ -49,6 +49,15 @@ IGNORE_DIRS = {
     ".venv",
     "dist",
     "build",
+    # Docker volume/state directories are not source code. They are often
+    # unreadable from the agent container and can contain huge model/database
+    # artifacts that waste an entire repository-review run.
+    "agent-sandboxes",
+    "ollama",
+    "postgres",
+    "qdrant",
+    "redis",
+    "cache",
 }
 
 
@@ -271,13 +280,17 @@ def tree(
             if level > depth:
                 return
 
-            entries = sorted(
-                path.iterdir(),
-                key=lambda x: (
-                    x.is_file(),
-                    x.name.lower(),
-                ),
-            )
+            try:
+                entries = sorted(
+                    path.iterdir(),
+                    key=lambda x: (
+                        x.is_file(),
+                        x.name.lower(),
+                    ),
+                )
+            except PermissionError:
+                output.append("  " * level + "[unreadable]")
+                return
 
             for entry in entries:
                 if ignored(entry):

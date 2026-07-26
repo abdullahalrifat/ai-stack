@@ -53,6 +53,10 @@ DEFAULT_WORKSPACE = Path(
 ).resolve()
 
 MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "24"))
+# Stop a weak tool-calling model from spending the entire run repeatedly
+# returning an empty assistant turn. The executor synthesizes its collected
+# evidence once this threshold is reached.
+MAX_EMPTY_MODEL_TURNS = int(os.getenv("MAX_EMPTY_MODEL_TURNS", "3"))
 # A local 8B model has a finite context window.  Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
@@ -140,5 +144,7 @@ def validate_settings() -> None:
         raise RuntimeError("Invalid model context token budget")
     if MAX_CONCURRENT_AGENT_RUNS < 1:
         raise RuntimeError("MAX_CONCURRENT_AGENT_RUNS must be at least 1")
+    if MAX_EMPTY_MODEL_TURNS < 1:
+        raise RuntimeError("MAX_EMPTY_MODEL_TURNS must be at least 1")
     if not RUNNER_API_KEY:
         raise RuntimeError("RUNNER_API_KEY is required for isolated command execution")

@@ -15,6 +15,8 @@ model_list:
     litellm_params:
       model: ollama_chat/qwen3:8b
       api_base: http://ollama:11434
+      extra_body:
+        think: false
 
   - model_name: qwen3-14b
     litellm_params:
@@ -31,6 +33,8 @@ model_list:
       # dedicated 30B coder model is intentionally not kept on this host.
       model: ollama_chat/qwen3:8b
       api_base: http://ollama:11434
+      extra_body:
+        think: false
     model_info:
       supports_function_calling: true
 

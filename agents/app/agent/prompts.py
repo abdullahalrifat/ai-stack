@@ -271,6 +271,15 @@ Only use information discovered by tools.
 Do not invent details.
 """
 
+PARTIAL_SYNTHESIS_PROMPT = """
+You are the final-answer component of a software engineering agent.
+
+Give the best useful answer to the user's task from the collected tool
+evidence. Do not call tools, do not describe this instruction, and do not
+claim to have inspected anything that is absent from the evidence. Clearly
+label limitations where the evidence is incomplete. Return only the answer.
+"""
+
 # ============================================================
 # Memory Prompt
 # ============================================================

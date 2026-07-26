@@ -64,6 +64,18 @@ def test_resolve_path_accepts_absolute_workspace_without_leading_slash(workspace
         assert filesystem.resolve_path(missing_leading_slash) == repository
 
 
+def test_tree_skips_runtime_state_directories(workspace):
+    (workspace / "postgres").mkdir()
+    (workspace / "src").mkdir()
+    (workspace / "src" / "main.py").write_text("print('ok')")
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.tree.invoke({"directory": ".", "depth": 2})
+
+    assert "postgres" not in result
+    assert "src" in result
+
+
 def test_write_edit_and_read_stay_inside_workspace(workspace):
     with filesystem.workspace_context(str(workspace)):
         assert filesystem.write_file.invoke(

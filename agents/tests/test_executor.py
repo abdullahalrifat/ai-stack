@@ -335,23 +335,27 @@ def test_execute_plan_empty_content_retries(
     assert mock_chat_with_tools.call_count == 2
 
 
+@patch("app.agent.executor._synthesize_partial_answer", return_value="Partial evidence-based answer")
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_max_steps(
+def test_execute_plan_synthesizes_after_repeated_empty_turns(
     mock_chat_with_tools,
     mock_registry,
+    mock_synthesize,
 ):
     state = DummyState()
 
     mock_registry.list_tools.return_value = []
 
-    # The model never calls a tool and never produces usable content, so
-    # every step is retried until MAX_STEPS is exhausted.
+    # The model never calls a tool and never produces usable content. The
+    # executor must synthesize a partial answer instead of burning all steps.
     mock_chat_with_tools.return_value = make_message(content="", tool_calls=None)
 
     result = execute_plan(state)
 
-    assert "Maximum execution steps" in result
+    assert result == "Partial evidence-based answer"
+    assert mock_chat_with_tools.call_count == 3
+    mock_synthesize.assert_called_once_with(state)
 
 
 @patch("app.agent.executor.registry")
