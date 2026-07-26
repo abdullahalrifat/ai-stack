@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from app.agent.router import _policy_workflow, route_request
+from app.agent.router import _policy_workflow, _requires_router_escalation, route_request
 from app.agent.parser import ParserError
 import pytest
 
@@ -21,6 +21,22 @@ def test_policy_workflow_overrides_unreliable_model_classification(
     assert _policy_workflow(message, attachment, proposed) == expected
 
 
+def test_router_escalates_for_low_quality_document_evidence():
+    context = '{"source":"scan.pdf","needs_ocr":true}'
+
+    assert _requires_router_escalation("Analyze this document", context) is True
+
+
+def test_router_does_not_escalate_for_repeated_chunks_from_one_source():
+    context = (
+        '[{"source":"report.pdf","text":"A"},'
+        '{"source":"report.pdf","text":"B"},'
+        '{"source":"report.pdf","text":"C"}]'
+    )
+
+    assert _requires_router_escalation("Summarize this document", context) is False
+
+
 @patch("app.agent.router.extract_json")
 @patch("app.agent.router.chat")
 def test_route_request_builds_validated_finance_contract(mock_chat, mock_extract_json):
@@ -35,7 +51,10 @@ def test_route_request_builds_validated_finance_contract(mock_chat, mock_extract
         "plan": ["Extract holdings", "Research every company", "Synthesize risks"],
     }
 
-    route = route_request("Analyze my portfolio", [{"text": "Fortune Shoes"}])
+    route = route_request(
+        "Analyze my portfolio",
+        [{"text": "Fortune Shoes and Orion Pharma"}],
+    )
 
     assert route.workflow == "finance"
     assert route.requires_external_evidence is True
@@ -162,6 +181,46 @@ def test_route_request_ignores_unnecessary_external_evidence_request(
     assert route.workflow == "code"
     assert route.tasks[0].workflow == "code"
     assert route.requires_external_evidence is False
+
+
+@patch("app.agent.router.extract_json")
+@patch("app.agent.router.chat")
+def test_router_receives_multiple_document_sections_and_plans_validation(
+    mock_chat, mock_extract_json
+):
+    mock_chat.return_value = "{}"
+    mock_extract_json.return_value = {
+        "workflow": "deep",
+        "translated_task": "Analyze the active obligations table, excluding historical examples.",
+        "entities": ["Contract A", "Contract B"],
+        "tasks": [
+            {
+                "id": "extract_active_rows",
+                "objective": "Extract and validate every row in Active Obligations",
+                "workflow": "deep",
+                "depends_on": [],
+                "completion_criteria": ["Historical Examples rows are excluded"],
+            },
+            {
+                "id": "analyze_obligations",
+                "objective": "Analyze the validated active obligations",
+                "workflow": "deep",
+                "depends_on": ["extract_active_rows"],
+            },
+        ],
+    }
+    context = [
+        {"excerpt": "Active Obligations\nContract A | 2028\nContract B | 2030"},
+        {"excerpt": "Historical Examples\nOld Contract | 2019"},
+    ]
+
+    route = route_request("Analyze our current contractual obligations", context)
+
+    router_input = mock_chat.call_args.args[0][1]["content"]
+    assert "Active Obligations" in router_input
+    assert "Historical Examples" in router_input
+    assert route.entities == ["Contract A", "Contract B"]
+    assert route.tasks[1].depends_on == ["extract_active_rows"]
 
 
 @patch("app.agent.router.extract_json", side_effect=ParserError("bad JSON"))

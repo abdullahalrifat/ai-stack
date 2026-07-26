@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 
 from app.core.config import OPENAI_INPUT_MAX_CHARS
+from app.core.document_context import extract_retrieved_document_context
 
 
 def _excerpt(text: str, limit: int) -> str:
@@ -76,6 +77,8 @@ def compact_openai_messages(messages: Iterable[object], max_chars: int = OPENAI_
 def openai_prompt(messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_CHARS) -> str:
     """Convert compacted client messages into an unambiguous agent task."""
 
+    messages = list(messages)
+    document_context = extract_retrieved_document_context(messages)
     compacted = compact_openai_messages(messages, max_chars=max_chars)
     if not compacted:
         return ""
@@ -93,7 +96,13 @@ def openai_prompt(messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_
         if history_text
         else ""
     )
-    return (
+    task = (
         f"{prefix}Current user request — perform this task now:\n"
         f"{latest['content']}"
     )
+    if document_context:
+        task += (
+            "\n\nClient-supplied retrieval context:\n"
+            f"{document_context}"
+        )
+    return task

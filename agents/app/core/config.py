@@ -23,6 +23,7 @@ FAST_MODEL = os.getenv("FAST_MODEL", "quick")
 # Small, low-latency model used only to translate an Auto request into a
 # validated workflow contract. It does not answer the user's request.
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", FAST_MODEL)
+ROUTER_ESCALATION_MODEL = os.getenv("ROUTER_ESCALATION_MODEL", DEFAULT_MODEL)
 ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "1024"))
 FINANCE_MODEL = os.getenv("FINANCE_MODEL", DEFAULT_MODEL)
 # Used by the Open WebUI orchestrator for current web/financial research when

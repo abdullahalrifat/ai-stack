@@ -145,13 +145,51 @@ def _citation(payload: dict) -> str | None:
     return f"Document: {source}{f', {location}' if location else ''}"
 
 
+def _terms(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9][a-z0-9_.-]{1,}", text.lower())
+
+
+def _lexical_score(query: str, payload: dict) -> float:
+    """BM25-like exact-match score that works without a second search service."""
+    query_terms = _terms(query)
+    if not query_terms:
+        return 0.0
+    haystack = " ".join(
+        str(payload.get(key, ""))
+        for key in ("text", "source", "location", "headings", "sheet_name")
+    ).lower()
+    tokens = _terms(haystack)
+    frequencies = {term: tokens.count(term) for term in set(query_terms)}
+    score = sum((frequency / (frequency + 1.2)) for frequency in frequencies.values())
+    phrase = " ".join(query_terms)
+    if phrase and phrase in haystack:
+        score += 2.0
+    return score / max(len(set(query_terms)), 1)
+
+
+def _section_adjustment(query: str, payload: dict) -> float:
+    """Prefer primary/current sections unless the user explicitly asks for history."""
+    query_lower = query.lower()
+    wants_history = bool(re.search(r"\b(history|historical|previous|prior|archive|example)\b", query_lower))
+    kind = payload.get("section_kind")
+    if kind == "supplementary" and not wants_history:
+        return -0.18
+    if kind == "supplementary" and wants_history:
+        return 0.12
+    if kind == "primary":
+        return 0.05
+    return 0.0
+
+
 def _rerank(query: str, results: list[dict], limit: int) -> list[dict]:
-    """Blend vector similarity with a small lexical signal for exact facts."""
-    terms = set(re.findall(r"[a-z0-9]{3,}", query.lower()))
+    """Blend semantic, lexical, and structural relevance."""
     for result in results:
-        text = str(result["memory"].get("text", "")).lower()
-        overlap = len(terms.intersection(re.findall(r"[a-z0-9]{3,}", text)))
-        result["score"] = float(result["score"]) + min(overlap, 8) * 0.05
+        payload = result["memory"]
+        semantic = float(result.get("semantic_score", result.get("score", 0)))
+        lexical = float(result.get("lexical_score", _lexical_score(query, payload)))
+        result["semantic_score"] = semantic
+        result["lexical_score"] = lexical
+        result["score"] = semantic * 0.72 + min(lexical, 2.0) * 0.28 + _section_adjustment(query, payload)
         result["citation"] = _citation(result["memory"])
     return sorted(results, key=lambda item: item["score"], reverse=True)[:limit]
 
@@ -169,7 +207,24 @@ def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str |
         query_filter=query_filter,
     )
 
-    return [{"memory": item.payload, "score": item.score} for item in result.points]
+    return [
+        {"id": str(item.id), "memory": item.payload, "score": item.score, "semantic_score": item.score}
+        for item in result.points
+    ]
+
+
+def _scoped_payloads(scope: str | None, limit: int = 200) -> list[dict]:
+    if not _collection_exists():
+        return []
+    query_filter = Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))]) if scope else None
+    points, _ = qdrant.scroll(
+        collection_name=COLLECTION,
+        scroll_filter=query_filter,
+        limit=limit,
+        with_payload=True,
+        with_vectors=False,
+    )
+    return [{"id": str(point.id), "memory": point.payload, "score": 0.0} for point in points]
 
 
 # =====================================================
@@ -178,10 +233,45 @@ def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str |
 
 
 def search_memory(query: str, limit: int = 5, scope: str | None = None):
-
+    """Hybrid retrieval with semantic recall, lexical recall, and section context."""
     embedding = create_embedding(query)
+    semantic = search_long_term_memory(embedding, max(limit, 8), scope)
+    try:
+        lexical_pool = _scoped_payloads(scope)
+    except Exception:
+        lexical_pool = []
 
-    return _rerank(query, search_long_term_memory(embedding, limit, scope), limit)
+    merged: dict[str, dict] = {}
+    for result in semantic:
+        key = result.get("id") or str(result["memory"].get("text", ""))
+        merged[key] = result
+    for result in lexical_pool:
+        result["lexical_score"] = _lexical_score(query, result["memory"])
+        if result["lexical_score"] <= 0:
+            continue
+        key = result.get("id") or str(result["memory"].get("text", ""))
+        if key in merged:
+            merged[key]["lexical_score"] = result["lexical_score"]
+        else:
+            merged[key] = result
+
+    ranked = _rerank(query, list(merged.values()), max(limit, 8))
+    # Pull adjacent chunks from the selected page/sheet so table coverage is
+    # not determined by the one chunk with the strongest vector score.
+    selected_sections = {
+        (item["memory"].get("source"), item["memory"].get("location"))
+        for item in ranked[:limit]
+        if item["memory"].get("source")
+    }
+    for result in lexical_pool:
+        payload = result["memory"]
+        if (payload.get("source"), payload.get("location")) not in selected_sections:
+            continue
+        key = result.get("id") or str(payload.get("text", ""))
+        if key not in merged:
+            result["lexical_score"] = _lexical_score(query, payload)
+            merged[key] = result
+    return _rerank(query, list(merged.values()), max(limit, min(limit * 3, 15)))
 
 
 def memory_context(results: list[dict], token_budget: int = 1_200) -> list[dict]:
@@ -198,6 +288,27 @@ def memory_context(results: list[dict], token_budget: int = 1_200) -> list[dict]
             {
                 "citation": result.get("citation") or _citation(payload),
                 "score": round(float(result.get("score", 0)), 3),
+                "provenance": {
+                    key: payload.get(key)
+                    for key in (
+                        "source",
+                        "location",
+                        "page_number",
+                        "sheet_name",
+                        "headings",
+                        "section_kind",
+                        "document_index",
+                        "chunk_index",
+                        "quality_score",
+                        "extraction_status",
+                        "needs_ocr",
+                        "row_count",
+                        "table_row_count",
+                        "row_start",
+                        "row_end",
+                    )
+                    if payload.get(key) not in (None, "")
+                },
                 "excerpt": excerpt,
             }
         )

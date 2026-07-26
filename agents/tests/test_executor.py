@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.agent.executor import (
+    _answer_audit,
     _synthesize_partial_answer,
     execute_plan,
     financial_document_urls,
@@ -52,6 +53,25 @@ def make_tool_call(call_id: str, name: str, arguments: dict):
 def make_message(content=None, tool_calls=None):
     """Build a stand-in for the OpenAI SDK's response message object."""
     return SimpleNamespace(content=content, tool_calls=tool_calls)
+
+
+def test_answer_audit_checks_entities_deliverables_and_document_provenance():
+    state = DummyState()
+    state.routing_entities = ["Contract Alpha"]
+    state.route_deliverables = ["Risk matrix"]
+    state.document_evidence = {
+        "provenance_required": True,
+        "records": [{"source": "report.pdf"}],
+    }
+
+    failures = _answer_audit(state, "Contract Alpha has material exposure.")
+
+    assert "deliverable may be missing: Risk matrix" in failures
+    assert "document provenance is not cited" in failures
+    assert _answer_audit(
+        state,
+        "Contract Alpha appears in report.pdf. Risk matrix: medium likelihood.",
+    ) == []
 
 
 @pytest.fixture(autouse=True)

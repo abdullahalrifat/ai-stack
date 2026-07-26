@@ -11,6 +11,7 @@ from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, MAX_CONCURRENT_AGENT
 from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
+from ..core.evidence import build_document_evidence, build_inline_document_evidence
 from ..memory import (
     get_conversation,
     save_conversation,
@@ -75,7 +76,10 @@ def _apply_auto_route(state, on_event=None) -> None:
     """Translate an Auto request and apply only server-approved profile policy."""
     if state.prompt_mode != "auto":
         return
-    decision = route_request(state.user_message, state.memories)
+    routing_context = list(state.memories)
+    if state.document_evidence:
+        routing_context.append({"document_evidence": state.document_evidence})
+    decision = route_request(state.user_message, routing_context)
     profile = resolve_profile(decision.workflow)
     state.model = profile.model
     state.prompt_mode = profile.prompt_mode
@@ -85,6 +89,10 @@ def _apply_auto_route(state, on_event=None) -> None:
         decision.requires_external_evidence or profile.force_research
     )
     state.routing_entities = decision.entities
+    state.route_deliverables = decision.deliverables
+    state.route_completion_criteria = [
+        criterion for task in decision.tasks for criterion in task.completion_criteria
+    ]
     brief_parts = [f"Translated objective:\n{decision.translated_task}"]
     if decision.entities:
         brief_parts.append("Grounded entities:\n- " + "\n- ".join(decision.entities))
@@ -101,6 +109,21 @@ def _apply_auto_route(state, on_event=None) -> None:
         brief_parts.append(
             "Planner-approved assumptions (label them in the answer):\n- "
             + "\n- ".join(decision.assumptions)
+        )
+    if decision.selected_document_sections:
+        brief_parts.append(
+            "Selected document sections:\n- "
+            + "\n- ".join(decision.selected_document_sections)
+        )
+    if decision.extracted_records:
+        brief_parts.append(
+            "Planner-grounded extracted records:\n- "
+            + "\n- ".join(decision.extracted_records)
+        )
+    if decision.validation_warnings:
+        brief_parts.append(
+            "Route validation warnings:\n- "
+            + "\n- ".join(decision.validation_warnings)
         )
     task_lines = []
     for task in decision.tasks:
@@ -210,6 +233,10 @@ def run_agent(
         state.history = get_conversation(conversation_id, limit=4)
         state.memory_scope = str(workspace)
         state.memories = memory_context(search_memory(message, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode) else []
+        state.document_evidence = (
+            build_document_evidence(message, state.memories)
+            or build_inline_document_evidence(message)
+        )
         _apply_auto_route(state, on_event)
         research_mode = force_research or state.requires_external_evidence or requires_external_search(message)
         state.plan = _execution_plan(state, research_mode)
@@ -319,6 +346,10 @@ def execute_run(run_id: str) -> None:
             state.history = get_conversation(conversation_id, limit=4)
             state.memory_scope = run.get("document_scope") or str(requested_workspace)
             state.memories = memory_context(search_memory(task, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode, run.get("document_scope")) else []
+            state.document_evidence = (
+                build_document_evidence(task, state.memories)
+                or build_inline_document_evidence(task)
+            )
 
             on_event("planning", {})
             _apply_auto_route(state, on_event)
@@ -435,15 +466,47 @@ def discard_run(run_id: str) -> dict[str, Any]:
 # =====================================================
 
 
+def _document_chunks_with_positions(text: str, size: int = 1_800, overlap: int = 240):
+    """Yield complete-row chunks with zero-based source row ranges."""
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return
+    current: list[tuple[int, str]] = []
+    current_size = 0
+    for row_index, line in enumerate(lines):
+        # Exceptionally long machine-generated lines still need a hard bound.
+        if len(line) > size:
+            if current:
+                yield "".join(item[1] for item in current), current[0][0], current[-1][0]
+                current, current_size = [], 0
+            start = 0
+            while start < len(line):
+                end = min(len(line), start + size)
+                yield line[start:end], row_index, row_index
+                if end == len(line):
+                    break
+                start = end - overlap
+            continue
+        if current and current_size + len(line) > size:
+            yield "".join(item[1] for item in current), current[0][0], current[-1][0]
+            retained: list[tuple[int, str]] = []
+            retained_size = 0
+            for previous in reversed(current):
+                if retained_size + len(previous[1]) > overlap:
+                    break
+                retained.insert(0, previous)
+                retained_size += len(previous[1])
+            current, current_size = retained, retained_size
+        current.append((row_index, line))
+        current_size += len(line)
+    if current:
+        yield "".join(item[1] for item in current), current[0][0], current[-1][0]
+
+
 def _document_chunks(text: str, size: int = 1_800, overlap: int = 240):
-    """Create overlapping retrieval chunks with stable per-document positions."""
-    start = 0
-    while start < len(text):
-        end = min(len(text), start + size)
-        yield text[start:end]
-        if end == len(text):
-            break
-        start = end - overlap
+    """Compatibility wrapper returning only chunk text."""
+    for chunk, _, _ in _document_chunks_with_positions(text, size, overlap):
+        yield chunk
 
 
 def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None, scope: str | None = None):
@@ -453,12 +516,20 @@ def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None, s
         if not text or not text.strip():
             continue
 
-        for chunk_index, chunk in enumerate(_document_chunks(text)):
+        for chunk_index, (chunk, row_start, row_end) in enumerate(_document_chunks_with_positions(text)):
             embedding = create_embedding(chunk)
             save_long_term_memory(
                 chunk,
                 embedding,
-                {**(metadata or {}), "type": "document", "scope": scope or "global", "document_index": document_index, "chunk_index": chunk_index},
+                {
+                    **(metadata or {}),
+                    "type": "document",
+                    "scope": scope or "global",
+                    "document_index": document_index,
+                    "chunk_index": chunk_index,
+                    "row_start": row_start,
+                    "row_end": row_end,
+                },
             )
             stored += 1
 
@@ -469,13 +540,32 @@ def ingest_extracted_documents(documents, scope: str | None = None) -> dict[str,
     """Store parsed document sections while preserving file/page citations."""
     stored = 0
     sources: list[str] = []
+    diagnostics: list[dict[str, Any]] = []
     for document_index, document in enumerate(documents):
+        diagnostics.append(
+            {
+                key: document.metadata.get(key)
+                for key in (
+                    "source",
+                    "location",
+                    "extraction_strategy",
+                    "extraction_status",
+                    "quality_score",
+                    "needs_ocr",
+                    "row_count",
+                    "table_row_count",
+                )
+                if document.metadata.get(key) is not None
+            }
+        )
         if not document.text or not document.text.strip():
             continue
         source = str(document.metadata.get("source", "uploaded document"))
         if source not in sources:
             sources.append(source)
-        for chunk_index, chunk in enumerate(_document_chunks(document.text)):
+        for chunk_index, (chunk, row_start, row_end) in enumerate(
+            _document_chunks_with_positions(document.text)
+        ):
             embedding = create_embedding(chunk)
             save_long_term_memory(
                 chunk,
@@ -486,7 +576,22 @@ def ingest_extracted_documents(documents, scope: str | None = None) -> dict[str,
                     "scope": scope or "global",
                     "document_index": document_index,
                     "chunk_index": chunk_index,
+                    "row_start": row_start,
+                    "row_end": row_end,
                 },
             )
             stored += 1
-    return {"stored": stored, "sources": sources, "scope": scope or "global", "status": "success"}
+    low_quality = [
+        item for item in diagnostics if item.get("extraction_status") == "low_quality"
+    ]
+    return {
+        "stored": stored,
+        "sources": sources,
+        "scope": scope or "global",
+        "status": "success" if not low_quality else "partial",
+        "diagnostics": diagnostics,
+        "warnings": [
+            f"{item.get('source')}, {item.get('location')}: OCR or a higher-quality source is required"
+            for item in low_quality
+        ],
+    }

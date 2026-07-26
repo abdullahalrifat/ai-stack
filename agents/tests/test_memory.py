@@ -21,3 +21,28 @@ def test_memory_context_respects_budget_and_keeps_citation():
 
     assert len(result[0]["excerpt"]) == 400
     assert result[0]["citation"] == "Document: report.pdf"
+
+
+def test_rerank_penalizes_supplementary_section_for_current_query():
+    results = [
+        {
+            "memory": {
+                "text": "Active contract Alpha",
+                "source": "report.pdf",
+                "section_kind": "primary",
+            },
+            "score": 0.7,
+        },
+        {
+            "memory": {
+                "text": "Historical contract Alpha",
+                "source": "report.pdf",
+                "section_kind": "supplementary",
+            },
+            "score": 0.75,
+        },
+    ]
+
+    ranked = _rerank("current contract Alpha", results, 2)
+
+    assert ranked[0]["memory"]["section_kind"] == "primary"

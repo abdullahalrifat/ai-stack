@@ -13,6 +13,7 @@ from ..core.config import (
     MAX_TOOL_OUTPUT_CHARS,
 )
 from ..core.exceptions import RunCancelled
+from ..core.evidence import evidence_prompt
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
 from .context_budget import estimate_tokens, fit_user_context
@@ -319,6 +320,37 @@ def _bounded_context(value, limit: int) -> str:
     return f"{text[:limit]}\n...[older stored context omitted]"
 
 
+def _answer_audit(state, answer: str) -> list[str]:
+    """Check observable route requirements before accepting a final answer."""
+    lowered = answer.casefold()
+    failures: list[str] = []
+    missing_entities = [
+        entity for entity in getattr(state, "routing_entities", [])[:30]
+        if entity.casefold() not in lowered
+    ]
+    if missing_entities:
+        failures.append("missing grounded entities: " + ", ".join(missing_entities))
+
+    for deliverable in getattr(state, "route_deliverables", [])[:12]:
+        keywords = [
+            token for token in re.findall(r"[a-z0-9]{4,}", deliverable.casefold())
+            if token not in {"provide", "include", "analysis", "summary"}
+        ]
+        if keywords and not any(keyword in lowered for keyword in keywords):
+            failures.append(f"deliverable may be missing: {deliverable}")
+
+    evidence = getattr(state, "document_evidence", {}) or {}
+    if evidence and evidence.get("provenance_required"):
+        sources = {
+            str(record.get("source")).casefold()
+            for record in evidence.get("records", [])
+            if record.get("source")
+        }
+        if sources and not any(source in lowered for source in sources):
+            failures.append("document provenance is not cited")
+    return failures
+
+
 def _compact_history(messages: list, model: str) -> list:
     """Summarize older tool exchanges once the transcript grows large.
 
@@ -515,6 +547,13 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_
 Current external search results (retrieved for this request; cite their URLs):
 {_truncate(json.dumps(external_search, default=str))}
 """
+    document_context = evidence_prompt(getattr(state, "document_evidence", {}))
+    if document_context:
+        document_context = f"""
+
+Structured document evidence and provenance ledger:
+{_truncate(document_context)}
+"""
 
     task_context = f"""
 Workspace:
@@ -535,6 +574,7 @@ Relevant memory:
 Plan:
 {_bounded_context(state.plan, 800)}
 {external_context}
+{document_context}
 """
 
     system_prompt = executor_prompt(getattr(state, "prompt_mode", "code"), research_mode)
@@ -545,6 +585,7 @@ Plan:
 
     leaked_tool_call_count = 0
     research_retry_count = 0
+    completion_retry_count = 0
     empty_turn_count = 0
     empty_search_count = 0
     unproductive_calls: dict[str, int] = {}
@@ -766,6 +807,28 @@ Plan:
                 }
             )
             continue
+
+        audit_failures = _answer_audit(state, answer)
+        if audit_failures:
+            on_event("answer_audit_failed", {"failures": audit_failures})
+            # A streamed draft has already reached the client, so do not emit a
+            # duplicate replacement. Non-streaming API calls receive one
+            # bounded repair turn using the same evidence.
+            if completion_retry_count < 1 and on_token is None:
+                completion_retry_count += 1
+                messages.append({"role": "assistant", "content": answer})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Revise the draft to satisfy these missing requirements:\n- "
+                            + "\n- ".join(audit_failures)
+                            + "\nUse only the evidence already provided, cite document source/location, "
+                            "and disclose any requirement that cannot be completed."
+                        ),
+                    }
+                )
+                continue
 
         state.finished = True
         on_event("final_answer", {"answer": answer})

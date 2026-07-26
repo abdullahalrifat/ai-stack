@@ -263,6 +263,7 @@ services:
       FAST_MODEL: ${FAST_MODEL:-quick}
       # Semantic routing is a short JSON-only turn before Auto execution.
       ROUTER_MODEL: ${ROUTER_MODEL:-quick}
+      ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-coder}
       ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1024}
       # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-coder}

@@ -10,7 +10,7 @@ import json
 import logging
 import re
 
-from ..core.config import ROUTER_MAX_COMPLETION_TOKENS, ROUTER_MODEL
+from ..core.config import ROUTER_ESCALATION_MODEL, ROUTER_MAX_COMPLETION_TOKENS, ROUTER_MODEL
 from ..llm.client import chat
 from .parser import ParserError, extract_json
 
@@ -35,6 +35,8 @@ Return exactly one JSON object with this schema:
   "deliverables": ["specific outputs the user expects"],
   "missing_inputs": ["information absent from the request"],
   "assumptions": ["safe, explicit assumptions that let work continue"],
+  "selected_document_sections": ["source and page/sheet selected from evidence"],
+  "extracted_records": ["verbatim row labels or identifiers grounded in evidence"],
   "tasks": [
     {
       "id": "short_unique_id",
@@ -76,6 +78,16 @@ Translation quality rules:
 11. Mark complexity simple for one stable operation, moderate for several
     related operations, and complex for multi-source, multi-entity, or
     cross-domain work.
+12. Read document structure before selecting entities. Distinguish the primary
+    table or section requested by the user from appendices, examples, history,
+    footnotes, totals, and supplementary tables. Preserve section headings and
+    row labels in the translated task. Never substitute a nearby entity list
+    merely because it is easier to read.
+13. For table/list analysis, plan an explicit extraction-and-validation task
+    before research or synthesis. Its completion criteria must require coverage
+    of every relevant row and exclusion of rows from unrelated sections.
+14. Populate selected_document_sections and extracted_records only from the
+    supplied evidence. Never invent either. Preserve record labels verbatim.
 Return JSON only. No markdown or explanation.
 """
 
@@ -101,6 +113,9 @@ class RouteDecision:
     deliverables: list[str] = field(default_factory=list)
     missing_inputs: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
+    selected_document_sections: list[str] = field(default_factory=list)
+    extracted_records: list[str] = field(default_factory=list)
+    validation_warnings: list[str] = field(default_factory=list)
     tasks: list[PlannedTask] = field(default_factory=list)
     source: str = "model"
 
@@ -187,6 +202,42 @@ def _task_id(value) -> str:
     return text[:48]
 
 
+def _requires_router_escalation(message: str, context: str) -> bool:
+    """Use the stronger planner only for evidence that exceeds the fast path."""
+    source_count = len(
+        {
+            source.casefold()
+            for source in re.findall(r'"source"\s*:\s*"([^"]+)"', context)
+        }
+    )
+    return bool(
+        len(context) > 5_000
+        or source_count > 2
+        or bool(re.search(r'"needs_ocr"\s*:\s*true', context, re.IGNORECASE))
+        or bool(re.search(r'"gaps"\s*:\s*\[\s*\[', context, re.IGNORECASE))
+        or (
+            re.search(
+                r"\b(compare|reconcile|cross-reference)\b",
+                message,
+                re.IGNORECASE,
+            )
+            and source_count > 1
+        )
+    )
+
+
+def _grounded_values(values: list[str], grounding: str) -> tuple[list[str], list[str]]:
+    grounded, rejected = [], []
+    normalized_grounding = " ".join(grounding.casefold().split())
+    for value in values:
+        normalized = " ".join(value.casefold().split())
+        if normalized and normalized in normalized_grounding:
+            grounded.append(value)
+        else:
+            rejected.append(value)
+    return grounded, rejected
+
+
 def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
     if not isinstance(value, list) or not 1 <= len(value) <= 4:
         return []
@@ -261,6 +312,11 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
     excerpts = attachment_context or []
     context = json.dumps(excerpts[:8], ensure_ascii=False, default=str)[:6_000]
     try:
+        router_model = (
+            ROUTER_ESCALATION_MODEL
+            if _requires_router_escalation(message, context)
+            else ROUTER_MODEL
+        )
         response = chat(
             [
                 {"role": "system", "content": ROUTER_PROMPT},
@@ -269,7 +325,7 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
                     "content": f"Original request:\n{message}\n\nAttachment excerpts:\n{context or '(none)'}",
                 },
             ],
-            model=ROUTER_MODEL,
+            model=router_model,
             max_tokens=ROUTER_MAX_COMPLETION_TOKENS,
             response_format={"type": "json_object"},
         )
@@ -304,6 +360,28 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
     deliverables = _bounded_strings(data.get("deliverables"), limit=12, chars=240)
     missing_inputs = _bounded_strings(data.get("missing_inputs"), limit=12, chars=240)
     assumptions = _bounded_strings(data.get("assumptions"), limit=12, chars=240)
+    selected_sections = _bounded_strings(
+        data.get("selected_document_sections"), limit=12, chars=240
+    )
+    extracted_records = _bounded_strings(data.get("extracted_records"), limit=160, chars=240)
+    validation_warnings: list[str] = []
+    grounding = f"{message}\n{context}"
+    if context:
+        entities, rejected_entities = _grounded_values(entities, grounding)
+        if rejected_entities:
+            validation_warnings.append(
+                f"Discarded {len(rejected_entities)} ungrounded entity/entities"
+            )
+    selected_sections, rejected_sections = _grounded_values(selected_sections, grounding)
+    extracted_records, rejected_records = _grounded_values(extracted_records, grounding)
+    if rejected_sections:
+        validation_warnings.append(
+            f"Discarded {len(rejected_sections)} ungrounded document section(s)"
+        )
+    if rejected_records:
+        validation_warnings.append(
+            f"Discarded {len(rejected_records)} ungrounded extracted record(s)"
+        )
     tasks = _validated_tasks(data.get("tasks"), workflow)
     if not tasks:
         # Accept the earlier compact plan shape during rolling upgrades, but
@@ -346,5 +424,9 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
         deliverables=deliverables,
         missing_inputs=missing_inputs,
         assumptions=assumptions,
+        selected_document_sections=selected_sections,
+        extracted_records=extracted_records,
+        validation_warnings=validation_warnings,
         tasks=tasks,
+        source="model_escalated" if router_model == ROUTER_ESCALATION_MODEL and router_model != ROUTER_MODEL else "model",
     )

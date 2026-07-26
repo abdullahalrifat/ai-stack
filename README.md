@@ -169,7 +169,7 @@ tool loop. Write tools are exposed only when `allow_write: true`; durable write
 runs operate in a disposable Git worktree and still require explicit approval
 before their diff is merged.
 
-### 5. Evidence prefetch and portfolio behavior
+### 5. Document grounding and evidence prefetch
 
 Mandatory research is prefetched before synthesis so successful tool use does
 not depend solely on a smaller model deciding to call a search tool. For a
@@ -179,18 +179,56 @@ selected source documents are then supplied to the finance executor, which is
 instructed to distinguish reported facts from uncertain scenarios and cite
 material external claims.
 
+Document handling is domain-neutral. PDF pages, spreadsheet sheets, and other
+supported document sections retain source and location metadata during
+ingestion. PDF extraction compares plain and layout-aware parsing and keeps the
+higher-quality result. Each section receives readability, row, table, and OCR
+diagnostics; low-quality or image-only PDF pages automatically use OCR.
+Retrieval chunks prefer complete rows and paragraphs instead of cutting
+ordinary table records at arbitrary character boundaries, and every chunk
+retains its source row range. In the OpenAI-compatible path, source/context
+blocks supplied inside a client system message are preserved as explicitly
+untrusted document evidence while the client's system policy is discarded.
+
+Retrieval is hybrid rather than vector-only. Semantic candidates are merged
+with exact lexical matches, ranked with section-aware signals, and expanded
+with adjacent chunks from the same page or sheet. A deterministic selection
+stage then produces:
+
+- selected and potentially confusing sections;
+- grounded row records;
+- source/page/sheet provenance for every record;
+- extraction-quality warnings; and
+- a coverage report containing retrieved row ranges and gaps.
+
+The router receives bounded excerpts from the retrieved material. Its contract
+requires it to identify the section or table relevant to the request, separate
+current or primary records from appendices, history, examples, footnotes, and
+other supplementary material, and add an extraction-and-validation task before
+analysis of a list or table. These rules apply equally to portfolios,
+contracts, invoices, reports, datasets, and other supported documents; there
+are no document-template or company-specific parsing branches.
+
+The normal small router handles uncomplicated requests. It escalates to
+`ROUTER_ESCALATION_MODEL` for large, multi-source, low-quality, missing-range,
+or cross-document evidence. Generated section names and extracted records are
+accepted only when they occur in the supplied evidence. Before a non-streaming
+answer is accepted, a deterministic completion audit checks entity coverage,
+requested deliverables, and document provenance; one bounded repair turn is
+allowed when the draft is incomplete.
+
 For example:
 
 ```text
-"Analyze my uploaded portfolio for the long term"
+"Analyze the active obligations in this uploaded report"
         |
-router sees portfolio excerpts and extracts company names
+retrieval preserves section headings and complete table rows
         |
-workflow=finance, external evidence required
+router selects the relevant table and plans row validation
         |
-per-company DSE price/fundamental/news searches + market context
+the selected expert gathers any required external evidence
         |
-FINANCE_MODEL synthesizes holding-level and portfolio-level analysis
+the executor produces the requested grounded analysis
 ```
 
 The pipeline provides research assistance, not trade execution or personalized
@@ -214,6 +252,7 @@ without exposing hidden model reasoning.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `ROUTER_MODEL` | `quick` | LiteLLM model alias used for the routing-only turn |
+| `ROUTER_ESCALATION_MODEL` | `DEFAULT_MODEL` | Stronger planner for complex or low-confidence document routes |
 | `ROUTER_MAX_COMPLETION_TOKENS` | `1024` | Maximum router/planner response size |
 | `FAST_MODEL` | `quick` | Executor used by Quick |
 | `DEFAULT_MODEL` | `qwen3-8b` in Compose | Executor used by Code |

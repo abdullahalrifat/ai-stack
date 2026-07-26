@@ -3,6 +3,8 @@ uvicorn
 requests
 beautifulsoup4
 pypdf
+pypdfium2
+pytesseract
 python-docx
 openpyxl
 python-multipart

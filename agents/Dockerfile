@@ -14,6 +14,7 @@ RUN apt-get update && \
     make \
     nodejs \
     npm \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 

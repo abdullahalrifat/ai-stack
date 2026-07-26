@@ -16,6 +16,8 @@ class AgentState:
 
     memories: list = field(default_factory=list)
 
+    document_evidence: dict = field(default_factory=dict)
+
     memory_scope: str | None = None
 
     observations: list = field(default_factory=list)
@@ -27,6 +29,10 @@ class AgentState:
     execution_brief: str = ""
 
     routing_entities: list[str] = field(default_factory=list)
+
+    route_deliverables: list[str] = field(default_factory=list)
+
+    route_completion_criteria: list[str] = field(default_factory=list)
 
     requires_external_evidence: bool = False
 
