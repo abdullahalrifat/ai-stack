@@ -200,8 +200,6 @@ services:
       - "127.0.0.1:3000:8080"
 
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
-
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
       REDIS_URL: redis://redis:6379
@@ -217,8 +215,8 @@ services:
       # connection unusable.
       OPENAI_API_KEYS: ${LITELLM_MASTER_KEY};${AGENT_API_KEY}
       # Open WebUI joins an OpenAI connection prefix with a dot, producing
-      # the displayed model id "agent.coding-agent".
-      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["coding-agent"]}}'
+      # the displayed model id "agent.orchestrator".
+      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["orchestrator"]}}'
 
     volumes:
       - ./open-webui:/app/backend/data
@@ -257,7 +255,7 @@ services:
 
       # DEFAULT_MODEL is what /chat, /execute, and /runs use unless a request
       # overrides it. AGENT_MODEL_ID is the id the agent advertises at
-      # /v1/models and is what Open WebUI's "agent.coding-agent" connection
+      # /v1/models and is what Open WebUI's "agent.orchestrator" connection
       # expects to see -- keep it in sync with the model_ids entry in
       # open-webui's OPENAI_API_CONFIGS above if you change it.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3-8b}
@@ -268,9 +266,9 @@ services:
       ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1024}
       # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-coder}
-      # Used for current web/financial research through agent.coding-agent.
+      # Used for current web/financial research through agent.orchestrator.
       RESEARCH_MODEL: ${RESEARCH_MODEL:-quick}
-      AGENT_MODEL_ID: ${AGENT_MODEL_ID:-coding-agent}
+      AGENT_MODEL_ID: ${AGENT_MODEL_ID:-orchestrator}
 
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: redis://redis:6379

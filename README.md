@@ -34,7 +34,7 @@ Open WebUI ---- Postgres / Redis / Qdrant
 
 ## Agent routing and execution pipeline
 
-The agent presents one default `coding-agent`/Auto identity to clients while
+The agent presents one default `orchestrator` identity to clients while
 retaining specialized workflows internally. A central semantic router
 translates an Auto request into a bounded execution contract; it does not
 answer the request itself.
@@ -493,14 +493,16 @@ real request exposes a new routing failure.
 For a new Open WebUI data directory, the Compose configuration seeds two
 OpenAI-compatible connections: LiteLLM for direct model chats and the
 centralized agent. The agent connection advertises only
-**agent.coding-agent**. Its router chooses the internal workflow and execution
+**agent.orchestrator**. Its router chooses the internal workflow and execution
 model; Code, Research, Finance, Quick, Deep, and Vision are not separate
-front-facing agents.
+front-facing agents. Open WebUI does not connect directly to Ollama; LiteLLM is
+the single direct-model gateway, preventing the same Ollama model from
+appearing once as local and again as an OpenAI-compatible external model.
 
 Existing Open WebUI installations retain connection settings in their data
 directory. If old `agent.auto`, `agent.code`, `agent.finance`, or other profile
 entries remain visible, edit or recreate the agent connection so its model list
-contains only `coding-agent`.
+contains only `orchestrator`.
 
 Open WebUI also supports adding the agent manually at **Admin Settings →
 Connections → OpenAI → Add New Connection** using URL
@@ -608,7 +610,7 @@ rather than extending `main.py` with business logic.
 
 ## Model selection
 
-The Runs UI submits every new task and follow-up as `coding-agent`; it does not
+The Runs UI submits every new task and follow-up as `orchestrator`; it does not
 offer profile or model selection. The default identity first uses
 `ROUTER_MODEL` for a short,
 JSON-only semantic routing turn. The router sees the request and relevant
@@ -650,21 +652,21 @@ Use:
 
 `enable` downloads a model if required; `disable` only unloads it from RAM.
 
-`agent.coding-agent` in Open WebUI is the single routed agent identity. Use
+`agent.orchestrator` in Open WebUI is the single routed agent identity. Use
 normal LiteLLM models in Open WebUI only when direct, non-agent chat is desired.
 The Runs UI provides uploads, live routing/tool events, and reviewable
 repository work without exposing internal model selection.
 
 ## Custom agent in Open WebUI
 
-The running agent exposes `coding-agent` at `/v1/models`. For an existing Open
+The running agent exposes `orchestrator` at `/v1/models`. For an existing Open
 WebUI installation, persisted admin settings take precedence over Compose
 seeding, so add it once under **Admin Settings → Connections → OpenAI**:
 
 1. URL: `http://agents:8000/v1`
 2. API key: `AGENT_API_KEY`
 3. Prefix: `agent`
-4. Start a new chat and select `agent.coding-agent`.
+4. Start a new chat and select `agent.orchestrator`.
 
 The plain, unprefixed LiteLLM models remain direct model chat and do not use the
 central routing or agent tool loop. The Runs UI is the front end for document
@@ -673,7 +675,7 @@ attachments, live tool activity, sources, and sandbox diffs.
 ## Documents, RAG, and financial analysis
 
 There are currently two separate retrieval paths. Open WebUI document uploads
-use Open WebUI's own document workflow. The coding-agent `/ingest` endpoint
+use Open WebUI's own document workflow. The orchestrator `/ingest` endpoint
 accepts text supplied by an API caller and stores embeddings in Qdrant.
 
 This is **not yet a proper financial-research RAG system**: the agent cannot

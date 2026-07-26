@@ -123,7 +123,7 @@ export function App() {
     setError("");
     if (!task.trim()) return;
     try {
-      const selected = "coding-agent";
+      const selected = "orchestrator";
       const session = conversationId || crypto.randomUUID();
       setConversationId(session);
       if (files.length > 0) await uploadDocuments(key, files.slice(0, 10), session);
@@ -195,7 +195,7 @@ export function App() {
           body: JSON.stringify({
             task: taskWithLegacyContext,
             workspace: active.requested_workspace,
-            model: "coding-agent",
+            model: "orchestrator",
             conversation_id: session,
             document_scope: active.document_scope || null,
             project_id: active.project_id || projectId || null,
@@ -208,7 +208,7 @@ export function App() {
         id: result.run_id,
         status: result.status,
         task: followUp,
-        model: "coding-agent",
+        model: "orchestrator",
         conversation_id: session,
         project_id: active.project_id || projectId || null,
         requested_workspace: active.requested_workspace,

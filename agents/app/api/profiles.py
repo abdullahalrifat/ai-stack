@@ -14,7 +14,6 @@ class AgentProfile:
     timeout_seconds: int | None = None
 
 
-# `coding-agent` is retained for existing Open WebUI conversations.
 PROFILES: dict[str, AgentProfile] = {
     AGENT_MODEL_ID: AgentProfile(FAST_MODEL, "auto"),
     "auto": AgentProfile(FAST_MODEL, "auto"),
