@@ -57,6 +57,10 @@ MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "24"))
 # returning an empty assistant turn. The executor synthesizes its collected
 # evidence once this threshold is reached.
 MAX_EMPTY_MODEL_TURNS = int(os.getenv("MAX_EMPTY_MODEL_TURNS", "3"))
+# A sequence of empty repository content searches is an agent-planning loop,
+# not useful new evidence. Synthesize from earlier findings instead.
+MAX_EMPTY_SEARCH_RESULTS = int(os.getenv("MAX_EMPTY_SEARCH_RESULTS", "3"))
+MAX_UNPRODUCTIVE_TOOL_CALLS = int(os.getenv("MAX_UNPRODUCTIVE_TOOL_CALLS", "3"))
 # A local 8B model has a finite context window.  Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
@@ -105,6 +109,17 @@ MODEL_LIST_CACHE_SECONDS = int(os.getenv("MODEL_LIST_CACHE_SECONDS", "300"))
 # transcript entries are summarized down to keep context bounded.
 CONTEXT_COMPACT_EVERY_STEPS = int(os.getenv("CONTEXT_COMPACT_EVERY_STEPS", "6"))
 CONTEXT_COMPACT_KEEP_RECENT = int(os.getenv("CONTEXT_COMPACT_KEEP_RECENT", "4"))
+# Compact only when the complete executor transcript is genuinely near the
+# model context budget. The old step-count setting is retained for backwards
+# compatible configuration but is no longer the trigger.
+CONTEXT_COMPACT_THRESHOLD_TOKENS = int(os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "7000"))
+
+# Embeddings are useful for explicit RAG workflows but expensive on a host
+# that keeps one Ollama model resident. Keep routine Code/Quick turns fast.
+MEMORY_ENABLED = env_flag("MEMORY_ENABLED", True)
+MEMORY_FOR_CODE_RUNS = env_flag("MEMORY_FOR_CODE_RUNS", False)
+MEMORY_CONTEXT_TOKENS = int(os.getenv("MEMORY_CONTEXT_TOKENS", "1200"))
+DOCUMENT_MAX_BYTES = int(os.getenv("DOCUMENT_MAX_BYTES", "10000000"))
 
 # Authentication is mandatory unless a developer explicitly opts into an
 # insecure, local-only mode. This avoids accidentally publishing an agent
@@ -146,5 +161,11 @@ def validate_settings() -> None:
         raise RuntimeError("MAX_CONCURRENT_AGENT_RUNS must be at least 1")
     if MAX_EMPTY_MODEL_TURNS < 1:
         raise RuntimeError("MAX_EMPTY_MODEL_TURNS must be at least 1")
+    if MAX_EMPTY_SEARCH_RESULTS < 1:
+        raise RuntimeError("MAX_EMPTY_SEARCH_RESULTS must be at least 1")
+    if MAX_UNPRODUCTIVE_TOOL_CALLS < 1:
+        raise RuntimeError("MAX_UNPRODUCTIVE_TOOL_CALLS must be at least 1")
+    if MEMORY_CONTEXT_TOKENS < 128 or DOCUMENT_MAX_BYTES < 1:
+        raise RuntimeError("Invalid document retrieval settings")
     if not RUNNER_API_KEY:
         raise RuntimeError("RUNNER_API_KEY is required for isolated command execution")

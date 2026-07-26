@@ -2,11 +2,12 @@ import logging
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, MAX_CONCURRENT_AGENT_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
+from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, MAX_CONCURRENT_AGENT_RUNS, MEMORY_CONTEXT_TOKENS, MEMORY_ENABLED, MEMORY_FOR_CODE_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
 from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
@@ -15,10 +16,11 @@ from ..memory import (
     save_conversation,
     save_long_term_memory,
     save_memory,
+    memory_context,
     search_memory,
 )
 from ..memory.embeddings import create_embedding
-from .planner import create_plan
+from .planner import create_plan, deterministic_plan
 from ..runs.store import get_run_store
 from ..runs.sandbox import Sandbox, create_sandbox, merge_sandbox, remove_sandbox, sandbox_diff
 from .state import AgentState
@@ -27,6 +29,19 @@ from ..api.profiles import resolve_profile
 
 logger = logging.getLogger(__name__)
 _execution_slots = threading.BoundedSemaphore(MAX_CONCURRENT_AGENT_RUNS)
+_run_executor = ThreadPoolExecutor(
+    max_workers=MAX_CONCURRENT_AGENT_RUNS,
+    thread_name_prefix="agent-run",
+)
+
+
+def submit_run(run_id: str) -> None:
+    """Queue a durable run without allocating an unbounded request thread."""
+    _run_executor.submit(execute_run, run_id)
+
+
+def shutdown_run_executor() -> None:
+    _run_executor.shutdown(wait=False, cancel_futures=False)
 
 
 def _task_model(message: str, requested_model: str) -> str:
@@ -34,6 +49,21 @@ def _task_model(message: str, requested_model: str) -> str:
     if requested_model == DEFAULT_MODEL and requires_external_search(message):
         return RESEARCH_MODEL
     return requested_model
+
+
+def _uses_memory(prompt_mode: str, document_scope: str | None = None) -> bool:
+    # Explicit uploads must be available even to the fast Code/Quick paths.
+    return MEMORY_ENABLED and (
+        bool(document_scope) or MEMORY_FOR_CODE_RUNS or prompt_mode not in {"code", "quick"}
+    )
+
+
+def _execution_plan(state, research_mode: bool) -> list:
+    if research_mode:
+        return []
+    if state.prompt_mode in {"code", "quick"}:
+        return deterministic_plan(state)
+    return create_plan(state)
 
 
 class RunEventBuffer:
@@ -115,16 +145,18 @@ def run_agent(
         # Client-facing OpenAI compatibility already carries recent history;
         # only a short server-side tail is needed for direct API callers.
         state.history = get_conversation(conversation_id, limit=4)
-        state.memories = search_memory(message, scope=str(workspace))
+        state.memory_scope = str(workspace)
+        state.memories = memory_context(search_memory(message, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode) else []
         research_mode = force_research or requires_external_search(message)
-        state.plan = [] if research_mode else create_plan(state)
+        state.plan = _execution_plan(state, research_mode)
         answer = execute_plan(state, on_event=on_event, on_token=on_token, force_research=force_research)
 
     state.answer = answer
 
     save_conversation(conversation_id, "user", message)
     save_conversation(conversation_id, "assistant", answer)
-    save_memory(message, answer)
+    if _uses_memory(state.prompt_mode):
+        save_memory(message, answer)
 
     return {"conversation_id": conversation_id, "answer": answer}
 
@@ -207,15 +239,21 @@ def execute_run(run_id: str) -> None:
             allow_write=allow_write,
             workspace=active_workspace,
         )
+        checkpoint = run.get("checkpoint") or {}
+        if checkpoint and not allow_write:
+            state.observations = list(checkpoint.get("observations") or [])
+            state.steps = int(checkpoint.get("steps") or 0)
+            on_event("checkpoint_restored", {"steps": state.steps, "observations": len(state.observations)})
         store.update_run(run_id, active_workspace=active_workspace)
 
         with _execution_slots, workspace_context(active_workspace):
             state.history = get_conversation(conversation_id, limit=4)
-            state.memories = search_memory(task, scope=str(active_workspace))
+            state.memory_scope = run.get("document_scope") or str(requested_workspace)
+            state.memories = memory_context(search_memory(task, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode, run.get("document_scope")) else []
 
             on_event("planning", {})
             research_mode = force_research or requires_external_search(task)
-            state.plan = [] if research_mode else create_plan(state)
+            state.plan = _execution_plan(state, research_mode)
             on_event("plan_ready", {"plan": state.plan})
 
             answer = execute_plan(
@@ -224,6 +262,7 @@ def execute_run(run_id: str) -> None:
                 on_token=lambda content: on_event("output_delta", {"content": content}),
                 should_cancel=cancelled,
                 force_research=force_research,
+                on_checkpoint=lambda checkpoint: store.update_checkpoint(run_id, checkpoint),
             )
 
         diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
@@ -233,7 +272,8 @@ def execute_run(run_id: str) -> None:
 
         save_conversation(conversation_id, "user", task)
         save_conversation(conversation_id, "assistant", answer)
-        save_memory(task, answer)
+        if _uses_memory(state.prompt_mode):
+            save_memory(task, answer)
 
         if sandbox is not None and not has_pending_diff:
             # Nothing changed -- no point holding a worktree open for review.
@@ -244,6 +284,7 @@ def execute_run(run_id: str) -> None:
             run_id,
             status="awaiting_approval" if has_pending_diff else "completed",
             answer=answer,
+            checkpoint=None,
             completed_at=datetime.now(timezone.utc),
         )
         on_event(
@@ -352,3 +393,30 @@ def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None, s
             stored += 1
 
     return {"stored": stored, "status": "success"}
+
+
+def ingest_extracted_documents(documents, scope: str | None = None) -> dict[str, Any]:
+    """Store parsed document sections while preserving file/page citations."""
+    stored = 0
+    sources: list[str] = []
+    for document_index, document in enumerate(documents):
+        if not document.text or not document.text.strip():
+            continue
+        source = str(document.metadata.get("source", "uploaded document"))
+        if source not in sources:
+            sources.append(source)
+        for chunk_index, chunk in enumerate(_document_chunks(document.text)):
+            embedding = create_embedding(chunk)
+            save_long_term_memory(
+                chunk,
+                embedding,
+                {
+                    **document.metadata,
+                    "type": "document",
+                    "scope": scope or "global",
+                    "document_index": document_index,
+                    "chunk_index": chunk_index,
+                },
+            )
+            stored += 1
+    return {"stored": stored, "sources": sources, "scope": scope or "global", "status": "success"}

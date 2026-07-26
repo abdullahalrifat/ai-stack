@@ -112,7 +112,8 @@ label {
   font-weight: 600;
 }
 input,
-textarea {
+textarea,
+select {
   display: block;
   width: 100%;
   margin-top: 5px;
@@ -123,6 +124,13 @@ textarea {
   padding: 9px;
   font: inherit;
 }
+.inline-input {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+.inline-input input { margin-top: 0; }
+.inline-input button { white-space: nowrap; }
 textarea {
   min-height: 190px;
   resize: vertical;

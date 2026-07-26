@@ -6,12 +6,11 @@ target while preventing HTTP concerns from leaking into agent domains.
 """
 
 import logging
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.agent.service import execute_run
+from app.agent.service import shutdown_run_executor, submit_run
 from app.core.config import POSTGRES_URL, WORKSPACE_ROOTS, validate_settings
 from app.runs.sandbox import remove_sandbox
 from app.runs.store import get_run_store
@@ -41,10 +40,15 @@ async def lifespan(_: FastAPI):
                     logger.exception("Could not clean up interrupted sandbox for run %s", run["id"])
         for run_id in queued:
             logger.info("Resuming queued run %s after service restart", run_id)
-            threading.Thread(target=execute_run, args=(run_id,), daemon=True).start()
+            submit_run(run_id)
     else:
         logger.warning("POSTGRES_URL not set; durable /runs endpoints are unavailable.")
-    yield
+    try:
+        yield
+    finally:
+        shutdown_run_executor()
+        if POSTGRES_URL:
+            get_run_store().close()
 
 
 app = FastAPI(

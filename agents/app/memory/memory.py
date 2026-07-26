@@ -1,7 +1,9 @@
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
+from functools import lru_cache
 
 import redis
 from qdrant_client import QdrantClient
@@ -12,6 +14,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    PayloadSchemaType,
 )
 
 from .embeddings import create_embedding
@@ -49,15 +52,36 @@ qdrant = QdrantClient(url=QDRANT_URL)
 # =====================================================
 
 
+@lru_cache(maxsize=1)
+def _collection_exists() -> bool:
+    return any(c.name == COLLECTION for c in qdrant.get_collections().collections)
+
+
 def ensure_collection(vector_size: int):
 
-    existing = [c.name for c in qdrant.get_collections().collections]
-
-    if COLLECTION not in existing:
+    if not _collection_exists():
         qdrant.create_collection(
             collection_name=COLLECTION,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
+        _collection_exists.cache_clear()
+
+    _ensure_scope_index()
+
+
+@lru_cache(maxsize=1)
+def _ensure_scope_index() -> None:
+    """Create the scoped-retrieval index once per process when supported."""
+    try:
+        qdrant.create_payload_index(
+            collection_name=COLLECTION,
+            field_name="scope",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+    except Exception:
+        # Existing collections/indexes and older Qdrant versions remain
+        # compatible; retrieval still works without this optimization.
+        pass
 
 
 # =====================================================
@@ -113,15 +137,37 @@ def save_long_term_memory(text: str, embedding: list[float], metadata=None):
     return point_id
 
 
+def _citation(payload: dict) -> str | None:
+    source = payload.get("source")
+    if not source:
+        return None
+    location = payload.get("location")
+    return f"Document: {source}{f', {location}' if location else ''}"
+
+
+def _rerank(query: str, results: list[dict], limit: int) -> list[dict]:
+    """Blend vector similarity with a small lexical signal for exact facts."""
+    terms = set(re.findall(r"[a-z0-9]{3,}", query.lower()))
+    for result in results:
+        text = str(result["memory"].get("text", "")).lower()
+        overlap = len(terms.intersection(re.findall(r"[a-z0-9]{3,}", text)))
+        result["score"] = float(result["score"]) + min(overlap, 8) * 0.05
+        result["citation"] = _citation(result["memory"])
+    return sorted(results, key=lambda item: item["score"], reverse=True)[:limit]
+
+
 def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str | None = None):
 
-    collections = [c.name for c in qdrant.get_collections().collections]
-
-    if COLLECTION not in collections:
+    if not _collection_exists():
         return []
 
     query_filter = Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))]) if scope else None
-    result = qdrant.query_points(collection_name=COLLECTION, query=embedding, limit=limit, query_filter=query_filter)
+    result = qdrant.query_points(
+        collection_name=COLLECTION,
+        query=embedding,
+        limit=min(max(limit * 3, limit), 30),
+        query_filter=query_filter,
+    )
 
     return [{"memory": item.payload, "score": item.score} for item in result.points]
 
@@ -135,7 +181,28 @@ def search_memory(query: str, limit: int = 5, scope: str | None = None):
 
     embedding = create_embedding(query)
 
-    return search_long_term_memory(embedding, limit, scope)
+    return _rerank(query, search_long_term_memory(embedding, limit, scope), limit)
+
+
+def memory_context(results: list[dict], token_budget: int = 1_200) -> list[dict]:
+    """Keep retrieved evidence within a prompt budget and retain citations."""
+    remaining = token_budget * 4  # conservative chars-to-token approximation
+    selected = []
+    for result in results:
+        payload = dict(result.get("memory", {}))
+        text = str(payload.get("text", ""))
+        if not text or remaining <= 0:
+            continue
+        excerpt = text[:remaining]
+        selected.append(
+            {
+                "citation": result.get("citation") or _citation(payload),
+                "score": round(float(result.get("score", 0)), 3),
+                "excerpt": excerpt,
+            }
+        )
+        remaining -= len(excerpt)
+    return selected
 
 
 def save_memory(question: str, answer: str):
@@ -161,3 +228,5 @@ Answer:
 def clear_memory():
 
     qdrant.delete_collection(COLLECTION)
+    _collection_exists.cache_clear()
+    _ensure_scope_index.cache_clear()

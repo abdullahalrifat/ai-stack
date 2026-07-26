@@ -6,6 +6,8 @@ export type Run = {
   requested_workspace: string;
   allow_write: boolean;
   conversation_id?: string | null;
+  project_id?: string | null;
+  document_scope?: string | null;
   answer?: string;
   error?: string;
   created_at: string;
@@ -35,6 +37,23 @@ export async function api<T>(
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
+}
+
+export async function uploadDocuments(
+  key: string,
+  files: File[],
+  scope: string,
+): Promise<{ stored: number; sources: string[] }> {
+  const body = new FormData();
+  body.append("scope", scope);
+  files.forEach((file) => body.append("files", file));
+  const response = await fetch(`${base}/documents/ingest`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}` },
+    body,
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<{ stored: number; sources: string[] }>;
 }
 export async function streamEvents(
   key: string,

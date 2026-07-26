@@ -4,16 +4,18 @@ import re
 from types import SimpleNamespace
 
 from ..core.config import (
-    CONTEXT_COMPACT_EVERY_STEPS,
     CONTEXT_COMPACT_KEEP_RECENT,
+    CONTEXT_COMPACT_THRESHOLD_TOKENS,
     MAX_AGENT_STEPS,
     MAX_EMPTY_MODEL_TURNS,
+    MAX_EMPTY_SEARCH_RESULTS,
+    MAX_UNPRODUCTIVE_TOOL_CALLS,
     MAX_TOOL_OUTPUT_CHARS,
 )
 from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
-from .context_budget import fit_user_context
+from .context_budget import estimate_tokens, fit_user_context
 from .prompts import COMPACTION_PROMPT, PARTIAL_SYNTHESIS_PROMPT, executor_prompt
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
@@ -354,10 +356,28 @@ def _compact_history(messages: list, model: str) -> list:
     ]
 
 
+def _needs_compaction(messages: list, system_prompt: str, tools: list[dict]) -> bool:
+    return estimate_tokens(messages) + estimate_tokens(system_prompt) + estimate_tokens(tools) >= CONTEXT_COMPACT_THRESHOLD_TOKENS
+
+
 def _synthesize_partial_answer(state) -> str:
     """Return a useful answer from evidence when the tool loop loses progress."""
 
-    evidence = _bounded_context(state.observations[-8:], 8_000)
+    def useful(observation: dict) -> bool:
+        result = observation.get("result")
+        if isinstance(result, dict) and result.get("error"):
+            return False
+        return bool(result)
+
+    # Preserve both early discovery (README, manifests, root listing) and
+    # recent useful evidence. A tail-only slice previously let repeated empty
+    # searches erase all context for the partial final answer.
+    observations = [item for item in state.observations if useful(item)]
+    selected = observations[:4]
+    for item in observations[-4:]:
+        if item not in selected:
+            selected.append(item)
+    evidence = _bounded_context(selected, 8_000)
     prompt = f"""Task:
 {state.user_message}
 
@@ -449,7 +469,7 @@ def _stream_message(messages: list, tools: list, model: str, on_token, max_token
     )
 
 
-def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_research=False) -> str:
+def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_research=False, on_checkpoint=None) -> str:
     """Run the tool-calling loop until the model produces a final answer.
 
     `on_event(event_type, payload)` is called for each notable step so a
@@ -511,6 +531,8 @@ Plan:
     leaked_tool_call_count = 0
     research_retry_count = 0
     empty_turn_count = 0
+    empty_search_count = 0
+    unproductive_calls: dict[str, int] = {}
 
     for step in range(MAX_STEPS):
         if should_cancel():
@@ -519,7 +541,7 @@ Plan:
         state.steps += 1
         on_event("step_started", {"step": state.steps})
 
-        if step > 0 and step % CONTEXT_COMPACT_EVERY_STEPS == 0:
+        if _needs_compaction(messages, system_prompt, tools):
             before = len(messages)
             messages = _compact_history(messages, state.model)
             if len(messages) < before:
@@ -593,6 +615,26 @@ Plan:
 
                 state.add_tool(tool_name, result)
                 on_event("tool_result", {"tool": tool_name, "result": result})
+                if on_checkpoint is not None:
+                    on_checkpoint(
+                        {
+                            "steps": state.steps,
+                            "plan": state.plan,
+                            "observations": state.observations[-12:],
+                        }
+                    )
+
+                if tool_name == "search_text" and not result:
+                    empty_search_count += 1
+                elif result and not (isinstance(result, dict) and result.get("error")):
+                    empty_search_count = 0
+
+                unproductive = not result or (isinstance(result, dict) and result.get("error"))
+                fingerprint = f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
+                if unproductive:
+                    unproductive_calls[fingerprint] = unproductive_calls.get(fingerprint, 0) + 1
+                else:
+                    unproductive_calls.clear()
 
                 result_text = _truncate(json.dumps(result, default=str))
 
@@ -603,6 +645,24 @@ Plan:
                         "content": result_text,
                     }
                 )
+
+            if empty_search_count >= MAX_EMPTY_SEARCH_RESULTS:
+                answer = _synthesize_partial_answer(state)
+                state.finished = True
+                on_event(
+                    "unproductive_search_loop",
+                    {"empty_searches": empty_search_count},
+                )
+                on_event("final_answer", {"answer": answer, "partial": True})
+                return answer
+
+            repeated = max(unproductive_calls.values(), default=0)
+            if repeated >= MAX_UNPRODUCTIVE_TOOL_CALLS:
+                answer = _synthesize_partial_answer(state)
+                state.finished = True
+                on_event("unproductive_tool_loop", {"repeated_calls": repeated})
+                on_event("final_answer", {"answer": answer, "partial": True})
+                return answer
 
             continue
 

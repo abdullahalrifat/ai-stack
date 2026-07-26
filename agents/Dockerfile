@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir \
 
 
 COPY app ./app
+COPY evals ./evals
 
 # -----------------------------
 # Build validation

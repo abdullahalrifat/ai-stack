@@ -128,11 +128,20 @@ UI uses the same authenticated `/runs` API; it does not store the key in local
 storage or send it to any third party.
 
 The Task Router provides Auto, Code, Research, Finance, Quick Chat, Deep
-Analysis, Image Analysis, and Image Generation profiles. Text attachments
-(`.md`, `.txt`, `.csv`, source/config files) are included as bounded task
-context. Research and Finance profiles use current web evidence and do not
-inspect the mounted repository unless the task asks for it. Source URLs found
-in an answer are displayed below live output.
+Analysis, Image Analysis, and Image Generation profiles. Uploaded `.pdf`,
+`.docx`, `.xlsx`, `.csv`, `.txt`, `.md`, and `.json` files are parsed
+server-side, indexed in a conversation-specific retrieval scope, and returned
+to the model with filename/page/sheet citations. Retrieval is reranked and
+capped by `MEMORY_CONTEXT_TOKENS`; each file is limited by
+`DOCUMENT_MAX_BYTES` (10 MB by default). Research and Finance profiles use
+current web evidence and do not inspect the mounted repository unless the
+task asks for it. Source URLs found in an answer are displayed below live
+output.
+
+The Runs UI can save a workspace as a personal project. Projects and durable
+run history are stored in PostgreSQL; selecting an old run replays its events,
+answer, sources, and review diff. Conversation follow-ups retain the same
+conversation id and document scope.
 
 ### Optional image generation
 
@@ -158,6 +167,26 @@ calls/results, model output deltas, and a reviewable diff as they occur. The
 OpenAI-compatible `/v1/chat/completions` endpoint also accepts `stream: true`
 and forwards model-token deltas in standard OpenAI SSE chunks; tool activity is
 carried in SSE comments for compatible clients to ignore safely.
+
+### Keeping local runs fast and reliable
+
+For the default CPU-oriented Code and Quick profiles, the agent uses a
+deterministic local plan and skips vector-memory lookup/storage. This avoids
+swapping Ollama from the chat model to the embedding model twice on every
+routine coding question. Research, Finance, Deep, and custom profiles retain
+scoped retrieval. Set `MEMORY_FOR_CODE_RUNS=true` only when repository RAG is
+more valuable than that latency.
+
+The executor compacts its transcript only when its estimated token usage
+approaches `CONTEXT_COMPACT_THRESHOLD_TOKENS`, rather than after an arbitrary
+number of tools. It stops after repeated empty searches or repeated failed
+identical tool calls and synthesizes a partial answer from evidence already
+collected. Directory scans and multi-file inspection are capped so a broad
+workspace cannot crowd out the actual repository context.
+
+Durable run events are published through Redis Pub/Sub and retained in
+PostgreSQL for replay. The agent reuses a small PostgreSQL connection pool and
+queues run workers instead of starting an unbounded thread for every request.
 
 ### Commands the agent can run
 
@@ -199,6 +228,19 @@ docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tes
 The agent service has a Compose build definition, so changes under `agents/`
 are deployed with `docker compose build agents` followed by
 `docker compose up -d --force-recreate agents`.
+
+### Agent regression evaluations
+
+Fixed benchmark prompts live in `agents/evals/cases.json`. Their schema is
+validated in the normal test suite. Run them against a live local stack when
+changing models, prompts, tools, or routing:
+
+```bash
+python agents/evals/run_evals.py --base http://127.0.0.1:8000 --key "$AGENT_API_KEY"
+```
+
+The checks catch known regressions; compare answers, tool traces, citations,
+and latency before adopting a new model or prompt.
 
 ### Agent in Open WebUI
 

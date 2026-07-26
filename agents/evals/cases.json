@@ -1,0 +1,23 @@
+[
+  {
+    "id": "code-review",
+    "profile": "code",
+    "prompt": "Review this repository for reliability issues. Inspect the project before answering.",
+    "must_contain": ["evidence"],
+    "forbid": ["I cannot access the repository"]
+  },
+  {
+    "id": "current-finance",
+    "profile": "finance",
+    "prompt": "Find the latest closing price for DSE:RENATA and give a cautious five-year scenario analysis.",
+    "must_contain": ["source"],
+    "forbid": ["I cannot directly access"]
+  },
+  {
+    "id": "document-citation",
+    "profile": "research",
+    "prompt": "Use the uploaded report to summarize the main risks and cite the document name and location.",
+    "must_contain": ["Document:"],
+    "forbid": []
+  }
+]

@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 from app.agent.service import ingest_documents, run_agent
 from app.agent import service as agent
-from app.core.config import DEFAULT_WORKSPACE
 
 
 @patch("app.agent.service.workspace_context", return_value=nullcontext())
@@ -38,12 +37,12 @@ def test_run_agent(
 
     mock_workspace.assert_called_once()
     mock_get_conversation.assert_called_once_with("test-conversation", limit=4)
-    mock_search_memory.assert_called_once_with("Hello", scope=str(DEFAULT_WORKSPACE))
-    mock_create_plan.assert_called_once()
+    mock_search_memory.assert_not_called()
+    mock_create_plan.assert_not_called()
     mock_execute_plan.assert_called_once()
 
     assert mock_save_conversation.call_count == 2
-    mock_save_memory.assert_called_once()
+    mock_save_memory.assert_not_called()
 
 
 @patch("app.agent.service.workspace_context", return_value=nullcontext())
@@ -131,7 +130,7 @@ class FakeRunStore:
             "conversation_id": None,
             "requested_workspace": "/workspace/project",
             "allow_write": False,
-            "model": "coder",
+            "model": "code",
             "task": "inspect project",
         }
         self.events = []
@@ -184,7 +183,7 @@ def test_execute_read_only_run_persists_answer_and_events(
     mock_workspace.assert_called_once_with("/workspace/project")
     mock_execute.assert_called_once()
     assert mock_save_conversation.call_count == 2
-    mock_save_memory.assert_called_once_with("inspect project", "completed answer")
+    mock_save_memory.assert_not_called()
 
 
 def test_run_event_buffer_batches_output_and_publishes_durable_event(monkeypatch):

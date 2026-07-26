@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.agent.executor import (
+    _synthesize_partial_answer,
     execute_plan,
     financial_document_urls,
     financial_document_excerpt,
@@ -227,6 +228,28 @@ def test_execute_plan_executes_tool(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    mock_registry.list_tools.return_value = ["list_files"]
+    mock_registry.execute.return_value = {"files": ["README.md"]}
+    mock_chat_with_tools.side_effect = [
+        make_message(tool_calls=[make_tool_call("call_1", "list_files", {"directory": "."})]),
+        make_message(content="Done"),
+    ]
+    checkpoints = []
+
+    assert execute_plan(state, on_checkpoint=checkpoints.append) == "Done"
+    assert checkpoints == [
+        {
+            "steps": 1,
+            "plan": [],
+            "observations": [{"tool": "list_files", "result": {"files": ["README.md"]}}],
+        }
+    ]
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_prefetches_current_external_information(mock_chat_with_tools, mock_registry):
     state = DummyState()
     state.user_message = "Search Renata last closing price on DSE today"
@@ -356,6 +379,67 @@ def test_execute_plan_synthesizes_after_repeated_empty_turns(
     assert result == "Partial evidence-based answer"
     assert mock_chat_with_tools.call_count == 3
     mock_synthesize.assert_called_once_with(state)
+
+
+@patch("app.agent.executor._synthesize_partial_answer", return_value="Useful partial answer")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_stops_after_repeated_empty_searches(
+    mock_chat_with_tools,
+    mock_registry,
+    mock_synthesize,
+):
+    state = DummyState()
+    mock_registry.list_tools.return_value = ["search_text"]
+    mock_registry.execute.return_value = []
+    mock_chat_with_tools.return_value = make_message(
+        tool_calls=[make_tool_call("call", "search_text", {"keyword": "irrelevant"})]
+    )
+
+    events = []
+    assert execute_plan(state, on_event=lambda kind, payload: events.append((kind, payload))) == "Useful partial answer"
+
+    assert mock_chat_with_tools.call_count == 3
+    mock_synthesize.assert_called_once_with(state)
+    assert ("unproductive_search_loop", {"empty_searches": 3}) in events
+
+
+@patch("app.agent.executor._synthesize_partial_answer", return_value="Useful partial answer")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_stops_after_repeated_failed_tool_calls(
+    mock_chat_with_tools,
+    mock_registry,
+    mock_synthesize,
+):
+    state = DummyState()
+    mock_registry.list_tools.return_value = ["read_file"]
+    mock_registry.execute.return_value = {"error": "File not found"}
+    mock_chat_with_tools.return_value = make_message(
+        tool_calls=[make_tool_call("call", "read_file", {"file_path": "missing.py"})]
+    )
+
+    events = []
+    assert execute_plan(state, on_event=lambda kind, payload: events.append((kind, payload))) == "Useful partial answer"
+
+    assert mock_chat_with_tools.call_count == 3
+    mock_synthesize.assert_called_once_with(state)
+    assert ("unproductive_tool_loop", {"repeated_calls": 3}) in events
+
+
+@patch("app.agent.executor.chat", return_value="Evidence-based answer")
+def test_partial_synthesis_preserves_early_useful_evidence(mock_chat):
+    state = DummyState()
+    state.observations = [
+        {"tool": "list_files", "result": [{"path": "README.md"}]},
+        {"tool": "read_file", "result": "# AI Stack\nArchitecture details"},
+        *[{"tool": "search_text", "result": []} for _ in range(10)],
+    ]
+
+    assert _synthesize_partial_answer(state) == "Evidence-based answer"
+    synthesis_prompt = mock_chat.call_args.args[0][1]["content"]
+    assert "README.md" in synthesis_prompt
+    assert "Architecture details" in synthesis_prompt
 
 
 @patch("app.agent.executor.registry")

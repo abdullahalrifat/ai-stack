@@ -8,6 +8,19 @@ from .prompts import PLANNER_PROMPT
 logger = logging.getLogger(__name__)
 
 
+def deterministic_plan(state) -> list[str]:
+    """Low-latency plan for routine repository work without another LLM turn."""
+
+    plan = [
+        "Inspect the repository root and project documentation.",
+        "Read the relevant configuration, manifests, source, and tests.",
+        "Summarize evidence-backed findings and verification results.",
+    ]
+    if getattr(state, "allow_write", False):
+        plan.insert(2, "Make the smallest scoped change and run relevant checks.")
+    return plan
+
+
 def create_plan(state):
     response = chat(
         [

@@ -16,6 +16,8 @@ class AgentState:
 
     memories: list = field(default_factory=list)
 
+    memory_scope: str | None = None
+
     observations: list = field(default_factory=list)
 
     model: str = DEFAULT_MODEL

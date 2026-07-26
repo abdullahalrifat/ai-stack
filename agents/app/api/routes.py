@@ -10,14 +10,16 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 import requests
 
 import app.tools.register
 from app.agent.planner import create_plan
-from app.agent.service import approve_run, discard_run, execute_run, ingest_documents, run_agent
+from app.agent.service import approve_run, discard_run, ingest_documents, ingest_extracted_documents, run_agent, submit_run
+from app.core.config import DOCUMENT_MAX_BYTES
+from app.memory.documents import extract_document
 from app.agent.state import AgentState
 from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, DEFAULT_WORKSPACE, IMAGE_GENERATION_TIMEOUT_SECONDS, IMAGE_GENERATION_URL, WORKSPACE_ROOTS
 from app.llm.client import get_available_models
@@ -36,7 +38,7 @@ from app.tools.registry import registry
 from .dependencies import require_run_store, verify_api_key
 from .context import openai_prompt
 from .profiles import PROFILES, resolve_profile
-from .schemas import ChatRequest, ExecuteRequest, ImageGenerationRequest, IngestRequest, MemoryQuery, OpenAIChatCompletionRequest, OpenAIEmbeddingRequest, PlanRequest, RunRequest
+from .schemas import ChatRequest, ExecuteRequest, ImageGenerationRequest, IngestRequest, MemoryQuery, OpenAIChatCompletionRequest, OpenAIEmbeddingRequest, PlanRequest, ProjectRequest, RunRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -157,11 +159,12 @@ async def create_run(request: RunRequest):
         model=request.model or DEFAULT_MODEL,
         workspace=workspace,
         conversation_id=request.conversation_id,
+        document_scope=request.document_scope,
+        project_id=request.project_id,
         allow_write=request.allow_write,
     )
 
-    thread = threading.Thread(target=execute_run, args=(run_id,), daemon=True)
-    thread.start()
+    submit_run(run_id)
 
     return {"run_id": run_id, "status": "queued"}
 
@@ -178,6 +181,22 @@ async def get_run(run_id: str):
 @router.get("/runs", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
 async def list_runs(limit: int = 50):
     return {"runs": await run_in_threadpool(get_run_store().list_runs, limit)}
+
+
+@router.get("/projects", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
+async def list_projects():
+    return {"projects": await run_in_threadpool(get_run_store().list_projects)}
+
+
+@router.post("/projects", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
+async def create_project(request: ProjectRequest):
+    if not request.name.strip():
+        raise HTTPException(400, "Project name cannot be empty")
+    try:
+        workspace = resolve_request_workspace(request.workspace)
+        return await run_in_threadpool(get_run_store().create_project, request.name, workspace)
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get(
@@ -566,6 +585,27 @@ async def ingest(request: IngestRequest):
     return await run_in_threadpool(
         ingest_documents, request.documents, request.metadata, request.scope
     )
+
+
+@router.post("/documents/ingest", dependencies=[Depends(verify_api_key)])
+async def ingest_uploaded_documents(
+    files: list[UploadFile] = File(...),
+    scope: str = Form("global"),
+):
+    """Parse and index files with source/page/sheet metadata for citation."""
+    extracted = []
+    for upload in files[:10]:
+        content = await upload.read()
+        if len(content) > DOCUMENT_MAX_BYTES:
+            raise HTTPException(413, f"{upload.filename} exceeds DOCUMENT_MAX_BYTES")
+        try:
+            extracted.extend(extract_document(upload.filename or "uploaded", content))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Could not parse uploaded document %s", upload.filename)
+            raise HTTPException(400, f"Could not parse {upload.filename}") from exc
+    return await run_in_threadpool(ingest_extracted_documents, extracted, scope)
 
 
 # =====================================================

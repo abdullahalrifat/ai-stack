@@ -64,6 +64,8 @@ IGNORE_DIRS = {
 MAX_FILE_SIZE = 100_000
 MAX_SCAN_FILES = 5_000
 MAX_SEARCH_FILE_SIZE = 512_000
+MAX_INSPECT_PATHS = 20
+MAX_DIRECTORY_ENTRIES = 1_000
 
 
 def _runner_preexec() -> None:
@@ -293,6 +295,9 @@ def tree(
                 return
 
             for entry in entries:
+                if len(output) >= MAX_DIRECTORY_ENTRIES:
+                    output.append("  " * level + "[truncated]")
+                    return
                 if ignored(entry):
                     continue
 
@@ -327,7 +332,9 @@ def list_files(
 
         files = []
 
-        for file in sorted(path.iterdir()):
+        for index, file in enumerate(sorted(path.iterdir())):
+            if index >= MAX_DIRECTORY_ENTRIES:
+                break
             if ignored(file):
                 continue
 
@@ -473,28 +480,30 @@ def project_summary():
     extensions = {}
     important = []
 
-    for index, file in enumerate(current_workspace().rglob("*")):
-        if index >= MAX_SCAN_FILES:
-            break
-        if ignored(file):
-            continue
+    try:
+        for index, file in enumerate(current_workspace().rglob("*")):
+            if index >= MAX_SCAN_FILES:
+                break
+            if ignored(file) or not file.is_file():
+                continue
 
-        if not file.is_file():
-            continue
+            ext = file.suffix.lower()
+            extensions[ext] = extensions.get(ext, 0) + 1
 
-        ext = file.suffix.lower()
-        extensions[ext] = extensions.get(ext, 0) + 1
-
-        if file.name in {
-            "docker-compose.yml",
-            "Dockerfile",
-            "README.md",
-            "requirements.txt",
-            "pyproject.toml",
-            "package.json",
-            ".env.example",
-        }:
-            important.append(relative(file))
+            if file.name in {
+                "docker-compose.yml",
+                "Dockerfile",
+                "README.md",
+                "requirements.txt",
+                "pyproject.toml",
+                "package.json",
+                ".env.example",
+            }:
+                important.append(relative(file))
+    except OSError:
+        # A mounted volume may contain unreadable runtime state. The summary
+        # remains useful from the source paths that were readable.
+        pass
 
     return {
         "workspace": str(current_workspace()),
@@ -521,7 +530,7 @@ def inspect_files(
     results = []
 
     try:
-        for item in paths:
+        for item in paths[:MAX_INSPECT_PATHS]:
             path = resolve_path(item)
 
             if not path.exists():
@@ -531,7 +540,9 @@ def inspect_files(
             if path.is_dir():
                 files = []
 
-                for f in path.iterdir():
+                for index, f in enumerate(path.iterdir()):
+                    if index >= 100:
+                        break
                     if ignored(f):
                         continue
 
@@ -550,11 +561,11 @@ def inspect_files(
                     {
                         "path": item,
                         "type": "file",
-                        "content": path.read_text(encoding="utf-8", errors="ignore"),
+                        "content": path.read_text(encoding="utf-8", errors="ignore")[:MAX_FILE_SIZE],
                     }
                 )
 
-        return results
+        return {"items": results, "truncated": len(paths) > MAX_INSPECT_PATHS}
 
     except Exception as e:
         return {"error": str(e)}

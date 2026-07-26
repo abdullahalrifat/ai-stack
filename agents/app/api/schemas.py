@@ -30,7 +30,13 @@ class ExecuteRequest(BaseModel):
 
 
 class RunRequest(ExecuteRequest):
-    pass
+    document_scope: str | None = None
+    project_id: str | None = None
+
+
+class ProjectRequest(BaseModel):
+    name: str
+    workspace: str | None = str(DEFAULT_WORKSPACE)
 
 
 class IngestRequest(BaseModel):

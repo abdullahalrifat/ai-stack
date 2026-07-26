@@ -76,6 +76,20 @@ def test_tree_skips_runtime_state_directories(workspace):
     assert "src" in result
 
 
+def test_inspect_files_bounds_requested_paths(workspace, monkeypatch):
+    monkeypatch.setattr(filesystem, "MAX_INSPECT_PATHS", 2)
+    for index in range(3):
+        (workspace / f"file-{index}.txt").write_text(str(index))
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.inspect_files.invoke(
+            {"paths": ["file-0.txt", "file-1.txt", "file-2.txt"]}
+        )
+
+    assert result["truncated"] is True
+    assert [item["path"] for item in result["items"]] == ["file-0.txt", "file-1.txt"]
+
+
 def test_write_edit_and_read_stay_inside_workspace(workspace):
     with filesystem.workspace_context(str(workspace)):
         assert filesystem.write_file.invoke(

@@ -3,6 +3,9 @@ uvicorn
 requests
 beautifulsoup4
 pypdf
+python-docx
+openpyxl
+python-multipart
 
 langgraph
 langchain
@@ -18,6 +21,7 @@ langchain-qdrant
 pydantic
 python-dotenv
 psycopg[binary]
+psycopg-pool
 
 # These are intentionally installed in the runner image because they are
 # present in ALLOWED_COMMANDS and run_tests.

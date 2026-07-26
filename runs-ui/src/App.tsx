@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { api, Run, RunEvent, streamEvents } from "./api";
+import { api, Run, RunEvent, streamEvents, uploadDocuments } from "./api";
 
 type Profile =
   | "auto"
@@ -12,6 +12,7 @@ type Profile =
   | "image"
   | "custom";
 type ImageResult = { url: string; created: number; prompt: string };
+type Project = { id: string; name: string; workspace: string };
 
 const terminal = new Set([
   "completed",
@@ -103,19 +104,6 @@ function sourceUrls(text: string): string[] {
   return [...new Set(text.match(/https?:\/\/[^\s)\]}>,]+/g) || [])];
 }
 
-async function attachmentContext(files: File[]): Promise<string> {
-  const accepted = files.filter((file) =>
-    /\.(txt|md|csv|json|py|ts|tsx|js|jsx|yaml|yml)$/i.test(file.name),
-  );
-  const parts = await Promise.all(
-    accepted.slice(0, 5).map(async (file) => {
-      const body = (await file.text()).slice(0, 50_000);
-      return `\n\n<attached-file name="${file.name}">\n${body}\n</attached-file>`;
-    }),
-  );
-  return parts.join("");
-}
-
 export function App() {
   const [key, setKey] = useState("");
   const [task, setTask] = useState("");
@@ -123,6 +111,9 @@ export function App() {
   const [workspaceOptions, setWorkspaceOptions] = useState<string[]>([
     "/workspace",
   ]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [profile, setProfile] = useState<Profile>("auto");
   const [customModel, setCustomModel] = useState("qwen3-8b");
   const [models, setModels] = useState<string[]>(defaultModels);
@@ -157,6 +148,12 @@ export function App() {
   };
   useEffect(() => {
     void loadRuns();
+  }, [key]);
+  useEffect(() => {
+    if (!key) return;
+    api<{ projects: Project[] }>(key, "/projects")
+      .then((data) => setProjects(data.projects))
+      .catch((e) => setError(String(e)));
   }, [key]);
   useEffect(() => {
     if (!key) return;
@@ -259,21 +256,26 @@ export function App() {
         ]);
         return;
       }
-      const context = await attachmentContext(files);
       const selected =
         effectiveProfile === "custom" ? customModel : effectiveProfile;
       const session = conversationId || crypto.randomUUID();
       setConversationId(session);
+      if (files.length > 0) await uploadDocuments(key, files.slice(0, 10), session);
+      const attachmentNote = files.length
+        ? `\n\nUse the uploaded documents in retrieval scope ${session}. Cite their document name and location when relying on them.`
+        : "";
       const result = await api<{ run_id: string; status: string }>(
         key,
         "/runs",
         {
           method: "POST",
           body: JSON.stringify({
-            task: `${task}${context}`,
+            task: `${task}${attachmentNote}`,
             workspace,
             model: selected,
             conversation_id: session,
+            document_scope: files.length ? session : null,
+            project_id: projectId || null,
             allow_write: effectiveProfile === "code" && write,
           }),
         },
@@ -288,6 +290,20 @@ export function App() {
         allow_write: effectiveProfile === "code" && write,
         created_at: new Date().toISOString(),
       });
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+  const createProject = async () => {
+    if (!projectName.trim()) return;
+    try {
+      const created = await api<Project>(key, "/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: projectName, workspace }),
+      });
+      setProjects((current) => [created, ...current]);
+      setProjectId(created.id);
+      setProjectName("");
     } catch (e) {
       setError(String(e));
     }
@@ -315,6 +331,8 @@ export function App() {
             workspace: active.requested_workspace,
             model: active.model,
             conversation_id: session,
+            document_scope: active.document_scope || null,
+            project_id: active.project_id || projectId || null,
             allow_write: false,
           }),
         },
@@ -326,6 +344,7 @@ export function App() {
         task: followUp,
         model: active.model,
         conversation_id: session,
+        project_id: active.project_id || projectId || null,
         requested_workspace: active.requested_workspace,
         allow_write: false,
         created_at: new Date().toISOString(),
@@ -495,12 +514,35 @@ export function App() {
                   </small>
                 </div>
               </div>
+              <div className="two project-row">
+                <label>
+                  Saved project
+                  <select
+                    value={projectId}
+                    onChange={(event) => {
+                      const selected = projects.find((item) => item.id === event.target.value);
+                      setProjectId(event.target.value);
+                      if (selected) setWorkspace(selected.workspace);
+                    }}
+                  >
+                    <option value="">No project</option>
+                    {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Save current workspace as project
+                  <div className="inline-input">
+                    <input value={projectName} placeholder="Project name" onChange={(event) => setProjectName(event.target.value)} />
+                    <button type="button" onClick={() => void createProject()} disabled={!key || !projectName.trim()}>Save</button>
+                  </div>
+                </label>
+              </div>
               <label>
-                Text attachments{" "}
+                Documents (PDF, DOCX, XLSX, CSV, text){" "}
                 <input
                   type="file"
                   multiple
-                  accept=".txt,.md,.csv,.json,.py,.ts,.tsx,.js,.jsx,.yaml,.yml"
+                  accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx"
                   onChange={(e) => setFiles(Array.from(e.target.files || []))}
                 />
               </label>
