@@ -37,6 +37,14 @@ _run_executor = ThreadPoolExecutor(
 )
 
 
+def _save_memory_best_effort(question: str, answer: str) -> None:
+    """Memory persistence must never turn a completed answer into HTTP 500."""
+    try:
+        save_memory(question, answer)
+    except Exception as exc:
+        logger.warning("Could not persist conversation memory: %s", exc)
+
+
 def submit_run(run_id: str) -> None:
     """Queue a durable run without allocating an unbounded request thread."""
     _run_executor.submit(execute_run, run_id)
@@ -88,14 +96,39 @@ def _apply_auto_route(state, on_event=None) -> None:
     state.requires_external_evidence = (
         decision.requires_external_evidence or profile.force_research
     )
-    state.routing_entities = decision.entities
+    excluded_entities = [
+        str(entity) for entity in state.document_evidence.get("excluded_entities", [])
+    ]
+    selected_text = " ".join(
+        str(record.get("text", ""))
+        for record in state.document_evidence.get("records", [])
+    ).casefold()
+    state.routing_entities = [
+        entity
+        for entity in decision.entities
+        if entity.casefold() in selected_text
+        or not any(
+            entity.casefold() in excluded.casefold()
+            or excluded.casefold() in entity.casefold()
+            for excluded in excluded_entities
+        )
+    ]
     state.route_deliverables = decision.deliverables
     state.route_completion_criteria = [
         criterion for task in decision.tasks for criterion in task.completion_criteria
     ]
     brief_parts = [f"Translated objective:\n{decision.translated_task}"]
-    if decision.entities:
-        brief_parts.append("Grounded entities:\n- " + "\n- ".join(decision.entities))
+    if state.routing_entities:
+        brief_parts.append("Grounded entities:\n- " + "\n- ".join(state.routing_entities))
+    rejected_entities = [
+        entity for entity in decision.entities if entity not in state.routing_entities
+    ]
+    if rejected_entities:
+        brief_parts.append(
+            "Entities rejected because they occur only in excluded document sections "
+            "(do not analyze them as selected records):\n- "
+            + "\n- ".join(rejected_entities)
+        )
     if decision.constraints:
         brief_parts.append("Constraints:\n- " + "\n- ".join(decision.constraints))
     if decision.deliverables:
@@ -252,7 +285,7 @@ def run_agent(
     save_conversation(conversation_id, "user", message)
     save_conversation(conversation_id, "assistant", answer)
     if _uses_memory(state.prompt_mode):
-        save_memory(message, answer)
+        _save_memory_best_effort(message, answer)
 
     return {"conversation_id": conversation_id, "answer": answer}
 
@@ -374,7 +407,7 @@ def execute_run(run_id: str) -> None:
         save_conversation(conversation_id, "user", task)
         save_conversation(conversation_id, "assistant", answer)
         if _uses_memory(state.prompt_mode):
-            save_memory(task, answer)
+            _save_memory_best_effort(task, answer)
 
         if sandbox is not None and not has_pending_diff:
             # Nothing changed -- no point holding a worktree open for review.

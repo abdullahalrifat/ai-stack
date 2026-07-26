@@ -74,6 +74,24 @@ def test_answer_audit_checks_entities_deliverables_and_document_provenance():
     ) == []
 
 
+def test_answer_audit_rejects_entities_from_excluded_document_sections():
+    state = DummyState()
+    state.routing_entities = []
+    state.route_deliverables = []
+    state.document_evidence = {
+        "provenance_required": True,
+        "records": [{"source": "report.pdf", "text": "CurrentCo"}],
+        "excluded_entities": ["Historical Example Limited BO"],
+    }
+
+    failures = _answer_audit(
+        state,
+        "According to report.pdf, Historical Example Limited BO is a current holding.",
+    )
+
+    assert "uses entities found only in excluded document sections" in failures[0]
+
+
 @pytest.fixture(autouse=True)
 def no_real_compaction():
     """Executor tests never run long enough to need real compaction, and

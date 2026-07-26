@@ -201,6 +201,13 @@ stage then produces:
 - extraction-quality warnings; and
 - a coverage report containing retrieved row ranges and gaps.
 
+When an OpenAI-compatible client supplies a flattened excerpt containing
+multiple internal tables, the evidence stage splits it again on conservative
+section headings before ranking. Entities found only in excluded sections are
+removed from router research targets and rejected by the final-answer audit.
+This prevents supplementary tables from being silently presented as the
+primary records requested by the user.
+
 The router receives bounded excerpts from the retrieved material. Its contract
 requires it to identify the section or table relevant to the request, separate
 current or primary records from appendices, history, examples, footnotes, and
@@ -233,6 +240,12 @@ the executor produces the requested grounded analysis
 
 The pipeline provides research assistance, not trade execution or personalized
 investment advice.
+
+Embedding input is independently bounded with `OLLAMA_EMBED_MAX_CHARS`
+(default `6000`) so long answers fit the local embedding model's physical
+batch. Conversation-memory persistence is best effort: an embedding or vector
+store failure is logged but cannot turn an already completed answer into an
+HTTP 500 response.
 
 ### 6. Validation and fallback behavior
 

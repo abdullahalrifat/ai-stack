@@ -80,6 +80,13 @@ def test_run_agent_generates_conversation_id(
     mock_workspace.assert_called_once()
 
 
+def test_memory_persistence_failure_is_non_fatal(caplog):
+    with patch("app.agent.service.save_memory", side_effect=RuntimeError("embedding too long")):
+        agent._save_memory_best_effort("question", "answer")
+
+    assert "Could not persist conversation memory" in caplog.text
+
+
 @patch("app.agent.service.save_long_term_memory")
 @patch("app.agent.service.create_embedding")
 def test_ingest_documents(
@@ -255,6 +262,34 @@ def test_auto_route_hands_full_planning_contract_to_executor(monkeypatch):
     assert state.plan == ["[research_holding/finance] Research the named holding"]
     assert events[0][1]["task_count"] == 1
     assert events[0][1]["task_workflows"] == ["finance"]
+
+
+def test_auto_route_removes_entities_found_only_in_excluded_sections(monkeypatch):
+    decision = RouteDecision(
+        workflow="finance",
+        translated_task="Analyze the selected portfolio records.",
+        requires_external_evidence=True,
+        entities=["Current Company", "Historical Example Limited"],
+        tasks=[
+            PlannedTask(
+                id="analyze_records",
+                objective="Analyze selected portfolio records",
+                workflow="finance",
+            )
+        ],
+    )
+    monkeypatch.setattr(agent, "route_request", lambda *_: decision)
+    state = AgentState(conversation_id="test", user_message="Analyze my portfolio")
+    state.prompt_mode = "auto"
+    state.document_evidence = {
+        "records": [{"text": "Current Company | 100"}],
+        "excluded_entities": ["Historical Example Limited BO"],
+    }
+
+    agent._apply_auto_route(state)
+
+    assert state.routing_entities == ["Current Company"]
+    assert "Entities rejected" in state.execution_brief
 
 
 def test_cancelled_before_start_is_not_executed(monkeypatch):

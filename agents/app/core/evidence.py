@@ -14,6 +14,31 @@ _CURRENT = re.compile(
     r"\b(current|active|open|present|latest|now|today)\b",
     re.IGNORECASE,
 )
+_SECTION_HEADING = re.compile(
+    r"\b(account|assets?|balance sheet|cash flow|dividends?|expenses?|exposure|"
+    r"holdings?|income|inventory|items?|liabilit(?:y|ies)|notes?|obligations?|"
+    r"overview|positions?|receivables?|records?|revenue|securities|summary|"
+    r"transactions?)\b",
+    re.IGNORECASE,
+)
+_CONCEPT_GROUPS = (
+    {
+        "portfolio",
+        "holding",
+        "holdings",
+        "position",
+        "positions",
+        "security",
+        "securities",
+        "assets",
+        "exposure",
+    },
+    {"current", "active", "open", "present", "latest"},
+    {"history", "historical", "previous", "prior", "archive"},
+    {"revenue", "income", "sales"},
+    {"expense", "expenses", "cost", "costs"},
+    {"obligation", "obligations", "liability", "liabilities", "commitments"},
+)
 
 
 def _section_id(item: dict[str, Any]) -> str:
@@ -23,6 +48,67 @@ def _section_id(item: dict[str, Any]) -> str:
         for key in ("source", "location")
         if provenance.get(key)
     ) or str(item.get("citation") or "retrieved evidence")
+
+
+def _expanded_terms(text: str) -> set[str]:
+    terms = set(re.findall(r"[a-z0-9]{3,}", text.casefold()))
+    for group in _CONCEPT_GROUPS:
+        if terms.intersection(group):
+            terms.update(group)
+    return terms
+
+
+def _section_relevance(query: str, item: dict[str, Any]) -> int:
+    provenance = item.get("provenance") or {}
+    heading = str(provenance.get("headings") or provenance.get("location") or "")
+    return len(_expanded_terms(query).intersection(_expanded_terms(heading)))
+
+
+def _looks_like_section_heading(line: str) -> bool:
+    line = " ".join(line.split()).strip(" :-")
+    if not 3 <= len(line) <= 120 or line[0].isdigit() or "|" in line:
+        return False
+    if len(line.split()) > 12 or not _SECTION_HEADING.search(line):
+        return False
+    return line.upper() == line or line.title() == line or line.endswith(("%", "Statement"))
+
+
+def _split_internal_sections(text: str) -> list[tuple[str, str]]:
+    """Split flattened evidence on conservative, domain-neutral headings."""
+    sections: list[tuple[str, list[str]]] = []
+    heading = "Document beginning"
+    body: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _looks_like_section_heading(line):
+            if body:
+                sections.append((heading, body))
+            heading, body = line, [line]
+        else:
+            body.append(line)
+    if body:
+        sections.append((heading, body))
+    return [(section_heading, "\n".join(lines)) for section_heading, lines in sections]
+
+
+def _entity_phrases(records: list[dict[str, Any]]) -> set[str]:
+    phrases: set[str] = set()
+    for record in records:
+        record_text = str(record.get("text", ""))
+        # Section labels and prose headings are not row entities. Restrict the
+        # exclusion gate to table-like records carrying a value/date/delimiter.
+        if not re.search(r"\d|\|", record_text):
+            continue
+        phrases.update(
+            match.group(0).strip()
+            for match in re.finditer(
+                r"\b[A-Z][A-Za-z&.-]+(?:\s+[A-Z][A-Za-z&.-]+){1,5}\b",
+                record_text,
+            )
+        )
+    return phrases
 
 
 def _records(item: dict[str, Any], limit: int = 80) -> list[dict[str, Any]]:
@@ -106,15 +192,27 @@ def build_document_evidence(query: str, memories: list[dict[str, Any]]) -> dict[
 
     wants_history = bool(_HISTORICAL.search(query))
     wants_current = bool(_CURRENT.search(query))
+    relevance = {id(item): _section_relevance(query, item) for item in document_items}
+    best_relevance = max(relevance.values(), default=0)
     selected = []
+    excluded_items = []
     potentially_confusing = []
     for item in document_items:
         kind = (item.get("provenance") or {}).get("section_kind")
         if kind == "supplementary" and wants_current and not wants_history:
+            excluded_items.append(item)
             potentially_confusing.append(
                 {
                     "section": _section_id(item),
                     "reason": "supplementary or historical section conflicts with current/active scope",
+                }
+            )
+        elif best_relevance > 0 and relevance[id(item)] == 0:
+            excluded_items.append(item)
+            potentially_confusing.append(
+                {
+                    "section": _section_id(item),
+                    "reason": "section heading does not match the requested subject",
                 }
             )
         else:
@@ -140,10 +238,16 @@ def build_document_evidence(query: str, memories: list[dict[str, Any]]) -> dict[
         for item in selected
         if (item.get("provenance") or {}).get("extraction_status") == "low_quality"
     ]
+    excluded_records = [
+        record for item in excluded_items for record in _records(item)
+    ][:160]
+    selected_entities = _entity_phrases(records)
+    excluded_entities = sorted(_entity_phrases(excluded_records) - selected_entities)
     return {
         "selected_sections": sorted({_section_id(item) for item in selected}),
         "potentially_confusing_sections": potentially_confusing,
         "records": records[:160],
+        "excluded_entities": excluded_entities[:80],
         "coverage": _coverage(selected),
         "quality_warnings": low_quality,
         "provenance_required": True,
@@ -162,30 +266,32 @@ def build_inline_document_evidence(query: str) -> dict[str, Any]:
         excerpt = excerpt.strip()
         if not excerpt:
             continue
-        first_lines = [line.strip() for line in excerpt.splitlines() if line.strip()][:3]
-        heading_text = " ".join(first_lines).lower()
-        section_kind = (
-            "supplementary" if _HISTORICAL.search(heading_text) else "primary"
-        )
-        rows = len(excerpt.splitlines())
-        memories.append(
-            {
-                "citation": f"Client retrieved document, excerpt {index}",
-                "score": 1.0,
-                "excerpt": excerpt,
-                "provenance": {
-                    "source": "client retrieved document",
-                    "location": f"excerpt {index}",
-                    "headings": " || ".join(first_lines),
-                    "section_kind": section_kind,
-                    "row_count": rows,
-                    "row_start": 0,
-                    "row_end": max(rows - 1, 0),
-                    "quality_score": 1.0,
-                    "extraction_status": "usable",
+        for section_index, (heading, section_text) in enumerate(
+            _split_internal_sections(excerpt),
+            start=1,
+        ):
+            section_kind = (
+                "supplementary" if _HISTORICAL.search(heading) else "primary"
+            )
+            rows = len(section_text.splitlines())
+            memories.append(
+                {
+                    "citation": f"Client retrieved document, excerpt {index}",
+                    "score": 1.0,
+                    "excerpt": section_text,
+                    "provenance": {
+                        "source": "client retrieved document",
+                        "location": f"excerpt {index}, section {section_index}: {heading}",
+                        "headings": heading,
+                        "section_kind": section_kind,
+                        "row_count": rows,
+                        "row_start": 0,
+                        "row_end": max(rows - 1, 0),
+                        "quality_score": 1.0,
+                        "extraction_status": "usable",
+                    },
                 },
-            }
-        )
+            )
     return build_document_evidence(query.split(marker, 1)[0], memories)
 
 

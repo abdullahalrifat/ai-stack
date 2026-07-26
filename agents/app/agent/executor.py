@@ -348,6 +348,16 @@ def _answer_audit(state, answer: str) -> list[str]:
         }
         if sources and not any(source in lowered for source in sources):
             failures.append("document provenance is not cited")
+        excluded_entities = [
+            entity
+            for entity in evidence.get("excluded_entities", [])
+            if len(entity) >= 5 and entity.casefold() in lowered
+        ]
+        if excluded_entities:
+            failures.append(
+                "uses entities found only in excluded document sections: "
+                + ", ".join(excluded_entities[:12])
+            )
     return failures
 
 
