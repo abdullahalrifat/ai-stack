@@ -39,6 +39,14 @@ def test_openai_chat_rejects_unknown_model():
         asyncio.run(routes.openai_chat(bad_request, None))
 
 
+def test_openai_chat_rejects_direct_write_request():
+    write_request = schemas.OpenAIChatCompletionRequest(
+        model="code", messages=[schemas.OpenAIChatMessage(role="user", content="edit it")], allow_write=True
+    )
+    with pytest.raises(HTTPException, match="read-only"):
+        asyncio.run(routes.openai_chat(write_request, None))
+
+
 def test_openai_chat_returns_openai_shape():
     with patch("app.api.routes.run_in_threadpool", new=AsyncMock(return_value={"answer": "done"})):
         response = asyncio.run(routes.openai_chat(request(), None))

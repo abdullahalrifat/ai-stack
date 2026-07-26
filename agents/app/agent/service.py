@@ -1,11 +1,12 @@
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.config import DEFAULT_MODEL, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
+from ..core.config import DEFAULT_MODEL, MAX_CONCURRENT_AGENT_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
 from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
@@ -25,6 +26,7 @@ from ..tools.filesystem import workspace_context
 from ..api.profiles import resolve_profile
 
 logger = logging.getLogger(__name__)
+_execution_slots = threading.BoundedSemaphore(MAX_CONCURRENT_AGENT_RUNS)
 
 
 def _task_model(message: str, requested_model: str) -> str:
@@ -107,7 +109,9 @@ def run_agent(
         workspace=workspace,
     )
 
-    with workspace_context(workspace):
+    # Local Ollama is normally configured for one loaded model. Serializing
+    # agent turns avoids competing tool loops making every request appear hung.
+    with _execution_slots, workspace_context(workspace):
         # Client-facing OpenAI compatibility already carries recent history;
         # only a short server-side tail is needed for direct API callers.
         state.history = get_conversation(conversation_id, limit=4)
@@ -205,7 +209,7 @@ def execute_run(run_id: str) -> None:
         )
         store.update_run(run_id, active_workspace=active_workspace)
 
-        with workspace_context(active_workspace):
+        with _execution_slots, workspace_context(active_workspace):
             state.history = get_conversation(conversation_id, limit=4)
             state.memories = search_memory(task)
 

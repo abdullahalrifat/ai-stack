@@ -282,6 +282,9 @@ services:
       SANDBOX_ROOT: /sandboxes
 
       MAX_AGENT_STEPS: ${MAX_AGENT_STEPS:-12}
+      # One local CPU/GPU inference worker by default; concurrent requests
+      # queue instead of competing for Ollama and appearing stalled.
+      MAX_CONCURRENT_AGENT_RUNS: ${MAX_CONCURRENT_AGENT_RUNS:-1}
       MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-8000}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
       LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-384}

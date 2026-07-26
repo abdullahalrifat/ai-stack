@@ -73,6 +73,8 @@ async def chat(request: ChatRequest):
 
     if not request.message.strip():
         raise HTTPException(400, "Message cannot be empty")
+    if request.allow_write:
+        raise HTTPException(400, "Direct chat is read-only. Use POST /runs for reviewed sandbox writes.")
 
     try:
         profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
@@ -82,7 +84,7 @@ async def chat(request: ChatRequest):
             request.conversation_id,
             request.workspace,
             profile.model if profile else request.model or DEFAULT_MODEL,
-            request.allow_write,
+            False,
             force_research=profile.force_research if profile else False,
             prompt_mode=profile.prompt_mode if profile else "custom",
             max_completion_tokens=profile.max_completion_tokens if profile else None,
@@ -98,6 +100,8 @@ async def chat(request: ChatRequest):
 
 @router.post("/execute", dependencies=[Depends(verify_api_key)])
 async def execute(request: ExecuteRequest):
+    if request.allow_write:
+        raise HTTPException(400, "Direct execute is read-only. Use POST /runs for reviewed sandbox writes.")
     profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
     return await run_in_threadpool(
         run_agent,
@@ -105,7 +109,7 @@ async def execute(request: ExecuteRequest):
         request.conversation_id,
         request.workspace,
         profile.model if profile else request.model or DEFAULT_MODEL,
-        request.allow_write,
+        False,
         force_research=profile.force_research if profile else False,
         prompt_mode=profile.prompt_mode if profile else "custom",
         max_completion_tokens=profile.max_completion_tokens if profile else None,
@@ -306,6 +310,10 @@ async def openai_chat(
     # and tool schemas. This protects the 8K local Ollama context from large
     # Open WebUI/Continue codebase payloads.
     prompt = openai_prompt(request.messages)
+    if not prompt.strip():
+        raise HTTPException(400, "A user message is required")
+    if request.allow_write:
+        raise HTTPException(400, "OpenAI-compatible chat is read-only. Use POST /runs for reviewed sandbox writes.")
 
     created = int(datetime.now(timezone.utc).timestamp())
 
@@ -327,7 +335,7 @@ async def openai_chat(
                         conversation_id,
                         request.workspace,
                         profile.model,
-                        request.allow_write,
+                        False,
                         on_event=lambda kind, payload: updates.put(("event", (kind, payload))),
                         on_token=lambda content: updates.put(("token", content)),
                         force_research=profile.force_research,
@@ -406,7 +414,7 @@ async def openai_chat(
         conversation_id,
         request.workspace,
         profile.model,
-        request.allow_write,
+        False,
         force_research=profile.force_research,
         prompt_mode=profile.prompt_mode,
         max_completion_tokens=profile.max_completion_tokens,

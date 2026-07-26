@@ -110,6 +110,28 @@ def merge_sandbox(sandbox: Sandbox) -> None:
             "instead of applying a stale diff."
         )
 
+    # HEAD alone is not enough: a user may have local edits that an otherwise
+    # cleanly-applying agent patch could overwrite. Approval is deliberately
+    # conservative; commit/stash user changes or rerun from the new state.
+    dirty = _git(sandbox.repository, "status", "--porcelain", safe_directory=sandbox.repository)
+    if dirty.returncode != 0:
+        raise RuntimeError("Could not inspect repository status before applying sandbox diff")
+    if dirty.stdout.strip():
+        raise RuntimeError(
+            "Repository has uncommitted changes; commit or stash them before approving this run."
+        )
+
+    check = subprocess.run(
+        ["git", "-C", str(sandbox.repository), "apply", "--check", "--whitespace=nowarn", "-"],
+        input=diff,
+        text=True,
+        capture_output=True,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+        check=False,
+    )
+    if check.returncode != 0:
+        raise RuntimeError(f"Sandbox diff conflicts with the repository: {check.stderr.strip()}")
+
     result = subprocess.run(
         ["git", "-C", str(sandbox.repository), "apply", "--whitespace=nowarn", "-"],
         input=diff,
