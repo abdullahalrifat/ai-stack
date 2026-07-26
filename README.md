@@ -254,6 +254,8 @@ without exposing hidden model reasoning.
 | `ROUTER_MODEL` | `quick` | LiteLLM model alias used for the routing-only turn |
 | `ROUTER_ESCALATION_MODEL` | `DEFAULT_MODEL` | Stronger planner for complex or low-confidence document routes |
 | `ROUTER_MAX_COMPLETION_TOKENS` | `1024` | Maximum router/planner response size |
+| `ROUTER_TIMEOUT_SECONDS` | `120` | Timeout for the normal low-latency routing model |
+| `ROUTER_ESCALATION_TIMEOUT_SECONDS` | `240` | Timeout for the stronger planner on complex evidence |
 | `FAST_MODEL` | `quick` | Executor used by Quick |
 | `DEFAULT_MODEL` | `qwen3-8b` in Compose | Executor used by Code |
 | `RESEARCH_MODEL` | `quick` | Executor used by Research |

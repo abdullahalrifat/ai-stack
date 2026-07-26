@@ -10,7 +10,15 @@ import json
 import logging
 import re
 
-from ..core.config import ROUTER_ESCALATION_MODEL, ROUTER_MAX_COMPLETION_TOKENS, ROUTER_MODEL
+from openai import APITimeoutError
+
+from ..core.config import (
+    ROUTER_ESCALATION_MODEL,
+    ROUTER_ESCALATION_TIMEOUT_SECONDS,
+    ROUTER_MAX_COMPLETION_TOKENS,
+    ROUTER_MODEL,
+    ROUTER_TIMEOUT_SECONDS,
+)
 from ..llm.client import chat
 from .parser import ParserError, extract_json
 
@@ -238,6 +246,19 @@ def _grounded_values(values: list[str], grounding: str) -> tuple[list[str], list
     return grounded, rejected
 
 
+def _bounded_router_message(message: str, limit: int = 5_000) -> str:
+    """Avoid sending duplicated client RAG text unbounded to the planner."""
+    if len(message) <= limit:
+        return message
+    head = limit * 3 // 5
+    tail = limit - head
+    return (
+        f"{message[:head]}\n"
+        "...[duplicated client context omitted before routing]...\n"
+        f"{message[-tail:]}"
+    )
+
+
 def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
     if not isinstance(value, list) or not 1 <= len(value) <= 4:
         return []
@@ -311,6 +332,7 @@ def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
 def route_request(message: str, attachment_context: list | None = None) -> RouteDecision:
     excerpts = attachment_context or []
     context = json.dumps(excerpts[:8], ensure_ascii=False, default=str)[:6_000]
+    router_message = _bounded_router_message(message)
     try:
         router_model = (
             ROUTER_ESCALATION_MODEL
@@ -322,16 +344,27 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
                 {"role": "system", "content": ROUTER_PROMPT},
                 {
                     "role": "user",
-                    "content": f"Original request:\n{message}\n\nAttachment excerpts:\n{context or '(none)'}",
+                    "content": f"Original request:\n{router_message}\n\nAttachment excerpts:\n{context or '(none)'}",
                 },
             ],
             model=router_model,
             max_tokens=ROUTER_MAX_COMPLETION_TOKENS,
             response_format={"type": "json_object"},
+            timeout_seconds=(
+                ROUTER_ESCALATION_TIMEOUT_SECONDS
+                if router_model == ROUTER_ESCALATION_MODEL
+                else ROUTER_TIMEOUT_SECONDS
+            ),
         )
         data = extract_json(response)
     except (ParserError, ValueError, TypeError, KeyError):
         logger.warning("Router returned an invalid contract; using deterministic fallback")
+        return _fallback_route(message)
+    except APITimeoutError:
+        logger.warning(
+            "Router model %s timed out; using deterministic fallback",
+            router_model,
+        )
         return _fallback_route(message)
     except Exception:
         logger.exception("Router failed; using deterministic fallback")

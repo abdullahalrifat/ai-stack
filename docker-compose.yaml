@@ -265,6 +265,8 @@ services:
       ROUTER_MODEL: ${ROUTER_MODEL:-quick}
       ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-coder}
       ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1024}
+      ROUTER_TIMEOUT_SECONDS: ${ROUTER_TIMEOUT_SECONDS:-120}
+      ROUTER_ESCALATION_TIMEOUT_SECONDS: ${ROUTER_ESCALATION_TIMEOUT_SECONDS:-240}
       # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-coder}
       # Used for current web/financial research through agent.orchestrator.

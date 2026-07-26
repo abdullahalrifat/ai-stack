@@ -25,6 +25,10 @@ FAST_MODEL = os.getenv("FAST_MODEL", "quick")
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", FAST_MODEL)
 ROUTER_ESCALATION_MODEL = os.getenv("ROUTER_ESCALATION_MODEL", DEFAULT_MODEL)
 ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "1024"))
+ROUTER_TIMEOUT_SECONDS = int(os.getenv("ROUTER_TIMEOUT_SECONDS", "120"))
+ROUTER_ESCALATION_TIMEOUT_SECONDS = int(
+    os.getenv("ROUTER_ESCALATION_TIMEOUT_SECONDS", "240")
+)
 FINANCE_MODEL = os.getenv("FINANCE_MODEL", DEFAULT_MODEL)
 # Used by the Open WebUI orchestrator for current web/financial research when
 # no per-run model was explicitly selected in the Runs UI.

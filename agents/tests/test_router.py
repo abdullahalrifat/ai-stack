@@ -1,8 +1,16 @@
 from unittest.mock import patch
 
-from app.agent.router import _policy_workflow, _requires_router_escalation, route_request
-from app.agent.parser import ParserError
+import httpx
 import pytest
+from openai import APITimeoutError
+
+from app.agent.parser import ParserError
+from app.agent.router import (
+    _bounded_router_message,
+    _policy_workflow,
+    _requires_router_escalation,
+    route_request,
+)
 
 
 @pytest.mark.parametrize(
@@ -35,6 +43,30 @@ def test_router_does_not_escalate_for_repeated_chunks_from_one_source():
     )
 
     assert _requires_router_escalation("Summarize this document", context) is False
+
+
+def test_router_message_preserves_request_head_and_evidence_tail():
+    message = "USER REQUEST\n" + ("middle " * 2_000) + "\nFINAL EVIDENCE"
+
+    bounded = _bounded_router_message(message, limit=1_000)
+
+    assert bounded.startswith("USER REQUEST")
+    assert bounded.endswith("FINAL EVIDENCE")
+    assert len(bounded) < 1_100
+
+
+@patch(
+    "app.agent.router.chat",
+    side_effect=APITimeoutError(
+        request=httpx.Request("POST", "http://litellm/v1/chat/completions")
+    ),
+)
+def test_router_timeout_uses_concise_deterministic_fallback(mock_chat, caplog):
+    route = route_request("Review the authentication module")
+
+    assert route.source == "fallback"
+    assert route.workflow == "code"
+    assert "timed out; using deterministic fallback" in caplog.text
 
 
 @patch("app.agent.router.extract_json")
