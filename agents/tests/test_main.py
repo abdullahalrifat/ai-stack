@@ -58,10 +58,12 @@ def test_openai_context_compaction_preserves_latest_request_and_bounds_payload()
     compacted = compact_openai_messages(messages, max_chars=3_000)
     prompt = openai_prompt(messages, max_chars=3_000)
 
+    assert all(message["role"] != "system" for message in compacted)
     assert compacted[-1]["role"] == "user"
     assert "LATEST REQUEST" in compacted[-1]["content"]
     assert len("".join(message["content"] for message in compacted)) <= 3_100
     assert "LATEST REQUEST" in prompt
+    assert "s" * 100 not in prompt
 
 
 def test_openai_context_compaction_prefers_newest_user_over_large_history():
@@ -74,6 +76,21 @@ def test_openai_context_compaction_prefers_newest_user_over_large_history():
     compacted = compact_openai_messages(messages, max_chars=2_000)
 
     assert compacted[-1] == {"role": "user", "content": "please fix the failing test"}
+
+
+def test_openai_prompt_marks_history_as_reference_and_latest_user_as_task():
+    messages = [
+        schemas.OpenAIChatMessage(role="system", content="Follow Continue's internal protocol."),
+        schemas.OpenAIChatMessage(role="user", content="Earlier request"),
+        schemas.OpenAIChatMessage(role="assistant", content="Earlier answer"),
+        schemas.OpenAIChatMessage(role="user", content="Review this codebase for gaps."),
+    ]
+
+    prompt = openai_prompt(messages, max_chars=4_000)
+
+    assert "Continue's internal protocol" not in prompt
+    assert "reference only" in prompt
+    assert prompt.endswith("Review this codebase for gaps.")
 
 
 def test_openai_research_profile_forces_research_mode():
