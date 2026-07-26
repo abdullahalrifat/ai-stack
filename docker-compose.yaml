@@ -338,7 +338,7 @@ services:
       - ALL
 
     pids_limit: 256
-    mem_limit: ${AGENT_MEMORY_LIMIT:-4g}
+    mem_limit: ${AGENT_MEMORY_LIMIT:-8g}
     cpus: ${AGENT_CPUS:-4}
 
     depends_on:

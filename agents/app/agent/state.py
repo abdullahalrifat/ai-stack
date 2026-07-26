@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.config import DEFAULT_MODEL
+from ..core.config import MAX_TOOL_OUTPUT_CHARS
 
 
 @dataclass
@@ -47,8 +48,14 @@ class AgentState:
         self.messages.append({"role": "assistant", "content": content})
 
     def add_tool(self, name: str, result: Any):
+        # Tool results can be large directory listings/documents. Never retain
+        # the unbounded object in agent state across a multi-step run.
+        content = str(result)
+        if len(content) > MAX_TOOL_OUTPUT_CHARS:
+            content = content[:MAX_TOOL_OUTPUT_CHARS] + "\n...[tool result truncated]"
+            result = {"truncated": True, "preview": content}
         self.observations.append({"tool": name, "result": result})
-        self.messages.append({"role": "tool", "name": name, "content": str(result)})
+        self.messages.append({"role": "tool", "name": name, "content": content})
 
     def reset(self):
         self.steps = 0
