@@ -324,15 +324,31 @@ def discard_run(run_id: str) -> dict[str, Any]:
 # =====================================================
 
 
+def _document_chunks(text: str, size: int = 1_800, overlap: int = 240):
+    """Create overlapping retrieval chunks with stable per-document positions."""
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + size)
+        yield text[start:end]
+        if end == len(text):
+            break
+        start = end - overlap
+
+
 def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None):
     stored = 0
 
-    for text in texts:
+    for document_index, text in enumerate(texts):
         if not text or not text.strip():
             continue
 
-        embedding = create_embedding(text)
-        save_long_term_memory(text, embedding, metadata or {})
-        stored += 1
+        for chunk_index, chunk in enumerate(_document_chunks(text)):
+            embedding = create_embedding(chunk)
+            save_long_term_memory(
+                chunk,
+                embedding,
+                {**(metadata or {}), "type": "document", "document_index": document_index, "chunk_index": chunk_index},
+            )
+            stored += 1
 
     return {"stored": stored, "status": "success"}

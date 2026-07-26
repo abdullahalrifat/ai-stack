@@ -22,7 +22,7 @@ MAX_STEPS = MAX_AGENT_STEPS
 
 # Tools that mutate the workspace. Excluded entirely from the tool list
 # whenever a request does not have allow_write set.
-WRITE_TOOLS = {"write_file", "edit_file", "run_command"}
+WRITE_TOOLS = {"write_file", "edit_file", "run_command", "run_tests"}
 
 # Quick requests must fit an 8K local context even after the agent's own
 # prompt and native tool schemas are attached. These cover focused repository

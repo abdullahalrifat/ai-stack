@@ -49,6 +49,8 @@ def test_write_edit_and_read_stay_inside_workspace(workspace):
 
 def test_run_command_enforces_policy_before_execution(workspace, monkeypatch):
     monkeypatch.setattr(filesystem, "ALLOWED_COMMANDS", ["echo"])
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    monkeypatch.setattr(filesystem, "_run_in_isolated_runner", lambda command, cwd: {"command": command, "exit_code": 0, "output": "ok"})
 
     with filesystem.workspace_context(str(workspace)):
         assert "not permitted" in filesystem.run_command.invoke(

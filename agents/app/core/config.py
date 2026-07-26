@@ -70,6 +70,8 @@ RUNNER_MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
 RUN_EVENT_BATCH_CHARS = int(os.getenv("RUN_EVENT_BATCH_CHARS", "256"))
 RUN_EVENT_BATCH_SECONDS = float(os.getenv("RUN_EVENT_BATCH_SECONDS", "0.10"))
 MAX_CONCURRENT_AGENT_RUNS = int(os.getenv("MAX_CONCURRENT_AGENT_RUNS", "1"))
+RUNNER_URL = os.getenv("RUNNER_URL", "http://agent-runner:8001").rstrip("/")
+RUNNER_API_KEY = os.getenv("RUNNER_API_KEY")
 
 # Commands the run_command tool may execute. Only the first whitespace
 # token of a requested command is checked against this list; shell
@@ -113,3 +115,5 @@ def validate_settings() -> None:
         raise RuntimeError("OPENAI_INPUT_MAX_CHARS must be at least 1000")
     if MAX_CONCURRENT_AGENT_RUNS < 1:
         raise RuntimeError("MAX_CONCURRENT_AGENT_RUNS must be at least 1")
+    if not RUNNER_API_KEY:
+        raise RuntimeError("RUNNER_API_KEY is required for isolated command execution")

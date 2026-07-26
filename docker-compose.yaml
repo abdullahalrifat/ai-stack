@@ -252,6 +252,8 @@ services:
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
 
       AGENT_API_KEY: ${AGENT_API_KEY}
+      RUNNER_API_KEY: ${RUNNER_API_KEY:-${AGENT_API_KEY}}
+      RUNNER_URL: http://agent-runner:8001
 
       # DEFAULT_MODEL is what /chat, /execute, and /runs use unless a request
       # overrides it. AGENT_MODEL_ID is the id the agent advertises at
@@ -338,6 +340,8 @@ services:
     cpus: ${AGENT_CPUS:-4}
 
     depends_on:
+      agent-runner:
+        condition: service_started
       litellm:
         condition: service_healthy
       postgres:
@@ -351,6 +355,35 @@ services:
 
     networks:
       - ai
+      - runner
+
+  agent-runner:
+    image: ai-agents:latest
+    container_name: agent-runner
+    restart: unless-stopped
+    command: ["uvicorn", "app.runner:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      RUNNER_API_KEY: ${RUNNER_API_KEY:-${AGENT_API_KEY}}
+      SANDBOX_ROOT: /sandboxes
+      COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-120}
+      RUNNER_CPU_SECONDS: ${RUNNER_CPU_SECONDS:-90}
+      RUNNER_MEMORY_MB: ${RUNNER_MEMORY_MB:-2048}
+      RUNNER_MAX_OPEN_FILES: ${RUNNER_MAX_OPEN_FILES:-256}
+      ALLOWED_COMMANDS: ${ALLOWED_COMMANDS:-git,pytest,python,python3,npm,node,make,mypy,ruff,black,flake8}
+    volumes:
+      - ./agent-sandboxes:/sandboxes
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: ${RUNNER_MEMORY_LIMIT:-3g}
+    cpus: ${RUNNER_CPUS:-2}
+    networks:
+      - runner
 
   ####################################################
   ## Runs UI -- React/TypeScript coding task console
@@ -386,3 +419,5 @@ services:
 networks:
   ai:
     driver: bridge
+  runner:
+    internal: true

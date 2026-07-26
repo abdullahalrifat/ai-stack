@@ -15,7 +15,11 @@ from app.core.config import (
     RUNNER_MAX_OPEN_FILES,
     RUNNER_MEMORY_MB,
     WORKSPACE_ROOTS,
+    RUNNER_API_KEY,
+    RUNNER_URL,
+    SANDBOX_ROOT,
 )
+import requests
 
 # ============================================================
 # Configuration
@@ -77,6 +81,22 @@ def _run_limited(parts: list[str], cwd: Path) -> subprocess.CompletedProcess[str
         env=safe_env,
         preexec_fn=_runner_preexec,
     )
+
+
+def _run_in_isolated_runner(command: str, cwd: Path) -> dict:
+    if SANDBOX_ROOT not in cwd.parents:
+        return {"error": "Commands may run only inside a disposable sandbox worktree."}
+    try:
+        response = requests.post(
+            f"{RUNNER_URL}/execute", json={"command": command, "directory": str(cwd)},
+            headers={"X-Runner-Key": RUNNER_API_KEY or ""}, timeout=COMMAND_TIMEOUT_SECONDS + 5,
+        )
+        if not response.ok:
+            return {"error": "Isolated runner rejected command."}
+        payload = response.json()
+        return {"command": command, "exit_code": payload["exit_code"], "output": payload.get("output", "")}
+    except requests.RequestException:
+        return {"error": "Isolated runner is unavailable."}
 
 
 # ============================================================
@@ -575,13 +595,7 @@ def run_command(command: str, directory: str = "."):
         if not cwd.is_dir():
             return {"error": "directory is not a directory."}
 
-        result = _run_limited(parts, cwd)
-        output = (result.stdout + "\n" + result.stderr).strip()
-        return {
-            "command": command,
-            "exit_code": result.returncode,
-            "output": output[-30000:],
-        }
+        return _run_in_isolated_runner(command, cwd)
     except subprocess.TimeoutExpired:
         return {"error": "Command timed out."}
     except FileNotFoundError:
@@ -608,9 +622,8 @@ def run_tests(kind: str = "pytest", directory: str = "."):
         cwd = resolve_path(directory)
         if not cwd.is_dir():
             return {"error": "Test directory is not a directory."}
-        result = _run_limited(commands[kind], cwd)
-        output = (result.stdout + "\n" + result.stderr).strip()
-        return {"kind": kind, "exit_code": result.returncode, "output": output[-30000:]}
+        result = _run_in_isolated_runner(" ".join(commands[kind]), cwd)
+        return {"kind": kind, **result}
     except subprocess.TimeoutExpired:
         return {"error": "Test command timed out."}
     except FileNotFoundError:
