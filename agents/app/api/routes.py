@@ -28,6 +28,7 @@ from app.tools.filesystem import list_files, validate_workspace
 from app.tools.registry import registry
 
 from .dependencies import require_run_store, verify_api_key
+from .context import openai_prompt
 from .profiles import PROFILES, resolve_profile
 from .schemas import ChatRequest, ExecuteRequest, ImageGenerationRequest, IngestRequest, MemoryQuery, OpenAIChatCompletionRequest, OpenAIEmbeddingRequest, PlanRequest, RunRequest
 
@@ -300,7 +301,10 @@ async def openai_chat(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    prompt = "\n".join(f"{m.role}: {m.content}" for m in request.messages)
+    # Bound client-supplied history before the executor adds its own prompt
+    # and tool schemas. This protects the 8K local Ollama context from large
+    # Open WebUI/Continue codebase payloads.
+    prompt = openai_prompt(request.messages)
 
     created = int(datetime.now(timezone.utc).timestamp())
 

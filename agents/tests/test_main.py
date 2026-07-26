@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api import dependencies, routes, schemas
+from app.api.context import compact_openai_messages, openai_prompt
 from app.api.profiles import PROFILES
 from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, FAST_MODEL, FINANCE_LLM_TIMEOUT_SECONDS, FINANCE_MAX_COMPLETION_TOKENS, FINANCE_MODEL
 
@@ -44,6 +45,35 @@ def test_openai_chat_returns_openai_shape():
 
     assert response["object"] == "chat.completion"
     assert response["choices"][0]["message"] == {"role": "assistant", "content": "done"}
+
+
+def test_openai_context_compaction_preserves_latest_request_and_bounds_payload():
+    messages = [
+        schemas.OpenAIChatMessage(role="system", content="s" * 4_000),
+        schemas.OpenAIChatMessage(role="user", content="old question " + "a" * 4_000),
+        schemas.OpenAIChatMessage(role="assistant", content="old answer " + "b" * 4_000),
+        schemas.OpenAIChatMessage(role="user", content="LATEST REQUEST: inspect routes.py " + "c" * 4_000),
+    ]
+
+    compacted = compact_openai_messages(messages, max_chars=3_000)
+    prompt = openai_prompt(messages, max_chars=3_000)
+
+    assert compacted[-1]["role"] == "user"
+    assert "LATEST REQUEST" in compacted[-1]["content"]
+    assert len("".join(message["content"] for message in compacted)) <= 3_100
+    assert "LATEST REQUEST" in prompt
+
+
+def test_openai_context_compaction_prefers_newest_user_over_large_history():
+    messages = [
+        schemas.OpenAIChatMessage(role="user", content="old " + "x" * 8_000),
+        schemas.OpenAIChatMessage(role="assistant", content="reply " + "y" * 8_000),
+        schemas.OpenAIChatMessage(role="user", content="please fix the failing test"),
+    ]
+
+    compacted = compact_openai_messages(messages, max_chars=2_000)
+
+    assert compacted[-1] == {"role": "user", "content": "please fix the failing test"}
 
 
 def test_openai_research_profile_forces_research_mode():

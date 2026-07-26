@@ -230,6 +230,7 @@ services:
   ## AI Agents
   ####################################################
   agents:
+    build: ./agents
     image: ai-agents:latest
     container_name: ai-agents
     restart: unless-stopped
@@ -284,6 +285,9 @@ services:
       MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-8000}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
       LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-384}
+      # Bound Open WebUI/Continue input before the agent adds tools and its
+      # own instructions, preventing an 8K Ollama context overflow.
+      OPENAI_INPUT_MAX_CHARS: ${OPENAI_INPUT_MAX_CHARS:-6000}
       FINANCE_MAX_COMPLETION_TOKENS: ${FINANCE_MAX_COMPLETION_TOKENS:-1024}
       FINANCE_LLM_TIMEOUT_SECONDS: ${FINANCE_LLM_TIMEOUT_SECONDS:-300}
       COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-120}

@@ -191,6 +191,10 @@ coverage measures the code under test:
 docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tests --cov=app --cov-report=term-missing
 ```
 
+The agent service has a Compose build definition, so changes under `agents/`
+are deployed with `docker compose build agents` followed by
+`docker compose up -d --force-recreate agents`.
+
 ### Agent in Open WebUI
 
 For a new Open WebUI data directory, the Compose configuration seeds two
@@ -211,6 +215,13 @@ The compatibility endpoint accepts `stream: true` and sends SSE heartbeats
 and model-token deltas. For actual live agent progress (planning, tool
 calls/results, output, and diff review), use the non-blocking `POST /runs` +
 `GET /runs/{id}/events` workflow directly or through the Runs UI.
+
+Open WebUI and Continue may include long code excerpts, tool definitions, and
+conversation history. Before the agent adds its own prompt and tools, the
+compatibility endpoint compacts that client-provided text to
+`OPENAI_INPUT_MAX_CHARS` (default `6000`). It preserves system guidance, the
+newest user request, and short recent history, omitting older/oversized context
+first. Raise it only when using a model with a larger verified context window.
 
 ### Web research
 
