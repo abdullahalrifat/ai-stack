@@ -25,7 +25,7 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "directory": {
                         "type": "string",
-                        "description": "Directory to show, relative to the workspace or absolute.",
+                        "description": "Directory to show. Prefer '.' for the active workspace; absolute paths must start with '/'.",
                         "default": ".",
                     },
                     "depth": {
@@ -45,7 +45,11 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "directory": {"type": "string", "default": "."},
+                    "directory": {
+                        "type": "string",
+                        "description": "Use '.' for the active workspace or an absolute path beginning with '/'.",
+                        "default": ".",
+                    },
                 },
             },
         },

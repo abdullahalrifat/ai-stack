@@ -58,6 +58,9 @@ MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "12"))
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "90"))
 LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "384"))
+# Planning is advisory; a small bounded response avoids wasting the local
+# context window on a plan the executor does not need to execute literally.
+PLANNER_MAX_COMPLETION_TOKENS = int(os.getenv("PLANNER_MAX_COMPLETION_TOKENS", "192"))
 # OpenAI-compatible clients often attach long histories, IDE excerpts, and
 # tool instructions. This bounds only their *incoming* text before the agent
 # adds its own prompt and tool schemas for an 8K local model context.

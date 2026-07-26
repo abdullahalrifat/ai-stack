@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from app.agent.planner import create_plan
+from app.agent.parser import ParserError
 
 
 class DummyState:
@@ -46,6 +47,7 @@ def test_create_plan_success(
     ]
 
     mock_chat.assert_called_once()
+    assert mock_chat.call_args.kwargs["max_tokens"] == 192
     mock_extract_json.assert_called_once_with(mock_chat.return_value)
 
 
@@ -85,3 +87,13 @@ def test_create_plan_passes_correct_messages(
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "Find Docker logs"
+
+
+@patch("app.agent.planner.extract_json", side_effect=ParserError("incomplete JSON"))
+@patch("app.agent.planner.chat", return_value='{"plan": ["partial"')
+def test_create_plan_ignores_incomplete_json(mock_chat, mock_extract_json):
+    plan = create_plan(DummyState("Review this repository"))
+
+    assert plan == []
+    mock_chat.assert_called_once()
+    mock_extract_json.assert_called_once_with(mock_chat.return_value)

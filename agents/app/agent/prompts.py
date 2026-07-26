@@ -35,8 +35,8 @@ Rules:
 - If code analysis is requested, discover the repository first.
 - If the user asked for a code change, the plan should end with making the
   edit and verifying it (e.g. running tests), not just describing it.
-- Keep plans between 2 and 10 steps.
-- Each step should describe one concrete action.
+- Keep plans between 2 and 5 very short steps.
+- Each step must be a concise phrase, not an explanation.
 
 Return ONLY JSON.
 

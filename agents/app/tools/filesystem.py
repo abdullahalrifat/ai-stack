@@ -204,6 +204,16 @@ def resolve_path(path: str) -> Path:
 
     p = Path(path)
 
+    # Small local models occasionally omit the leading slash when repeating an
+    # in-container absolute path (for example ``workspace/ai-stack``). Treat
+    # that form as absolute only when its first component identifies an
+    # allowed workspace root; all other relative paths remain relative to the
+    # active repository.
+    if not p.is_absolute() and p.parts:
+        root_names = {root.parts[1] for root in WORKSPACE_ROOTS if len(root.parts) > 1}
+        if p.parts[0] in root_names:
+            p = Path("/") / p
+
     if not p.is_absolute():
         p = current_workspace() / p
 

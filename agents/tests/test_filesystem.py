@@ -55,6 +55,15 @@ def test_explicit_workspace_field_takes_precedence_over_prompt(workspace, monkey
     assert selected == str(other_repository)
 
 
+def test_resolve_path_accepts_absolute_workspace_without_leading_slash(workspace):
+    repository = workspace / "ai-stack"
+    repository.mkdir()
+    missing_leading_slash = str(repository).lstrip("/")
+
+    with filesystem.workspace_context(str(repository)):
+        assert filesystem.resolve_path(missing_leading_slash) == repository
+
+
 def test_write_edit_and_read_stay_inside_workspace(workspace):
     with filesystem.workspace_context(str(workspace)):
         assert filesystem.write_file.invoke(

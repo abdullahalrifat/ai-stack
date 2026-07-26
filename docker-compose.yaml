@@ -293,6 +293,7 @@ services:
       MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-8000}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
       LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-384}
+      PLANNER_MAX_COMPLETION_TOKENS: ${PLANNER_MAX_COMPLETION_TOKENS:-192}
       # Bound Open WebUI/Continue input before the agent adds tools and its
       # own instructions, preventing an 8K Ollama context overflow.
       OPENAI_INPUT_MAX_CHARS: ${OPENAI_INPUT_MAX_CHARS:-3500}
