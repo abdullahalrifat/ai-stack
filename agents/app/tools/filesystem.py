@@ -1,4 +1,5 @@
 import os
+import re
 import resource
 import shlex
 import subprocess
@@ -11,6 +12,7 @@ from langchain.tools import tool
 from app.core.config import (
     ALLOWED_COMMANDS,
     COMMAND_TIMEOUT_SECONDS,
+    DEFAULT_WORKSPACE as CONFIGURED_DEFAULT_WORKSPACE,
     RUNNER_CPU_SECONDS,
     RUNNER_MAX_OPEN_FILES,
     RUNNER_MEMORY_MB,
@@ -25,7 +27,7 @@ import requests
 # Configuration
 # ============================================================
 
-DEFAULT_WORKSPACE = WORKSPACE_ROOTS[0]
+DEFAULT_WORKSPACE = CONFIGURED_DEFAULT_WORKSPACE
 
 
 # Context-local workspace prevents one HTTP request from changing another
@@ -51,6 +53,8 @@ IGNORE_DIRS = {
 
 
 MAX_FILE_SIZE = 100_000
+MAX_SCAN_FILES = 5_000
+MAX_SEARCH_FILE_SIZE = 512_000
 
 
 def _runner_preexec() -> None:
@@ -131,6 +135,48 @@ def validate_workspace(path: str) -> Path:
         )
 
     return new_path
+
+
+def resolve_request_workspace(path: str | None, message: str = "") -> str:
+    """Choose a narrow workspace named in a request without trusting it blindly.
+
+    API clients such as Continue and Open WebUI normally cannot send this
+    stack's optional ``workspace`` field. When they explicitly mention a
+    mounted repository path in their request, use that repository instead of
+    scanning the configured broad default. An explicit non-default workspace
+    field always wins.
+    """
+
+    requested = validate_workspace(path or str(DEFAULT_WORKSPACE))
+    if requested != DEFAULT_WORKSPACE:
+        return str(requested)
+
+    candidates = re.findall(r"(?<![\w/])(/[A-Za-z0-9._/-]+)", message)
+    for candidate in sorted(set(candidates), key=len, reverse=True):
+        try:
+            resolved = validate_workspace(candidate.rstrip(".,:;!?)]}\"'"))
+        except (ValueError, PermissionError):
+            continue
+        if resolved != DEFAULT_WORKSPACE:
+            return str(resolved)
+    return str(requested)
+
+
+def workspace_choices() -> list[str]:
+    """List allowed roots and their immediate Git repositories for UI selection."""
+
+    choices: set[Path] = {DEFAULT_WORKSPACE}
+    for root in WORKSPACE_ROOTS:
+        choices.add(root)
+        try:
+            for index, child in enumerate(root.iterdir()):
+                if index >= MAX_SCAN_FILES:
+                    break
+                if child.is_dir() and (child / ".git").exists():
+                    choices.add(child.resolve())
+        except OSError:
+            continue
+    return [str(path) for path in sorted(choices)]
 
 
 @contextmanager
@@ -323,12 +369,16 @@ def find_file(
     try:
         matches = []
 
-        for file in current_workspace().rglob("*"):
+        for index, file in enumerate(current_workspace().rglob("*")):
+            if index >= MAX_SCAN_FILES:
+                break
             if ignored(file):
                 continue
 
             if filename.lower() in file.name.lower():
                 matches.append(relative(file))
+                if len(matches) >= 100:
+                    break
 
         return matches[:100]
 
@@ -355,11 +405,15 @@ def search_text(
 
         matches = []
 
-        for file in root.rglob("*"):
+        for index, file in enumerate(root.rglob("*")):
+            if index >= MAX_SCAN_FILES:
+                break
             if ignored(file):
                 continue
 
             if not file.is_file():
+                continue
+            if file.stat().st_size > MAX_SEARCH_FILE_SIZE:
                 continue
 
             try:
@@ -373,6 +427,8 @@ def search_text(
 
             if keyword.lower() in text.lower():
                 matches.append(relative(file))
+                if len(matches) >= 100:
+                    break
 
         return matches[:100]
 
@@ -394,7 +450,9 @@ def project_summary():
     extensions = {}
     important = []
 
-    for file in current_workspace().rglob("*"):
+    for index, file in enumerate(current_workspace().rglob("*")):
+        if index >= MAX_SCAN_FILES:
+            break
         if ignored(file):
             continue
 

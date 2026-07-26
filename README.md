@@ -42,6 +42,11 @@ Open WebUI ---- Postgres / Redis / Qdrant
 
    Generate long random values for all credentials. Set `WORKSPACE_PATH` to the
    smallest host directory that contains repositories you want the agent to see.
+   `DEFAULT_WORKSPACE_DIR` defaults to `/workspace`. The Router UI lets you
+   select a narrower repository, and all clients automatically narrow to a
+   valid path explicitly named in the prompt (for example
+   `/workspace/ai-stack`), preventing repository reviews from scanning sibling
+   directories in the broader workspace mount.
    If you need the agent to see more than one directory, mount each one as its
    own volume in `docker-compose.yaml` and list the in-container paths in
    `WORKSPACE_ROOTS` (comma-separated).

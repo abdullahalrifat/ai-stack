@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.config import DEFAULT_MODEL, MAX_CONCURRENT_AGENT_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
+from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, MAX_CONCURRENT_AGENT_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
 from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
@@ -78,7 +78,7 @@ class RunEventBuffer:
 def run_agent(
     message: str,
     conversation_id: str | None = None,
-    workspace="/workspace",
+    workspace=str(DEFAULT_WORKSPACE),
     model=DEFAULT_MODEL,
     allow_write=False,
     on_event=None,

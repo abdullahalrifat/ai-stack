@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.agent.service import ingest_documents, run_agent
 from app.agent import service as agent
+from app.core.config import DEFAULT_WORKSPACE
 
 
 @patch("app.agent.service.workspace_context", return_value=nullcontext())
@@ -37,7 +38,7 @@ def test_run_agent(
 
     mock_workspace.assert_called_once()
     mock_get_conversation.assert_called_once_with("test-conversation", limit=4)
-    mock_search_memory.assert_called_once_with("Hello", scope="/workspace")
+    mock_search_memory.assert_called_once_with("Hello", scope=str(DEFAULT_WORKSPACE))
     mock_create_plan.assert_called_once()
     mock_execute_plan.assert_called_once()
 

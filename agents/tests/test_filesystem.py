@@ -29,6 +29,32 @@ def test_workspace_rejects_symlink_escape(workspace, tmp_path):
         filesystem.validate_workspace(str(escaped))
 
 
+def test_request_workspace_uses_explicit_repository_in_prompt(workspace, monkeypatch):
+    repository = workspace / "ai-stack"
+    repository.mkdir()
+    monkeypatch.setattr(filesystem, "DEFAULT_WORKSPACE", workspace)
+
+    selected = filesystem.resolve_request_workspace(
+        str(workspace), f"Review the repository at {repository}."
+    )
+
+    assert selected == str(repository)
+
+
+def test_explicit_workspace_field_takes_precedence_over_prompt(workspace, monkeypatch):
+    repository = workspace / "ai-stack"
+    other_repository = workspace / "other"
+    repository.mkdir()
+    other_repository.mkdir()
+    monkeypatch.setattr(filesystem, "DEFAULT_WORKSPACE", workspace)
+
+    selected = filesystem.resolve_request_workspace(
+        str(other_repository), f"Review {repository}."
+    )
+
+    assert selected == str(other_repository)
+
+
 def test_write_edit_and_read_stay_inside_workspace(workspace):
     with filesystem.workspace_context(str(workspace)):
         assert filesystem.write_file.invoke(

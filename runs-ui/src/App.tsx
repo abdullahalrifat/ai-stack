@@ -120,6 +120,9 @@ export function App() {
   const [key, setKey] = useState("");
   const [task, setTask] = useState("");
   const [workspace, setWorkspace] = useState("/workspace");
+  const [workspaceOptions, setWorkspaceOptions] = useState<string[]>([
+    "/workspace",
+  ]);
   const [profile, setProfile] = useState<Profile>("auto");
   const [customModel, setCustomModel] = useState("qwen3-8b");
   const [models, setModels] = useState<string[]>(defaultModels);
@@ -156,6 +159,12 @@ export function App() {
     void loadRuns();
   }, [key]);
   useEffect(() => {
+    if (!key) return;
+    api<{ workspaces: string[] }>(key, "/workspace/choices")
+      .then((data) => setWorkspaceOptions(data.workspaces))
+      .catch((e) => setError(String(e)));
+  }, [key]);
+  useEffect(() => {
     api<{ models: string[] }>(key, "/models/available")
       .then((data) => {
         const available = data.models.filter((id) => id !== "embedding");
@@ -171,6 +180,12 @@ export function App() {
     api<{ available: boolean }>(key, "/images/status")
       .then((data) => setImageAvailable(data.available))
       .catch(() => setImageAvailable(false));
+  }, [key]);
+  useEffect(() => {
+    if (!key) return;
+    api<{ workspace: string }>(key, "/workspace/default")
+      .then((data) => setWorkspace(data.workspace))
+      .catch((e) => setError(String(e)));
   }, [key]);
 
   const consume = (event: RunEvent) => {
@@ -459,9 +474,14 @@ export function App() {
                   Workspace
                   <input
                     value={workspace}
-                    disabled={effectiveProfile !== "code"}
+                    list="workspace-options"
                     onChange={(e) => setWorkspace(e.target.value)}
                   />
+                  <datalist id="workspace-options">
+                    {workspaceOptions.map((option) => (
+                      <option key={option} value={option} />
+                    ))}
+                  </datalist>
                 </label>
                 <div className="model-choice">
                   <b>Selected model</b>

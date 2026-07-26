@@ -45,6 +45,12 @@ _extra_roots = [Path(p).resolve() for p in env_list("WORKSPACE_ROOTS")]
 WORKSPACE_ROOTS: list[Path] = [WORKSPACE_ROOT] + [
     p for p in _extra_roots if p != WORKSPACE_ROOT
 ]
+# The mounted workspace can contain several repositories. Keep the broad
+# mount as an allowed root, while making one repository the safe default for
+# requests which do not explicitly select a workspace.
+DEFAULT_WORKSPACE = Path(
+    os.getenv("DEFAULT_WORKSPACE_DIR", str(WORKSPACE_ROOT))
+).resolve()
 
 MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "12"))
 # A local 8B model has a finite context window.  Keep individual tool payloads
@@ -111,6 +117,18 @@ def validate_settings() -> None:
     for root in WORKSPACE_ROOTS:
         if not root.exists():
             raise RuntimeError(f"Configured workspace root does not exist: {root}")
+    if not DEFAULT_WORKSPACE.exists() or not DEFAULT_WORKSPACE.is_dir():
+        raise RuntimeError(
+            f"DEFAULT_WORKSPACE_DIR does not exist or is not a directory: {DEFAULT_WORKSPACE}"
+        )
+    if not any(
+        DEFAULT_WORKSPACE == root or root in DEFAULT_WORKSPACE.parents
+        for root in WORKSPACE_ROOTS
+    ):
+        raise RuntimeError(
+            "DEFAULT_WORKSPACE_DIR must be inside WORKSPACE_DIR or WORKSPACE_ROOTS: "
+            f"{DEFAULT_WORKSPACE}"
+        )
     if WEB_FETCH_MAX_BYTES <= 0:
         raise RuntimeError("WEB_FETCH_MAX_BYTES must be greater than zero")
     if OPENAI_INPUT_MAX_CHARS < 1000:

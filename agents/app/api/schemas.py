@@ -4,11 +4,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.core.config import DEFAULT_WORKSPACE
+
 
 class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
-    workspace: str | None = "/workspace"
+    workspace: str | None = str(DEFAULT_WORKSPACE)
     model: str | None = None
     allow_write: bool = False
 
@@ -16,13 +18,13 @@ class ChatRequest(BaseModel):
 class PlanRequest(BaseModel):
     message: str
     conversation_id: str | None = None
-    workspace: str | None = "/workspace"
+    workspace: str | None = str(DEFAULT_WORKSPACE)
 
 
 class ExecuteRequest(BaseModel):
     task: str
     conversation_id: str | None = None
-    workspace: str | None = "/workspace"
+    workspace: str | None = str(DEFAULT_WORKSPACE)
     model: str | None = None
     allow_write: bool = False
 
@@ -54,7 +56,7 @@ class OpenAIChatCompletionRequest(BaseModel):
     temperature: float | None = 0
     max_tokens: int | None = None
     stream: bool | None = False
-    workspace: str | None = "/workspace"
+    workspace: str | None = str(DEFAULT_WORKSPACE)
     conversation_id: str | None = None
     allow_write: bool = False
 

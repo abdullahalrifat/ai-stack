@@ -277,6 +277,9 @@ services:
       POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
       WORKSPACE_DIR: /workspace
+      # New requests default to this repository instead of scanning the whole
+      # parent bind mount. It must be inside WORKSPACE_DIR or WORKSPACE_ROOTS.
+      DEFAULT_WORKSPACE_DIR: ${DEFAULT_WORKSPACE_DIR:-/workspace}
       # Comma-separated list of additional directories the agent may be
       # pointed at via the `workspace` request field, beyond WORKSPACE_DIR.
       WORKSPACE_ROOTS: ${WORKSPACE_ROOTS:-}

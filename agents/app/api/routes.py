@@ -19,13 +19,18 @@ import app.tools.register
 from app.agent.planner import create_plan
 from app.agent.service import approve_run, discard_run, execute_run, ingest_documents, run_agent
 from app.agent.state import AgentState
-from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, IMAGE_GENERATION_TIMEOUT_SECONDS, IMAGE_GENERATION_URL, WORKSPACE_ROOTS
+from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, DEFAULT_WORKSPACE, IMAGE_GENERATION_TIMEOUT_SECONDS, IMAGE_GENERATION_URL, WORKSPACE_ROOTS
 from app.llm.client import get_available_models
 from app.memory.embeddings import create_embedding
 from app.memory.memory import get_conversation, search_memory
 from app.runs.events import get_event_publisher
 from app.runs.store import get_run_store
-from app.tools.filesystem import list_files, validate_workspace
+from app.tools.filesystem import (
+    list_files,
+    resolve_request_workspace,
+    validate_workspace,
+    workspace_choices,
+)
 from app.tools.registry import registry
 
 from .dependencies import require_run_store, verify_api_key
@@ -59,7 +64,8 @@ def debug_tools():
         "count": len(registry.list_tools()),
         "tools": registry.list_tools(),
         "workspace_roots": [str(r) for r in WORKSPACE_ROOTS],
-        "workspace": os.listdir("/workspace") if os.path.exists("/workspace") else [],
+        "workspace": os.listdir(DEFAULT_WORKSPACE) if DEFAULT_WORKSPACE.exists() else [],
+        "default_workspace": str(DEFAULT_WORKSPACE),
     }
 
 
@@ -78,11 +84,12 @@ async def chat(request: ChatRequest):
 
     try:
         profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
+        workspace = resolve_request_workspace(request.workspace, request.message)
         return await run_in_threadpool(
             run_agent,
             request.message,
             request.conversation_id,
-            request.workspace,
+            workspace,
             profile.model if profile else request.model or DEFAULT_MODEL,
             False,
             force_research=profile.force_research if profile else False,
@@ -103,11 +110,12 @@ async def execute(request: ExecuteRequest):
     if request.allow_write:
         raise HTTPException(400, "Direct execute is read-only. Use POST /runs for reviewed sandbox writes.")
     profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
+    workspace = resolve_request_workspace(request.workspace, request.task)
     return await run_in_threadpool(
         run_agent,
         request.task,
         request.conversation_id,
-        request.workspace,
+        workspace,
         profile.model if profile else request.model or DEFAULT_MODEL,
         False,
         force_research=profile.force_research if profile else False,
@@ -138,7 +146,7 @@ async def create_run(request: RunRequest):
     # execution also validates its workspace, but that happens too late for
     # write-enabled runs.
     try:
-        workspace = str(validate_workspace(request.workspace or "/workspace"))
+        workspace = resolve_request_workspace(request.workspace, request.task)
     except (ValueError, PermissionError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -314,6 +322,7 @@ async def openai_chat(
         raise HTTPException(400, "A user message is required")
     if request.allow_write:
         raise HTTPException(400, "OpenAI-compatible chat is read-only. Use POST /runs for reviewed sandbox writes.")
+    workspace = resolve_request_workspace(request.workspace, prompt)
 
     created = int(datetime.now(timezone.utc).timestamp())
 
@@ -333,7 +342,7 @@ async def openai_chat(
                     result = run_agent(
                         prompt,
                         conversation_id,
-                        request.workspace,
+                        workspace,
                         profile.model,
                         False,
                         on_event=lambda kind, payload: updates.put(("event", (kind, payload))),
@@ -412,7 +421,7 @@ async def openai_chat(
         run_agent,
         prompt,
         conversation_id,
-        request.workspace,
+        workspace,
         profile.model,
         False,
         force_research=profile.force_research,
@@ -539,7 +548,7 @@ async def plan(request: PlanRequest):
     state = AgentState(
         conversation_id=request.conversation_id or "default",
         user_message=request.message,
-        workspace=request.workspace,
+        workspace=resolve_request_workspace(request.workspace, request.message),
     )
 
     result = await run_in_threadpool(create_plan, state)
@@ -586,7 +595,7 @@ async def memory_search(request: MemoryQuery):
 
 
 @router.get("/workspace/tree", dependencies=[Depends(verify_api_key)])
-def workspace_tree(path: str = "/workspace"):
+def workspace_tree(path: str = str(DEFAULT_WORKSPACE)):
     return {"workspace": path, "files": list_files(path)}
 
 
@@ -594,3 +603,15 @@ def workspace_tree(path: str = "/workspace"):
 def workspace_roots():
     """List every directory the agent is permitted to operate in."""
     return {"roots": [str(r) for r in WORKSPACE_ROOTS]}
+
+
+@router.get("/workspace/choices", dependencies=[Depends(verify_api_key)])
+def workspace_choice_list():
+    """List selectable mounted repositories without recursively scanning them."""
+    return {"workspaces": workspace_choices()}
+
+
+@router.get("/workspace/default", dependencies=[Depends(verify_api_key)])
+def default_workspace():
+    """Return the repository selected as the default for new agent requests."""
+    return {"workspace": str(DEFAULT_WORKSPACE)}

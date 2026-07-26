@@ -1,8 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..core.config import DEFAULT_MODEL
-from ..core.config import MAX_TOOL_OUTPUT_CHARS
+from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, MAX_TOOL_OUTPUT_CHARS
 
 
 @dataclass
@@ -11,7 +10,7 @@ class AgentState:
 
     user_message: str
 
-    workspace: str = "/workspace"
+    workspace: str = str(DEFAULT_WORKSPACE)
 
     history: list = field(default_factory=list)
 
