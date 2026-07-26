@@ -52,7 +52,7 @@ DEFAULT_WORKSPACE = Path(
     os.getenv("DEFAULT_WORKSPACE_DIR", str(WORKSPACE_ROOT))
 ).resolve()
 
-MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "12"))
+MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "24"))
 # A local 8B model has a finite context window.  Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
