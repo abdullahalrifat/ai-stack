@@ -9,6 +9,9 @@ from qdrant_client.models import (
     Distance,
     PointStruct,
     VectorParams,
+    Filter,
+    FieldCondition,
+    MatchValue,
 )
 
 from .embeddings import create_embedding
@@ -110,16 +113,15 @@ def save_long_term_memory(text: str, embedding: list[float], metadata=None):
     return point_id
 
 
-def search_long_term_memory(embedding: list[float], limit: int = 5):
+def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str | None = None):
 
     collections = [c.name for c in qdrant.get_collections().collections]
 
     if COLLECTION not in collections:
         return []
 
-    result = qdrant.query_points(
-        collection_name=COLLECTION, query=embedding, limit=limit
-    )
+    query_filter = Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))]) if scope else None
+    result = qdrant.query_points(collection_name=COLLECTION, query=embedding, limit=limit, query_filter=query_filter)
 
     return [{"memory": item.payload, "score": item.score} for item in result.points]
 
@@ -129,11 +131,11 @@ def search_long_term_memory(embedding: list[float], limit: int = 5):
 # =====================================================
 
 
-def search_memory(query: str, limit: int = 5):
+def search_memory(query: str, limit: int = 5, scope: str | None = None):
 
     embedding = create_embedding(query)
 
-    return search_long_term_memory(embedding, limit)
+    return search_long_term_memory(embedding, limit, scope)
 
 
 def save_memory(question: str, answer: str):

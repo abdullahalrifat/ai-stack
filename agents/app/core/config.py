@@ -56,6 +56,8 @@ LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "384"))
 # tool instructions. This bounds only their *incoming* text before the agent
 # adds its own prompt and tool schemas for an 8K local model context.
 OPENAI_INPUT_MAX_CHARS = int(os.getenv("OPENAI_INPUT_MAX_CHARS", "3500"))
+CONTEXT_TOKEN_LIMIT = int(os.getenv("CONTEXT_TOKEN_LIMIT", "8192"))
+CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "768"))
 # Finance answers need room for a compact evidence summary plus scenarios.
 # Kept separate so normal Code/Quick responses remain fast on CPU.
 FINANCE_MAX_COMPLETION_TOKENS = int(os.getenv("FINANCE_MAX_COMPLETION_TOKENS", "1024"))
@@ -113,6 +115,8 @@ def validate_settings() -> None:
         raise RuntimeError("WEB_FETCH_MAX_BYTES must be greater than zero")
     if OPENAI_INPUT_MAX_CHARS < 1000:
         raise RuntimeError("OPENAI_INPUT_MAX_CHARS must be at least 1000")
+    if CONTEXT_TOKEN_LIMIT < 1024 or CONTEXT_OUTPUT_RESERVE_TOKENS >= CONTEXT_TOKEN_LIMIT:
+        raise RuntimeError("Invalid model context token budget")
     if MAX_CONCURRENT_AGENT_RUNS < 1:
         raise RuntimeError("MAX_CONCURRENT_AGENT_RUNS must be at least 1")
     if not RUNNER_API_KEY:

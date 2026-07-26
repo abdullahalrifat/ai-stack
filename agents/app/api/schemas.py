@@ -34,11 +34,13 @@ class RunRequest(ExecuteRequest):
 class IngestRequest(BaseModel):
     documents: list[str]
     metadata: dict[str, Any] | None = None
+    scope: str | None = None
 
 
 class MemoryQuery(BaseModel):
     query: str
     top_k: int = 5
+    scope: str | None = None
 
 
 class OpenAIChatMessage(BaseModel):

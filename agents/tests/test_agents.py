@@ -37,7 +37,7 @@ def test_run_agent(
 
     mock_workspace.assert_called_once()
     mock_get_conversation.assert_called_once_with("test-conversation", limit=4)
-    mock_search_memory.assert_called_once_with("Hello")
+    mock_search_memory.assert_called_once_with("Hello", scope="/workspace")
     mock_create_plan.assert_called_once()
     mock_execute_plan.assert_called_once()
 

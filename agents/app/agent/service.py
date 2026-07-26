@@ -115,7 +115,7 @@ def run_agent(
         # Client-facing OpenAI compatibility already carries recent history;
         # only a short server-side tail is needed for direct API callers.
         state.history = get_conversation(conversation_id, limit=4)
-        state.memories = search_memory(message)
+        state.memories = search_memory(message, scope=str(workspace))
         research_mode = force_research or requires_external_search(message)
         state.plan = [] if research_mode else create_plan(state)
         answer = execute_plan(state, on_event=on_event, on_token=on_token, force_research=force_research)
@@ -211,7 +211,7 @@ def execute_run(run_id: str) -> None:
 
         with _execution_slots, workspace_context(active_workspace):
             state.history = get_conversation(conversation_id, limit=4)
-            state.memories = search_memory(task)
+            state.memories = search_memory(task, scope=str(active_workspace))
 
             on_event("planning", {})
             research_mode = force_research or requires_external_search(task)
@@ -335,7 +335,7 @@ def _document_chunks(text: str, size: int = 1_800, overlap: int = 240):
         start = end - overlap
 
 
-def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None):
+def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None, scope: str | None = None):
     stored = 0
 
     for document_index, text in enumerate(texts):
@@ -347,7 +347,7 @@ def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None):
             save_long_term_memory(
                 chunk,
                 embedding,
-                {**(metadata or {}), "type": "document", "document_index": document_index, "chunk_index": chunk_index},
+                {**(metadata or {}), "type": "document", "scope": scope or "global", "document_index": document_index, "chunk_index": chunk_index},
             )
             stored += 1
 

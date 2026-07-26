@@ -555,7 +555,7 @@ async def plan(request: PlanRequest):
 @router.post("/ingest", dependencies=[Depends(verify_api_key)])
 async def ingest(request: IngestRequest):
     return await run_in_threadpool(
-        ingest_documents, request.documents, request.metadata
+        ingest_documents, request.documents, request.metadata, request.scope
     )
 
 
@@ -576,7 +576,7 @@ def conversation(conversation_id: str):
 async def memory_search(request: MemoryQuery):
     return {
         "query": request.query,
-        "results": await run_in_threadpool(search_memory, request.query),
+        "results": await run_in_threadpool(search_memory, request.query, request.top_k, request.scope),
     }
 
 

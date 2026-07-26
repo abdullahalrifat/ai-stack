@@ -12,6 +12,7 @@ from ..core.config import (
 from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from .parser import parse_tool_arguments
+from .context_budget import fit_user_context
 from .prompts import COMPACTION_PROMPT, executor_prompt
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
@@ -454,10 +455,11 @@ Plan:
 {external_context}
 """
 
-    messages = [
-        {"role": "system", "content": executor_prompt(getattr(state, "prompt_mode", "code"), research_mode)},
-        {"role": "user", "content": task_context},
-    ]
+    system_prompt = executor_prompt(getattr(state, "prompt_mode", "code"), research_mode)
+    task_context, budget = fit_user_context(system_prompt, tools, task_context)
+    if budget["trimmed"]:
+        on_event("context_budgeted", budget)
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task_context}]
 
     leaked_tool_call_count = 0
     research_retry_count = 0
