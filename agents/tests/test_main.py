@@ -19,6 +19,23 @@ def request(stream: bool = False) -> schemas.OpenAIChatCompletionRequest:
     )
 
 
+@pytest.fixture(autouse=True)
+def isolated_workspace_resolution(monkeypatch, tmp_path):
+    """Keep route unit tests independent from Docker's /workspace mount.
+
+    Workspace validation and prompt-based narrowing are covered in
+    test_filesystem.py. These tests mock the agent call and only exercise the
+    OpenAI response contract, so they must not depend on a container path
+    that does not exist on GitHub Actions.
+    """
+
+    monkeypatch.setattr(
+        routes,
+        "resolve_request_workspace",
+        lambda _workspace, _prompt: str(tmp_path),
+    )
+
+
 def test_verify_api_key_requires_valid_bearer_token(monkeypatch):
     monkeypatch.setattr(dependencies, "AGENT_API_KEY", "secret")
     monkeypatch.setattr(dependencies, "ALLOW_INSECURE_NO_AUTH", False)
