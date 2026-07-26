@@ -6,6 +6,7 @@ import logging
 import os
 import queue
 import threading
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -308,6 +309,11 @@ async def openai_chat(
 
     created = int(datetime.now(timezone.utc).timestamp())
 
+    # Chat clients already submit their own history. When they do not provide
+    # a stable conversation id, never reuse the shared "default" Redis
+    # conversation: it can accumulate unrelated, oversized prompts.
+    conversation_id = x_conversation_id or request.conversation_id or str(uuid.uuid4())
+
     if request.stream:
         async def completion_stream():
             """OpenAI SSE with real model-token deltas and tool-status comments."""
@@ -318,7 +324,7 @@ async def openai_chat(
                 try:
                     result = run_agent(
                         prompt,
-                        x_conversation_id or request.conversation_id or "default",
+                        conversation_id,
                         request.workspace,
                         profile.model,
                         request.allow_write,
@@ -397,7 +403,7 @@ async def openai_chat(
     result = await run_in_threadpool(
         run_agent,
         prompt,
-        x_conversation_id or request.conversation_id or "default",
+        conversation_id,
         request.workspace,
         profile.model,
         request.allow_write,

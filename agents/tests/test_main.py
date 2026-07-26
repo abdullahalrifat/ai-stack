@@ -47,6 +47,13 @@ def test_openai_chat_returns_openai_shape():
     assert response["choices"][0]["message"] == {"role": "assistant", "content": "done"}
 
 
+def test_openai_chat_uses_unique_conversation_id_when_client_omits_one():
+    with patch("app.api.routes.run_in_threadpool", new=AsyncMock(return_value={"answer": "done"})) as runner:
+        asyncio.run(routes.openai_chat(request(), None))
+
+    assert runner.call_args.args[2] != "default"
+
+
 def test_openai_context_compaction_preserves_latest_request_and_bounds_payload():
     messages = [
         schemas.OpenAIChatMessage(role="system", content="s" * 4_000),

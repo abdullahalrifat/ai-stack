@@ -219,7 +219,7 @@ calls/results, output, and diff review), use the non-blocking `POST /runs` +
 Open WebUI and Continue may include long code excerpts, tool definitions, and
 conversation history. Before the agent adds its own prompt and tools, the
 compatibility endpoint compacts that client-provided text to
-`OPENAI_INPUT_MAX_CHARS` (default `6000`). The agent retains its own system
+`OPENAI_INPUT_MAX_CHARS` (default `3500`). The agent retains its own system
 policy and preserves the newest user request plus short recent history,
 omitting client system/tool instructions and older/oversized context first.
 Raise it only when using a model with a larger verified context window.

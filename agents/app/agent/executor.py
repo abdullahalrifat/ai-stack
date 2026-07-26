@@ -24,6 +24,19 @@ MAX_STEPS = MAX_AGENT_STEPS
 # whenever a request does not have allow_write set.
 WRITE_TOOLS = {"write_file", "edit_file", "run_command"}
 
+# Quick requests must fit an 8K local context even after the agent's own
+# prompt and native tool schemas are attached. These cover focused repository
+# review without advertising write/test/web tools that are not needed there.
+QUICK_WORKSPACE_TOOLS = {
+    "tree",
+    "list_files",
+    "read_file",
+    "find_file",
+    "search_text",
+    "project_summary",
+    "inspect_files",
+}
+
 
 def _noop_event(event_type: str, payload: dict) -> None:
     return None
@@ -281,6 +294,15 @@ def _truncate(text: str) -> str:
     return text
 
 
+def _bounded_context(value, limit: int) -> str:
+    """Serialize stored history/memory without letting it exhaust model context."""
+
+    text = json.dumps(value, default=str)
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}\n...[older stored context omitted]"
+
+
 def _compact_history(messages: list, model: str) -> list:
     """Summarize older tool exchanges once the transcript grows large.
 
@@ -395,6 +417,9 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_
         available_tools = [t for t in available_tools if t not in WRITE_TOOLS]
 
     research_mode = force_research or requires_external_search(state.user_message)
+    if getattr(state, "prompt_mode", "code") == "quick" and not research_mode:
+        available_tools = [tool for tool in available_tools if tool in QUICK_WORKSPACE_TOOLS]
+
     if research_mode and "web_search" in available_tools:
         # Prevent a coding-oriented model from wandering through the mounted
         # repository when the user asked for current external information.
@@ -419,13 +444,13 @@ Task:
 {state.user_message}
 
 Recent conversation:
-{state.history[-10:]}
+{_bounded_context(state.history[-4:], 1_200)}
 
 Relevant memory:
-{state.memories[:5]}
+{_bounded_context(state.memories[:3], 1_000)}
 
 Plan:
-{state.plan}
+{_bounded_context(state.plan, 800)}
 {external_context}
 """
 

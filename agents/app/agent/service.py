@@ -108,7 +108,9 @@ def run_agent(
     )
 
     with workspace_context(workspace):
-        state.history = get_conversation(conversation_id)
+        # Client-facing OpenAI compatibility already carries recent history;
+        # only a short server-side tail is needed for direct API callers.
+        state.history = get_conversation(conversation_id, limit=4)
         state.memories = search_memory(message)
         research_mode = force_research or requires_external_search(message)
         state.plan = [] if research_mode else create_plan(state)
@@ -204,7 +206,7 @@ def execute_run(run_id: str) -> None:
         store.update_run(run_id, active_workspace=active_workspace)
 
         with workspace_context(active_workspace):
-            state.history = get_conversation(conversation_id)
+            state.history = get_conversation(conversation_id, limit=4)
             state.memories = search_memory(task)
 
             on_event("planning", {})
