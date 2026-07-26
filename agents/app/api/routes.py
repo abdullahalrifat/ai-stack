@@ -156,7 +156,7 @@ async def create_run(request: RunRequest):
     run_id = await run_in_threadpool(
         store.create_run,
         task=request.task,
-        model=request.model or DEFAULT_MODEL,
+        model=request.model or AGENT_MODEL_ID,
         workspace=workspace,
         conversation_id=request.conversation_id,
         document_scope=request.document_scope,
@@ -473,7 +473,13 @@ async def openai_chat(
 def models():
     return {
         "object": "list",
-        "data": [{"id": model_id, "object": "model", "owned_by": "ai-stack-agent"} for model_id in PROFILES],
+        "data": [
+            {
+                "id": AGENT_MODEL_ID,
+                "object": "model",
+                "owned_by": "ai-stack-agent",
+            }
+        ],
     }
 
 
@@ -525,6 +531,8 @@ async def generate_image(request: ImageGenerationRequest):
 
 @router.get("/v1/models/{model_id}", dependencies=[Depends(verify_api_key)])
 def model_detail(model_id: str):
+    if model_id != AGENT_MODEL_ID:
+        raise HTTPException(404, "Agent model not found")
     return {"id": model_id, "object": "model", "owned_by": "local"}
 
 

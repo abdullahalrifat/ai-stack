@@ -21,6 +21,7 @@ from ..memory import (
 )
 from ..memory.embeddings import create_embedding
 from .planner import create_plan, deterministic_plan
+from .router import route_request
 from ..runs.store import get_run_store
 from ..runs.sandbox import Sandbox, create_sandbox, merge_sandbox, remove_sandbox, sandbox_diff
 from .state import AgentState
@@ -54,16 +55,78 @@ def _task_model(message: str, requested_model: str) -> str:
 def _uses_memory(prompt_mode: str, document_scope: str | None = None) -> bool:
     # Explicit uploads must be available even to the fast Code/Quick paths.
     return MEMORY_ENABLED and (
-        bool(document_scope) or MEMORY_FOR_CODE_RUNS or prompt_mode not in {"code", "quick"}
+        bool(document_scope)
+        or MEMORY_FOR_CODE_RUNS
+        or prompt_mode not in {"auto", "code", "quick"}
     )
 
 
 def _execution_plan(state, research_mode: bool) -> list:
+    if state.plan:
+        return state.plan
     if research_mode:
         return []
     if state.prompt_mode in {"code", "quick"}:
         return deterministic_plan(state)
     return create_plan(state)
+
+
+def _apply_auto_route(state, on_event=None) -> None:
+    """Translate an Auto request and apply only server-approved profile policy."""
+    if state.prompt_mode != "auto":
+        return
+    decision = route_request(state.user_message, state.memories)
+    profile = resolve_profile(decision.workflow)
+    state.model = profile.model
+    state.prompt_mode = profile.prompt_mode
+    state.max_completion_tokens = profile.max_completion_tokens
+    state.timeout_seconds = profile.timeout_seconds
+    state.requires_external_evidence = (
+        decision.requires_external_evidence or profile.force_research
+    )
+    state.routing_entities = decision.entities
+    brief_parts = [f"Translated objective:\n{decision.translated_task}"]
+    if decision.entities:
+        brief_parts.append("Grounded entities:\n- " + "\n- ".join(decision.entities))
+    if decision.constraints:
+        brief_parts.append("Constraints:\n- " + "\n- ".join(decision.constraints))
+    if decision.deliverables:
+        brief_parts.append("Required deliverables:\n- " + "\n- ".join(decision.deliverables))
+    if decision.missing_inputs:
+        brief_parts.append(
+            "Known missing inputs (continue when safe; do not invent them):\n- "
+            + "\n- ".join(decision.missing_inputs)
+        )
+    if decision.assumptions:
+        brief_parts.append(
+            "Planner-approved assumptions (label them in the answer):\n- "
+            + "\n- ".join(decision.assumptions)
+        )
+    task_lines = []
+    for task in decision.tasks:
+        task_lines.append(
+            f"- {task.id} [{task.workflow}] {task.objective}\n"
+            f"  depends_on: {', '.join(task.depends_on) or 'none'}\n"
+            f"  required_evidence: {'; '.join(task.required_evidence) or 'task-appropriate evidence'}\n"
+            f"  completion_criteria: {'; '.join(task.completion_criteria) or 'objective demonstrably completed'}"
+        )
+    if task_lines:
+        brief_parts.append("Validated task graph:\n" + "\n".join(task_lines))
+    state.execution_brief = "\n\n".join(brief_parts)
+    state.plan = decision.plan
+    if on_event is not None:
+        on_event(
+            "route_selected",
+            {
+                "workflow": decision.workflow,
+                "model": state.model,
+                "requires_external_evidence": state.requires_external_evidence,
+                "complexity": decision.complexity,
+                "task_count": len(decision.tasks),
+                "task_workflows": sorted({task.workflow for task in decision.tasks}),
+                "source": decision.source,
+            },
+        )
 
 
 class RunEventBuffer:
@@ -147,9 +210,15 @@ def run_agent(
         state.history = get_conversation(conversation_id, limit=4)
         state.memory_scope = str(workspace)
         state.memories = memory_context(search_memory(message, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode) else []
-        research_mode = force_research or requires_external_search(message)
+        _apply_auto_route(state, on_event)
+        research_mode = force_research or state.requires_external_evidence or requires_external_search(message)
         state.plan = _execution_plan(state, research_mode)
-        answer = execute_plan(state, on_event=on_event, on_token=on_token, force_research=force_research)
+        answer = execute_plan(
+            state,
+            on_event=on_event,
+            on_token=on_token,
+            force_research=force_research or state.requires_external_evidence,
+        )
 
     state.answer = answer
 
@@ -252,7 +321,8 @@ def execute_run(run_id: str) -> None:
             state.memories = memory_context(search_memory(task, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode, run.get("document_scope")) else []
 
             on_event("planning", {})
-            research_mode = force_research or requires_external_search(task)
+            _apply_auto_route(state, on_event)
+            research_mode = force_research or state.requires_external_evidence or requires_external_search(task)
             state.plan = _execution_plan(state, research_mode)
             on_event("plan_ready", {"plan": state.plan})
 
@@ -261,7 +331,7 @@ def execute_run(run_id: str) -> None:
                 on_event=on_event,
                 on_token=lambda content: on_event("output_delta", {"content": content}),
                 should_cancel=cancelled,
-                force_research=force_research,
+                force_research=force_research or state.requires_external_evidence,
                 on_checkpoint=lambda checkpoint: store.update_checkpoint(run_id, checkpoint),
             )
 

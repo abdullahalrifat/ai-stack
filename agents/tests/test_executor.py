@@ -271,6 +271,26 @@ def test_execute_plan_prefetches_current_external_information(mock_chat_with_too
     assert [tool["function"]["name"] for tool in tools] == ["web_search"]
 
 
+@patch("app.agent.executor.chat_with_tools")
+@patch("app.agent.executor.registry")
+def test_finance_policy_prefetches_even_without_current_keyword(mock_registry, mock_chat_with_tools):
+    state = DummyState()
+    state.user_message = "Analyze my uploaded portfolio for the long term"
+    state.prompt_mode = "finance"
+    state.requires_external_evidence = True
+    state.execution_brief = "Analyze the DSE holdings Fortune Shoes and Orion Pharma"
+    state.routing_entities = ["Fortune Shoes", "Orion Pharma"]
+    mock_registry.list_tools.return_value = ["web_search"]
+    mock_registry.execute.return_value = {"results": []}
+    mock_chat_with_tools.return_value = type("Message", (), {"content": "Evidence is unavailable.", "tool_calls": None})()
+
+    execute_plan(state, force_research=True)
+
+    queries = [call.args[1]["query"] for call in mock_registry.execute.call_args_list]
+    assert any("Fortune Shoes" in query for query in queries)
+    assert any("Orion Pharma" in query for query in queries)
+
+
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_retries_research_refusal(mock_chat_with_tools, mock_registry):

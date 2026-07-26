@@ -118,8 +118,16 @@ def financial_price_query(message: str) -> str:
     return f"{subject} {market} latest closing price previous close historical data"
 
 
-def financial_research_queries(message: str) -> list[str]:
+def financial_research_queries(message: str, entities: list[str] | None = None) -> list[str]:
     """Return a minimal evidence set for an investment-style research request."""
+
+    named_entities = [item.strip() for item in (entities or []) if item.strip()][:10]
+    if named_entities:
+        market = "DSE Bangladesh" if re.search(r"\bdse\b|bangladesh", message, re.IGNORECASE) else "stock market"
+        return [
+            f"{entity} {market} latest price annual report revenue profit debt latest news"
+            for entity in named_entities
+        ] + [f"{market} market sector outlook inflation interest rates latest"]
 
     price_query = financial_price_query(message)
     subject = price_query.split(" ", 1)[0]
@@ -190,13 +198,17 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
     only for explicit/time-sensitive external requests, where answering from
     a model's training data is known to be incorrect.
     """
-    if "web_search" not in available_tools or not requires_external_search(state.user_message):
+    if "web_search" not in available_tools or not (
+        getattr(state, "requires_external_evidence", False)
+        or requires_external_search(state.user_message)
+    ):
         return None
 
+    search_task = getattr(state, "execution_brief", "") or state.user_message
     queries = (
-        financial_research_queries(state.user_message)
-        if is_financial_query(state.user_message)
-        else [state.user_message]
+        financial_research_queries(search_task, getattr(state, "routing_entities", []))
+        if getattr(state, "prompt_mode", "") == "finance" or is_financial_query(search_task)
+        else [search_task]
     )
     searches = []
     for query in queries:
@@ -510,6 +522,9 @@ Workspace:
 
 Task:
 {state.user_message}
+
+Execution brief:
+{_bounded_context(getattr(state, "execution_brief", ""), 3_500)}
 
 Recent conversation:
 {_bounded_context(state.history[-4:], 1_200)}

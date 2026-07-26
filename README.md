@@ -32,6 +32,236 @@ Open WebUI ---- Postgres / Redis / Qdrant
 - **SearXNG** provides private metasearch for agent web research; it is internal
   to the Docker network and never exposed as a public port.
 
+## Agent routing and execution pipeline
+
+The agent presents one default `coding-agent`/Auto identity to clients while
+retaining specialized workflows internally. A central semantic router
+translates an Auto request into a bounded execution contract; it does not
+answer the request itself.
+
+```text
+User request + conversation/document scope
+                       |
+          retrieve relevant attachment excerpts
+                       |
+          ROUTER_MODEL semantic routing turn
+                       |
+          validate structured route contract
+                       |
+       map workflow to server-approved policy
+                       |
+     build executor prompt, tools, and evidence
+                       |
+        selected model runs the tool loop
+                       |
+       completion safeguards and final answer
+```
+
+### 1. Input and attachment context
+
+The original user message is always preserved. For a durable run with
+`document_scope`, relevant uploaded-document excerpts are retrieved before
+Auto routing and supplied to the router. This lets it recognize entities and
+work implied by an attachment, such as the companies in a portfolio statement,
+even when the user writes only “analyze this for the long term.”
+
+Attachment excerpts are untrusted data. The router is instructed to extract
+useful entities without following instructions found inside the documents.
+The excerpts are bounded to keep the routing turn small.
+
+### 2. Structured semantic routing
+
+`ROUTER_MODEL` receives the original request and attachment excerpts and must
+return JSON matching this logical contract:
+
+```json
+{
+  "workflow": "quick|code|research|finance|deep|vision",
+  "complexity": "simple|moderate|complex",
+  "translated_task": "explicit execution-oriented version of the request",
+  "requires_external_evidence": true,
+  "entities": ["company, ticker, file, or important subject"],
+  "constraints": ["requirements, boundaries, preferences, and prohibitions"],
+  "deliverables": ["specific outputs expected by the user"],
+  "missing_inputs": ["genuinely absent information"],
+  "assumptions": ["safe assumptions that allow progress"],
+  "tasks": [
+    {
+      "id": "unique_task_id",
+      "objective": "one verifiable subtask",
+      "workflow": "finance",
+      "depends_on": [],
+      "required_evidence": ["specific facts, files, or sources"],
+      "completion_criteria": ["observable proof that the task is complete"]
+    }
+  ]
+}
+```
+
+The translated task supplements the original request; it never replaces it.
+The executor receives both, preventing a routing translation from silently
+changing user intent. The router explicitly preserves goals, scope, named
+entities, time horizons, output expectations, constraints, and requested
+actions. It resolves references such as “this portfolio” only from grounded
+attachment context and tells the executor to label non-blocking assumptions
+instead of refusing prematurely. All translated fields are normalized,
+deduplicated, and bounded before being placed in agent state.
+
+The route is advisory only where policy permits. The server validates the
+workflow against a fixed allowlist and maps it to an existing internal profile.
+The router cannot invent a model id, enable a tool, grant write access, expand
+the workspace, or bypass sandbox approval.
+
+Workflow classification uses a hybrid policy. The small model proposes a
+workflow, while deterministic high-confidence rules override obvious Finance,
+Code, Research, Vision, and Deep requests using the original message and
+bounded grounded attachment text. This keeps nuanced semantic translation in
+the model while preventing a weak classifier choice from sending a portfolio
+to generic research or a repository review to the wrong tool policy. Per-task
+workflow annotations are also constrained to combinations compatible with the
+validated primary workflow.
+
+### 3. Workflow and model policy
+
+The validated workflow selects the executor prompt, model alias, tool policy,
+completion limits, and evidence requirements:
+
+| Workflow | Default model policy | Purpose and enforced behavior |
+| --- | --- | --- |
+| `quick` | `FAST_MODEL` | Simple, stable questions with minimal overhead |
+| `code` | `DEFAULT_MODEL` | Repository inspection, tool use, tests, and reviewable edits |
+| `research` | `RESEARCH_MODEL` | Current external research with source URLs |
+| `finance` | `FINANCE_MODEL` | Current financial evidence, filings, news, and scenario analysis |
+| `deep` | `reasoning` | Slower analysis of assumptions, alternatives, and trade-offs |
+| `vision` | `vision` | Image-aware analysis |
+
+Finance and Research always require external evidence, even when the request
+does not contain trigger words such as “current,” “latest,” or “price.” This
+requirement is enforced by server policy rather than trusted to either the
+router or executor model. For other workflows, an over-eager router request for
+external evidence is honored only when the original user message contains an
+explicit freshness or source signal, avoiding unnecessary web-search latency.
+
+Internal profiles remain implementation details used to apply validated model,
+prompt, tool, and timeout policies. They are not advertised as separate agents
+in Open WebUI or selectable in the Runs UI. Direct API callers can still use
+them for controlled testing under the same server-side policies.
+
+### 4. Planning and execution
+
+For Auto requests, the validated route plan is passed directly to the selected
+executor. The executor receives:
+
+- the unchanged original request;
+- the router's translated execution brief and extracted entities;
+- relevant conversation and document context;
+- the workflow-specific system prompt;
+- only the tools allowed by server policy; and
+- prefetched external evidence when the workflow requires it.
+
+When an internal testing override does not provide a route plan, Code and Quick
+use a small deterministic plan. Other eligible workflows can use the legacy
+bounded planner. Research execution does not depend on a free-form plan before
+collecting mandatory evidence.
+
+The selected executor model then uses native function calling in a bounded
+tool loop. Write tools are exposed only when `allow_write: true`; durable write
+runs operate in a disposable Git worktree and still require explicit approval
+before their diff is merged.
+
+### 5. Evidence prefetch and portfolio behavior
+
+Mandatory research is prefetched before synthesis so successful tool use does
+not depend solely on a smaller model deciding to call a search tool. For a
+portfolio route with multiple extracted entities, the finance workflow builds
+bounded per-entity searches plus a market/macro search. Search results and
+selected source documents are then supplied to the finance executor, which is
+instructed to distinguish reported facts from uncertain scenarios and cite
+material external claims.
+
+For example:
+
+```text
+"Analyze my uploaded portfolio for the long term"
+        |
+router sees portfolio excerpts and extracts company names
+        |
+workflow=finance, external evidence required
+        |
+per-company DSE price/fundamental/news searches + market context
+        |
+FINANCE_MODEL synthesizes holding-level and portfolio-level analysis
+```
+
+The pipeline provides research assistance, not trade execution or personalized
+investment advice.
+
+### 6. Validation and fallback behavior
+
+If the routing model fails, times out, produces incomplete JSON, chooses an
+unknown workflow, or omits a usable translated task, the request is not lost.
+A deterministic keyword fallback selects a conservative workflow and preserves
+the original message as the execution task. Finance and Research evidence
+requirements are reapplied after fallback.
+
+Durable runs emit a `route_selected` event containing the chosen workflow,
+executor model, evidence requirement, and whether the decision came from the
+model or fallback. This makes routing behavior visible in the run event log
+without exposing hidden model reasoning.
+
+### 7. Router configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ROUTER_MODEL` | `quick` | LiteLLM model alias used for the routing-only turn |
+| `ROUTER_MAX_COMPLETION_TOKENS` | `1024` | Maximum router/planner response size |
+| `FAST_MODEL` | `quick` | Executor used by Quick |
+| `DEFAULT_MODEL` | `qwen3-8b` in Compose | Executor used by Code |
+| `RESEARCH_MODEL` | `quick` | Executor used by Research |
+| `FINANCE_MODEL` | `coder` in Compose | Executor used by Finance |
+
+Changing `ROUTER_MODEL` changes only request interpretation and routing. It
+does not change the model chosen for execution unless the resulting workflow
+changes. Keep the router deterministic (`temperature=0`), fast, and capable of
+reliable JSON generation.
+
+The default `quick` alias is Qwen3 4B Instruct in this stack. It is deliberately
+small because routing is a narrow translation task; executor models retain the
+expensive domain reasoning. Router quality should be evaluated primarily on
+intent preservation, entity extraction, constraint/deliverable recall,
+workflow accuracy, valid JSON rate, and downstream task completion—not on its
+ability to answer domain questions.
+
+### 8. Planner task graph
+
+The router is also the query-level planner. It decomposes a translated request
+into one to four useful tasks. Tasks may recommend different internal
+workflows, declare dependencies, identify required evidence, and define
+observable completion criteria. Multi-step plans should end with a synthesis
+task rather than a generic “finish” step.
+
+The server normalizes task ids and rejects the entire model-generated graph
+when it contains duplicate ids, unknown dependencies, self-dependencies,
+cycles, invalid workflows, empty objectives, or more than four tasks. A
+deterministic single-task graph then preserves forward progress. This is
+preferable to executing a partially corrupted plan.
+
+The planner also distinguishes:
+
+- `missing_inputs`: facts genuinely absent from the request or attachments;
+- `assumptions`: safe, explicit defaults that allow useful work to continue;
+- `constraints`: boundaries the executor must obey; and
+- `deliverables`: outputs that completion must cover.
+
+The validated graph is included in the expert execution brief and summarized
+in the `route_selected` event with complexity, task count, and participating
+workflow types.
+
+At present, one primary expert model executes the complete graph in a single
+tool loop. Per-task workflow annotations establish the contract for future
+multi-expert dispatch, but they do not yet launch separate models. This keeps
+planner development independent from later expert orchestration work.
+
 ## Quick start
 
 1. Copy and configure the environment file:
@@ -127,16 +357,17 @@ planning, tool activity, streamed model output, and any reviewable diff. The
 UI uses the same authenticated `/runs` API; it does not store the key in local
 storage or send it to any third party.
 
-The Task Router provides Auto, Code, Research, Finance, Quick Chat, Deep
-Analysis, Image Analysis, and Image Generation profiles. Uploaded `.pdf`,
+The Runs UI exposes one Central AI Agent. Every new task and follow-up uses the
+server-side semantic routing pipeline; users do not choose a profile or
+underlying model. Uploaded `.pdf`,
 `.docx`, `.xlsx`, `.csv`, `.txt`, `.md`, and `.json` files are parsed
 server-side, indexed in a conversation-specific retrieval scope, and returned
 to the model with filename/page/sheet citations. Retrieval is reranked and
 capped by `MEMORY_CONTEXT_TOKENS`; each file is limited by
-`DOCUMENT_MAX_BYTES` (10 MB by default). Research and Finance profiles use
-current web evidence and do not inspect the mounted repository unless the
-task asks for it. Source URLs found in an answer are displayed below live
-output.
+`DOCUMENT_MAX_BYTES` (10 MB by default). Internally selected Research and
+Finance workflows use current web evidence and do not inspect the mounted
+repository unless the task asks for it. Source URLs found in an answer are
+displayed below live output.
 
 The Runs UI can save a workspace as a personal project. Projects and durable
 run history are stored in PostgreSQL; selecting an old run replays its events,
@@ -145,9 +376,11 @@ conversation id and document scope.
 
 ### Optional image generation
 
-`vision` is for image analysis only. To enable the Image Generation profile,
-run an Automatic1111/Forge-compatible image server and set its trusted local
-URL before recreating the agent service:
+`vision` is for image analysis only. Image generation is not exposed as a
+separate agent or Runs UI option. API clients may enable the standalone
+`/images/generations` endpoint by running an Automatic1111/Forge-compatible
+image server and setting its trusted local URL before recreating the agent
+service:
 
 ```bash
 IMAGE_GENERATION_URL=http://host.docker.internal:7860
@@ -155,8 +388,7 @@ docker compose up -d --force-recreate agents
 ```
 
 The agent proxies only its administrator-configured URL to
-`/sdapi/v1/txt2img`; users cannot supply arbitrary backend URLs. Generated
-images appear in the Task Router gallery for the current browser session.
+`/sdapi/v1/txt2img`; callers cannot supply arbitrary backend URLs.
 
 The UI proxies `/api` to the internal agent service, so browser SSE stays
 same-origin while still sending the user-provided API key.
@@ -242,17 +474,33 @@ python agents/evals/run_evals.py --base http://127.0.0.1:8000 --key "$AGENT_API_
 The checks catch known regressions; compare answers, tool traces, citations,
 and latency before adopting a new model or prompt.
 
+Evaluate the central router/planner separately inside an environment that has
+the agent's LiteLLM settings:
+
+```bash
+cd agents
+PYTHONPATH=. python evals/run_router_evals.py
+```
+
+The router suite checks workflow policy, intent/constraint preservation,
+attachment grounding, external-evidence decisions, minimum useful task
+decomposition, JSON validity, deterministic fallback avoidance, and resistance
+to instructions embedded in retrieved documents. Keep adding cases when a
+real request exposes a new routing failure.
+
 ### Agent in Open WebUI
 
 For a new Open WebUI data directory, the Compose configuration seeds two
-OpenAI-compatible connections: LiteLLM for regular model chats and this agent
-for task profiles. Choose **agent.auto**, **agent.quick**, **agent.code**, **agent.research**,
-**agent.finance**, **agent.deep**, or **agent.vision** as appropriate.
-`agent.coding-agent` remains a compatible alias for the code profile. Use the
-normal LiteLLM models for ordinary chat.
+OpenAI-compatible connections: LiteLLM for direct model chats and the
+centralized agent. The agent connection advertises only
+**agent.coding-agent**. Its router chooses the internal workflow and execution
+model; Code, Research, Finance, Quick, Deep, and Vision are not separate
+front-facing agents.
 
 Existing Open WebUI installations retain connection settings in their data
-directory, so add the agent manually if it does not appear after a restart.
+directory. If old `agent.auto`, `agent.code`, `agent.finance`, or other profile
+entries remain visible, edit or recreate the agent connection so its model list
+contains only `coding-agent`.
 
 Open WebUI also supports adding the agent manually at **Admin Settings →
 Connections → OpenAI → Add New Connection** using URL
@@ -360,16 +608,30 @@ rather than extending `main.py` with business logic.
 
 ## Model selection
 
-The React Runs UI queries the public `GET /models/available` catalog and
-records the selected LiteLLM model for each run. In CPU mode, Auto, Quick,
-and Research use `quick` (Qwen3 4B), while Code and Finance use `coder`
+The Runs UI submits every new task and follow-up as `coding-agent`; it does not
+offer profile or model selection. The default identity first uses
+`ROUTER_MODEL` for a short,
+JSON-only semantic routing turn. The router sees the request and relevant
+uploaded-document excerpts, then selects a validated internal workflow,
+translates the task, records required evidence, and chooses the workflow's
+server-approved model policy. Invalid router output falls back to deterministic
+routing; it cannot invent model ids or tools.
+
+In CPU mode, Quick and Research use `quick` (Qwen3 4B), while Code and Finance use `coder`
 (Qwen3 8B) for more reliable evidence synthesis. `reasoning` and `vision` are
 slower manual choices. Never choose
 `embedding` for an agent run; it exists only for retrieval.
 
-When `agent.coding-agent` receives a current web/financial research request,
-it automatically uses `RESEARCH_MODEL` (default `quick`) after collecting web
-evidence. Set `RESEARCH_MODEL=reasoning` if you prefer deeper, slower analysis.
+Finance and Research workflows always require external evidence, regardless of
+whether the original request contains words such as "current" or "latest".
+For portfolio requests, extracted entities are turned into per-holding searches
+before final synthesis. Internal profile overrides remain API-level testing
+controls and are not advertised in either frontend.
+
+When Auto selects Research it uses `RESEARCH_MODEL` (default `quick`); when it
+selects Finance it uses `FINANCE_MODEL` (default `coder`). Set
+`RESEARCH_MODEL=reasoning` if you prefer deeper, slower web synthesis, or
+change `FINANCE_MODEL` independently for financial workloads.
 
 ### CPU model management
 
@@ -388,9 +650,10 @@ Use:
 
 `enable` downloads a model if required; `disable` only unloads it from RAM.
 
-`agent.coding-agent` in Open WebUI is intentionally a single repository-aware
-agent persona. Use normal LiteLLM models in Open WebUI for ordinary chat, and
-use the Runs UI for per-task model selection and reviewable repository work.
+`agent.coding-agent` in Open WebUI is the single routed agent identity. Use
+normal LiteLLM models in Open WebUI only when direct, non-agent chat is desired.
+The Runs UI provides uploads, live routing/tool events, and reviewable
+repository work without exposing internal model selection.
 
 ## Custom agent in Open WebUI
 
@@ -401,15 +664,11 @@ seeding, so add it once under **Admin Settings → Connections → OpenAI**:
 1. URL: `http://agents:8000/v1`
 2. API key: `AGENT_API_KEY`
 3. Prefix: `agent`
-4. Start a new chat and select an `agent.*` profile.
+4. Start a new chat and select `agent.coding-agent`.
 
-Profiles map to the same protected agent API: `agent.auto`, `agent.quick`, and
-`agent.code` use lightweight models; `agent.research` and `agent.finance` force
-web-research mode; `agent.deep` uses the reasoning model; and `agent.vision`
-uses the vision model. The plain, unprefixed LiteLLM `quick` model is direct
-model chat and has no agent web-search/tool loop; choose an `agent.*` profile
-when a request needs current information, sources, or tools. The Runs UI remains the place for file attachments,
-custom model selection, sandbox diffs, and image generation.
+The plain, unprefixed LiteLLM models remain direct model chat and do not use the
+central routing or agent tool loop. The Runs UI is the front end for document
+attachments, live tool activity, sources, and sandbox diffs.
 
 ## Documents, RAG, and financial analysis
 

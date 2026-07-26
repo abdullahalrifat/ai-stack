@@ -135,10 +135,10 @@ def test_openai_research_profile_forces_research_mode():
     assert runner.call_args.kwargs["force_research"] is True
 
 
-def test_openai_models_include_task_profiles():
+def test_openai_models_expose_only_central_router_agent():
     ids = {model["id"] for model in routes.models()["data"]}
 
-    assert {"coding-agent", "auto", "quick", "code", "research", "finance", "deep", "vision"} <= ids
+    assert ids == {AGENT_MODEL_ID}
 
 
 def test_auto_profile_uses_fast_model_while_code_uses_default_model():

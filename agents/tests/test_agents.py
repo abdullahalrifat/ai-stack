@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 from app.agent.service import ingest_documents, run_agent
 from app.agent import service as agent
+from app.agent.router import PlannedTask, RouteDecision
+from app.agent.state import AgentState
 
 
 @patch("app.agent.service.workspace_context", return_value=nullcontext())
@@ -213,6 +215,46 @@ def test_run_event_buffer_batches_output_and_publishes_durable_event(monkeypatch
 
     assert store.calls == [("run-1", "output_delta", {"content": "abcdef"})]
     assert publisher.events[0]["payload"] == {"content": "abcdef"}
+
+
+def test_auto_route_hands_full_planning_contract_to_executor(monkeypatch):
+    decision = RouteDecision(
+        workflow="finance",
+        translated_task="Analyze every portfolio holding.",
+        requires_external_evidence=True,
+        complexity="complex",
+        entities=["Fortune Shoes"],
+        constraints=["Use dated evidence"],
+        deliverables=["Holding analysis"],
+        missing_inputs=["Risk tolerance"],
+        assumptions=["Use a long-term analytical frame"],
+        tasks=[
+            PlannedTask(
+                id="research_holding",
+                objective="Research the named holding",
+                workflow="finance",
+                required_evidence=["DSE data"],
+                completion_criteria=["Dated evidence is cited"],
+            )
+        ],
+    )
+    monkeypatch.setattr(agent, "route_request", lambda *_args: decision)
+    state = AgentState(
+        conversation_id="conversation",
+        user_message="Analyze this portfolio",
+        prompt_mode="auto",
+    )
+    events = []
+
+    agent._apply_auto_route(state, lambda kind, payload: events.append((kind, payload)))
+
+    assert state.prompt_mode == "finance"
+    assert state.requires_external_evidence is True
+    assert "Known missing inputs" in state.execution_brief
+    assert "completion_criteria: Dated evidence is cited" in state.execution_brief
+    assert state.plan == ["[research_holding/finance] Research the named holding"]
+    assert events[0][1]["task_count"] == 1
+    assert events[0][1]["task_workflows"] == ["finance"]
 
 
 def test_cancelled_before_start_is_not_executed(monkeypatch):

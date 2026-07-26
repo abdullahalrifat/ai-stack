@@ -24,6 +24,12 @@ class AgentState:
 
     prompt_mode: str = "code"
 
+    execution_brief: str = ""
+
+    routing_entities: list[str] = field(default_factory=list)
+
+    requires_external_evidence: bool = False
+
     max_completion_tokens: int | None = None
 
     timeout_seconds: int | None = None

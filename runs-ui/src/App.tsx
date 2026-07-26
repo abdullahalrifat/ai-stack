@@ -1,17 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, Run, RunEvent, streamEvents, uploadDocuments } from "./api";
 
-type Profile =
-  | "auto"
-  | "code"
-  | "research"
-  | "finance"
-  | "quick"
-  | "deep"
-  | "vision"
-  | "image"
-  | "custom";
-type ImageResult = { url: string; created: number; prompt: string };
 type Project = { id: string; name: string; workspace: string };
 
 const terminal = new Set([
@@ -21,85 +10,6 @@ const terminal = new Set([
   "discarded",
   "cancelled",
 ]);
-// The API replaces this list as soon as an Agent API key is entered. Keeping
-// the local stack's chat-capable aliases here avoids a misleading one-option
-// Custom selector before the authenticated request can be made.
-const defaultModels = [
-  "quick",
-  "qwen3-8b",
-  "qwen3-14b",
-  "coder",
-  "reasoning",
-  "vision",
-];
-const profileInfo: Record<
-  Profile,
-  { title: string; description: string; model: string }
-> = {
-  auto: {
-    title: "Auto",
-    description: "Routes routine work to the fast local model.",
-    model: "quick",
-  },
-  code: {
-    title: "Code",
-    description: "Repository tools, tests, and reviewable edits.",
-    model: "coder",
-  },
-  research: {
-    title: "Research",
-    description: "Current web evidence with sources.",
-    model: "quick",
-  },
-  finance: {
-    title: "Finance",
-    description: "Current market research and cautious scenarios.",
-    model: "coder",
-  },
-  quick: {
-    title: "Quick chat",
-    description: "Fast summaries and simple questions.",
-    model: "quick",
-  },
-  deep: {
-    title: "Deep analysis",
-    description: "Slower investigation and tradeoffs.",
-    model: "reasoning",
-  },
-  vision: {
-    title: "Image analysis",
-    description: "Image-aware prompt analysis.",
-    model: "vision",
-  },
-  image: {
-    title: "Generate image",
-    description: "Optional local image backend.",
-    model: "image backend",
-  },
-  custom: {
-    title: "Custom model",
-    description: "Choose a model explicitly.",
-    model: "qwen3-8b",
-  },
-};
-
-function pickProfile(task: string): Profile {
-  const text = task.toLowerCase();
-  if (/\b(generate|create) (an |a )?image\b/.test(text)) return "image";
-  if (
-    /\b(stock|portfolio|dse|nasdaq|closing price|share price|financial)\b/.test(
-      text,
-    )
-  )
-    return "finance";
-  if (/\b(latest|current|today|news|search the web|look up)\b/.test(text))
-    return "research";
-  if (/\b(image|screenshot|photo)\b/.test(text)) return "vision";
-  if (/\b(fix|bug|code|test|repository|refactor|implement)\b/.test(text))
-    return "code";
-  return "quick";
-}
-
 function sourceUrls(text: string): string[] {
   return [...new Set(text.match(/https?:\/\/[^\s)\]}>,]+/g) || [])];
 }
@@ -114,9 +24,6 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [projectName, setProjectName] = useState("");
-  const [profile, setProfile] = useState<Profile>("auto");
-  const [customModel, setCustomModel] = useState("qwen3-8b");
-  const [models, setModels] = useState<string[]>(defaultModels);
   const [write, setWrite] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -125,17 +32,10 @@ export function App() {
   const [answer, setAnswer] = useState("");
   const [diff, setDiff] = useState("");
   const [error, setError] = useState("");
-  const [imageAvailable, setImageAvailable] = useState(false);
-  const [images, setImages] = useState<ImageResult[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [followUp, setFollowUp] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const cursor = useRef(0);
-  const effectiveProfile = profile === "auto" ? pickProfile(task) : profile;
-  const recommendedModel =
-    effectiveProfile === "custom"
-      ? customModel
-      : profileInfo[effectiveProfile].model;
   const sources = useMemo(() => sourceUrls(answer), [answer]);
 
   const loadRuns = async () => {
@@ -160,23 +60,6 @@ export function App() {
     api<{ workspaces: string[] }>(key, "/workspace/choices")
       .then((data) => setWorkspaceOptions(data.workspaces))
       .catch((e) => setError(String(e)));
-  }, [key]);
-  useEffect(() => {
-    api<{ models: string[] }>(key, "/models/available")
-      .then((data) => {
-        const available = data.models.filter((id) => id !== "embedding");
-        setModels(available);
-        setCustomModel((current) =>
-          available.includes(current) ? current : available[0] || "quick",
-        );
-      })
-      .catch((e) => setError(String(e)));
-  }, [key]);
-  useEffect(() => {
-    if (!key) return;
-    api<{ available: boolean }>(key, "/images/status")
-      .then((data) => setImageAvailable(data.available))
-      .catch(() => setImageAvailable(false));
   }, [key]);
   useEffect(() => {
     if (!key) return;
@@ -240,24 +123,7 @@ export function App() {
     setError("");
     if (!task.trim()) return;
     try {
-      if (effectiveProfile === "image") {
-        const data = await api<{ created: number; data: { url: string }[] }>(
-          key,
-          "/images/generations",
-          { method: "POST", body: JSON.stringify({ prompt: task }) },
-        );
-        setImages((old) => [
-          ...data.data.map((item) => ({
-            url: item.url,
-            created: data.created,
-            prompt: task,
-          })),
-          ...old,
-        ]);
-        return;
-      }
-      const selected =
-        effectiveProfile === "custom" ? customModel : effectiveProfile;
+      const selected = "coding-agent";
       const session = conversationId || crypto.randomUUID();
       setConversationId(session);
       if (files.length > 0) await uploadDocuments(key, files.slice(0, 10), session);
@@ -276,7 +142,7 @@ export function App() {
             conversation_id: session,
             document_scope: files.length ? session : null,
             project_id: projectId || null,
-            allow_write: effectiveProfile === "code" && write,
+            allow_write: write,
           }),
         },
       );
@@ -287,7 +153,7 @@ export function App() {
         model: selected,
         conversation_id: session,
         requested_workspace: workspace,
-        allow_write: effectiveProfile === "code" && write,
+        allow_write: write,
         created_at: new Date().toISOString(),
       });
     } catch (e) {
@@ -329,7 +195,7 @@ export function App() {
           body: JSON.stringify({
             task: taskWithLegacyContext,
             workspace: active.requested_workspace,
-            model: active.model,
+            model: "coding-agent",
             conversation_id: session,
             document_scope: active.document_scope || null,
             project_id: active.project_id || projectId || null,
@@ -342,7 +208,7 @@ export function App() {
         id: result.run_id,
         status: result.status,
         task: followUp,
-        model: active.model,
+        model: "coding-agent",
         conversation_id: session,
         project_id: active.project_id || projectId || null,
         requested_workspace: active.requested_workspace,
@@ -379,16 +245,16 @@ export function App() {
     <main>
       <header>
         <div>
-          <h1>{showHistory ? "Run history" : "AI Task Router"}</h1>
+          <h1>{showHistory ? "Run history" : "Central AI Agent"}</h1>
           <p>
             {showHistory
               ? "Open a prior run when you need its answer or conversation."
-              : "Choose intent, review live work, and keep models in their lane."}
+              : "Describe the task once; the central router selects the workflow and model."}
           </p>
         </div>
         <div className="header-actions">
           <span className="badge">
-            {profileInfo[effectiveProfile].title} → {recommendedModel}
+            Central router agent
           </span>
           <button
             type="button"
@@ -401,49 +267,6 @@ export function App() {
           </button>
         </div>
       </header>
-      <section className="profiles">
-        {(Object.keys(profileInfo) as Profile[]).map((id) =>
-          id === "custom" ? (
-            <div
-              className={`profile custom ${profile === id ? "selected" : ""}`}
-              key={id}
-            >
-              <button
-                type="button"
-                className="profile-select"
-                onClick={() => setProfile("custom")}
-              >
-                <b>{profileInfo[id].title}</b>
-                <span>{profileInfo[id].description}</span>
-              </button>
-              <select
-                aria-label="Custom model"
-                value={customModel}
-                onChange={(event) => {
-                  setCustomModel(event.target.value);
-                  setProfile("custom");
-                }}
-              >
-                {models.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className={`profile ${profile === id ? "selected" : ""}`}
-              key={id}
-              onClick={() => setProfile(id)}
-            >
-              <b>{profileInfo[id].title}</b>
-              <span>{profileInfo[id].description}</span>
-            </button>
-          ),
-        )}
-      </section>
       {showHistory ? (
         <section className="card history">
           <h2>Recent runs</h2>
@@ -503,14 +326,10 @@ export function App() {
                   </datalist>
                 </label>
                 <div className="model-choice">
-                  <b>Selected model</b>
-                  <span>
-                    {models.includes(recommendedModel)
-                      ? recommendedModel
-                      : models[0] || "Loading…"}
-                  </span>
+                  <b>Execution routing</b>
+                  <span>Automatic</span>
                   <small>
-                    Chosen by the {profileInfo[effectiveProfile].title} profile.
+                    The central agent selects the internal workflow and model.
                   </small>
                 </div>
               </div>
@@ -551,31 +370,16 @@ export function App() {
                   Attached: {files.map((file) => file.name).join(", ")}
                 </p>
               )}
-              {effectiveProfile === "code" && (
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={write}
-                    onChange={(e) => setWrite(e.target.checked)}
-                  />{" "}
-                  Make changes in a reviewable Git sandbox
-                </label>
-              )}
-              {effectiveProfile === "image" && !imageAvailable && (
-                <p className="notice">
-                  Image generation is not configured. Set{" "}
-                  <code>IMAGE_GENERATION_URL</code> to an
-                  Automatic1111/Forge-compatible local API.
-                </p>
-              )}
-              <button
-                disabled={
-                  !key || (effectiveProfile === "image" && !imageAvailable)
-                }
-              >
-                {effectiveProfile === "image"
-                  ? "Generate image"
-                  : "Start routed task"}
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={write}
+                  onChange={(e) => setWrite(e.target.checked)}
+                />{" "}
+                Allow reviewable changes when the router selects a code workflow
+              </label>
+              <button disabled={!key}>
+                Start routed task
               </button>
               {error && <pre className="error">{error}</pre>}
             </form>
@@ -651,24 +455,6 @@ export function App() {
                   Send follow-up
                 </button>
               </form>
-            )}
-          </section>
-          <section className="card">
-            <h2>Generated images</h2>
-            {images.length === 0 ? (
-              <p className="hint">
-                Generated images from the configured local backend appear here
-                for this browser session.
-              </p>
-            ) : (
-              <div className="gallery">
-                {images.map((image, index) => (
-                  <figure key={`${image.created}-${index}`}>
-                    <img src={image.url} alt={image.prompt} />
-                    <figcaption>{image.prompt}</figcaption>
-                  </figure>
-                ))}
-              </div>
             )}
           </section>
         </>

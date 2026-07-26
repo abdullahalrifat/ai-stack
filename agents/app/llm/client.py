@@ -95,20 +95,23 @@ def _ensure_model_available(model: str):
             raise ValueError(f"Model '{model}' not available. Available: {available}")
 
 
-def chat(messages, model=DEFAULT_MODEL, max_tokens: int | None = None) -> str:
+def chat(messages, model=DEFAULT_MODEL, max_tokens: int | None = None, response_format: dict | None = None) -> str:
     """Plain-text completion, no tool calling. Used by the planner and by
     internal helpers like context compaction."""
 
     _ensure_model_available(model)
     client = get_client()
 
-    response = client.chat.completions.create(
+    kwargs = dict(
         model=model,
         messages=messages,
         temperature=0,
         max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
         timeout=LLM_TIMEOUT_SECONDS,
     )
+    if response_format is not None:
+        kwargs["response_format"] = response_format
+    response = client.chat.completions.create(**kwargs)
 
     return response.choices[0].message.content
 

@@ -43,6 +43,20 @@ def test_tool_completion_accepts_profile_timeout(_available):
     assert completion.call_args.kwargs["timeout"] == 300
 
 
+@patch("app.llm.client._ensure_model_available")
+def test_plain_completion_accepts_structured_json_mode(_available):
+    fake_client, completion = _completion_client()
+
+    with patch("app.llm.client.get_client", return_value=fake_client):
+        client.chat(
+            [{"role": "user", "content": "route this"}],
+            model="quick",
+            response_format={"type": "json_object"},
+        )
+
+    assert completion.call_args.kwargs["response_format"] == {"type": "json_object"}
+
+
 @patch("app.llm.client.OpenAI")
 def test_client_disables_sdk_retries_for_local_inference(openai):
     previous = client._client

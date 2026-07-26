@@ -218,7 +218,7 @@ services:
       OPENAI_API_KEYS: ${LITELLM_MASTER_KEY};${AGENT_API_KEY}
       # Open WebUI joins an OpenAI connection prefix with a dot, producing
       # the displayed model id "agent.coding-agent".
-      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["coding-agent","auto","quick","code","research","finance","deep","vision"]}}'
+      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["coding-agent"]}}'
 
     volumes:
       - ./open-webui:/app/backend/data
@@ -263,6 +263,9 @@ services:
       DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3-8b}
       # Fast CPU-mode model used for ordinary Auto / Quick chat requests.
       FAST_MODEL: ${FAST_MODEL:-quick}
+      # Semantic routing is a short JSON-only turn before Auto execution.
+      ROUTER_MODEL: ${ROUTER_MODEL:-quick}
+      ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1024}
       # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-coder}
       # Used for current web/financial research through agent.coding-agent.
