@@ -150,8 +150,8 @@ def test_match_workspace_maps_host_checkout_to_container_path():
     choices = ["/workspace", "/workspace/ai-stack", "/workspace/other"]
 
     assert (
-        match_workspace(Path("/mnt/work/code/ai-stack"), choices)
-        == "/workspace/ai-stack"
+            match_workspace(Path("/mnt/work/code/ai-stack"), choices)
+            == "/workspace/ai-stack"
     )
     assert match_workspace(Path("/tmp/unrelated"), choices) is None
 
@@ -169,8 +169,8 @@ def test_project_selector_accepts_name_or_unique_id_prefix():
 
 
 def test_api_key_can_be_read_from_non_executable_env_file(
-    monkeypatch,
-    tmp_path,
+        monkeypatch,
+        tmp_path,
 ):
     env_file = tmp_path / ".env"
     env_file.write_text("OTHER=value\nAGENT_API_KEY='local-secret'\n")
@@ -345,9 +345,9 @@ def test_main_doctor_checks_api_and_resolves_server_default(monkeypatch, capsys)
 
 
 def test_main_shorthand_starts_run_with_mapped_workspace(
-    monkeypatch,
-    capsys,
-    tmp_path,
+        monkeypatch,
+        capsys,
+        tmp_path,
 ):
     calls = []
 
@@ -421,13 +421,13 @@ def test_interactive_shell_changes_modes_and_runs_tasks(monkeypatch, capsys):
     monkeypatch.setattr("aistack_cli.main.run_task", fake_run_task)
 
     assert (
-        interactive_shell(
-            FakeClient(),
-            workspace="/workspace/example",
-            project_id=None,
-            allow_write=False,
-        )
-        == 0
+            interactive_shell(
+                FakeClient(),
+                workspace="/workspace/example",
+                project_id=None,
+                allow_write=False,
+            )
+            == 0
     )
     assert tasks[0][1] == "fix the tests"
     assert tasks[0][2]["allow_write"] is True

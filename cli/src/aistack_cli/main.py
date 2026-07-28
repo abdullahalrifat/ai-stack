@@ -58,8 +58,8 @@ def resolve_api_key(explicit: str | None = None) -> str:
 def _common_suffix(left: Path, right: Path) -> int:
     count = 0
     for left_part, right_part in zip(
-        reversed(left.parts),
-        reversed(right.parts),
+            reversed(left.parts),
+            reversed(right.parts),
     ):
         if left_part != right_part:
             break
@@ -81,8 +81,8 @@ def match_workspace(local_path: Path, choices: list[str]) -> str | None:
 
 
 def resolve_project(
-    projects: list[dict[str, Any]],
-    selector: str,
+        projects: list[dict[str, Any]],
+        selector: str,
 ) -> dict[str, Any]:
     exact_name = [
         project for project in projects if str(project.get("name")) == selector
@@ -99,9 +99,9 @@ def resolve_project(
 
 
 def resolve_workspace(
-    client: AgentClient,
-    requested: str | None,
-    project: str | None,
+        client: AgentClient,
+        requested: str | None,
+        project: str | None,
 ) -> tuple[str, str | None]:
     if project:
         selected = resolve_project(client.projects(), project)
@@ -124,9 +124,9 @@ def resolve_workspace(
 
 
 def follow_run(
-    client: AgentClient,
-    run_id: str,
-    renderer: EventRenderer,
+        client: AgentClient,
+        run_id: str,
+        renderer: EventRenderer,
 ) -> dict[str, Any]:
     cursor = 0
     retries = 0
@@ -158,10 +158,10 @@ def follow_run(
 
 
 def review_run(
-    client: AgentClient,
-    run: dict[str, Any],
-    *,
-    interactive: bool,
+        client: AgentClient,
+        run: dict[str, Any],
+        *,
+        interactive: bool,
 ) -> dict[str, Any]:
     if run.get("status") != "awaiting_approval" or not interactive:
         return run
@@ -191,15 +191,15 @@ def review_run(
 
 
 def run_task(
-    client: AgentClient,
-    task: str,
-    *,
-    workspace: str,
-    project_id: str | None,
-    conversation_id: str,
-    allow_write: bool,
-    output: str,
-    review: bool,
+        client: AgentClient,
+        task: str,
+        *,
+        workspace: str,
+        project_id: str | None,
+        conversation_id: str,
+        allow_write: bool,
+        output: str,
+        review: bool,
 ) -> dict[str, Any]:
     created = client.create_run(
         task,
@@ -248,11 +248,11 @@ Any other input starts a durable agent run.""")
 
 
 def interactive_shell(
-    client: AgentClient,
-    *,
-    workspace: str,
-    project_id: str | None,
-    allow_write: bool,
+        client: AgentClient,
+        *,
+        workspace: str,
+        project_id: str | None,
+        allow_write: bool,
 ) -> int:
     conversation_id = str(uuid.uuid4())
     active_run: dict[str, Any] | None = None
