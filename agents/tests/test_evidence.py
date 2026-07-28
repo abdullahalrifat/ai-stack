@@ -32,7 +32,10 @@ def test_evidence_excludes_historical_section_for_current_request():
     )
 
     assert evidence["selected_sections"] == ["report.pdf :: page 1"]
-    assert evidence["potentially_confusing_sections"][0]["section"] == "report.pdf :: page 2"
+    assert (
+        evidence["potentially_confusing_sections"][0]["section"]
+        == "report.pdf :: page 2"
+    )
     assert any(record["text"] == "A | Open" for record in evidence["records"])
 
 
@@ -82,8 +85,12 @@ Cash Dividend Receivable
 
     evidence = build_inline_document_evidence(query)
 
-    assert any("Marginable Securities" in section for section in evidence["selected_sections"])
-    assert any("Sector Exposure" in section for section in evidence["selected_sections"])
+    assert any(
+        "Marginable Securities" in section for section in evidence["selected_sections"]
+    )
+    assert any(
+        "Sector Exposure" in section for section in evidence["selected_sections"]
+    )
     assert all(
         "Cash Dividend Receivable" not in section
         for section in evidence["selected_sections"]

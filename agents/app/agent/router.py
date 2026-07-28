@@ -129,10 +129,7 @@ class RouteDecision:
 
     @property
     def plan(self) -> list[str]:
-        return [
-            f"[{task.id}/{task.workflow}] {task.objective}"
-            for task in self.tasks
-        ]
+        return [f"[{task.id}/{task.workflow}] {task.objective}" for task in self.tasks]
 
 
 def _fallback_route(message: str) -> RouteDecision:
@@ -282,10 +279,19 @@ def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
         }[default_workflow]
         if workflow not in allowed:
             workflow = default_workflow
-        if not task_id or task_id in ids or len(objective) < 8 or workflow not in WORKFLOWS:
+        if (
+            not task_id
+            or task_id in ids
+            or len(objective) < 8
+            or workflow not in WORKFLOWS
+        ):
             return []
         ids.add(task_id)
-        dependencies = [_task_id(dep) for dep in item.get("depends_on", [])] if isinstance(item.get("depends_on", []), list) else []
+        dependencies = (
+            [_task_id(dep) for dep in item.get("depends_on", [])]
+            if isinstance(item.get("depends_on", []), list)
+            else []
+        )
         raw_dependencies[task_id] = dependencies
         parsed.append(
             PlannedTask(
@@ -293,8 +299,12 @@ def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
                 objective=objective,
                 workflow=workflow,
                 depends_on=dependencies,
-                required_evidence=_bounded_strings(item.get("required_evidence"), limit=2, chars=200),
-                completion_criteria=_bounded_strings(item.get("completion_criteria"), limit=2, chars=200),
+                required_evidence=_bounded_strings(
+                    item.get("required_evidence"), limit=2, chars=200
+                ),
+                completion_criteria=_bounded_strings(
+                    item.get("completion_criteria"), limit=2, chars=200
+                ),
             )
         )
 
@@ -329,7 +339,9 @@ def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
     return [by_id[task_id] for task_id in ordered_ids]
 
 
-def route_request(message: str, attachment_context: list | None = None) -> RouteDecision:
+def route_request(
+    message: str, attachment_context: list | None = None
+) -> RouteDecision:
     excerpts = attachment_context or []
     context = json.dumps(excerpts[:8], ensure_ascii=False, default=str)[:6_000]
     router_message = _bounded_router_message(message)
@@ -358,7 +370,9 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
         )
         data = extract_json(response)
     except (ParserError, ValueError, TypeError, KeyError):
-        logger.warning("Router returned an invalid contract; using deterministic fallback")
+        logger.warning(
+            "Router returned an invalid contract; using deterministic fallback"
+        )
         return _fallback_route(message)
     except APITimeoutError:
         logger.warning(
@@ -384,7 +398,9 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
         return _fallback_route(message)
     # Preserve a lossless user-intent anchor even when the compact translation
     # accidentally omits a qualifier such as a time horizon or output format.
-    translated = f"{translated}\n\nOriginal user requirements: {message.strip()}"[:2_400]
+    translated = f"{translated}\n\nOriginal user requirements: {message.strip()}"[
+        :2_400
+    ]
     if complexity not in COMPLEXITIES:
         complexity = "moderate"
 
@@ -396,7 +412,9 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
     selected_sections = _bounded_strings(
         data.get("selected_document_sections"), limit=12, chars=240
     )
-    extracted_records = _bounded_strings(data.get("extracted_records"), limit=160, chars=240)
+    extracted_records = _bounded_strings(
+        data.get("extracted_records"), limit=160, chars=240
+    )
     validation_warnings: list[str] = []
     grounding = f"{message}\n{context}"
     if context:
@@ -405,7 +423,9 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
             validation_warnings.append(
                 f"Discarded {len(rejected_entities)} ungrounded entity/entities"
             )
-    selected_sections, rejected_sections = _grounded_values(selected_sections, grounding)
+    selected_sections, rejected_sections = _grounded_values(
+        selected_sections, grounding
+    )
     extracted_records, rejected_records = _grounded_values(extracted_records, grounding)
     if rejected_sections:
         validation_warnings.append(
@@ -461,5 +481,9 @@ def route_request(message: str, attachment_context: list | None = None) -> Route
         extracted_records=extracted_records,
         validation_warnings=validation_warnings,
         tasks=tasks,
-        source="model_escalated" if router_model == ROUTER_ESCALATION_MODEL and router_model != ROUTER_MODEL else "model",
+        source=(
+            "model_escalated"
+            if router_model == ROUTER_ESCALATION_MODEL and router_model != ROUTER_MODEL
+            else "model"
+        ),
     )

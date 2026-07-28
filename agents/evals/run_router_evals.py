@@ -31,7 +31,8 @@ def main() -> int:
             ]
         ).casefold()
         missing = [
-            value for value in case["must_preserve"]
+            value
+            for value in case["must_preserve"]
             if value.casefold() not in searchable
         ]
         errors = []
@@ -44,7 +45,9 @@ def main() -> int:
         if route.source != "model":
             errors.append(f"source={route.source}")
         status = "PASS" if not missing and not errors else "FAIL"
-        print(f"{status} {case['id']} ({route.workflow}, {route.complexity}, {len(route.tasks)} tasks)")
+        print(
+            f"{status} {case['id']} ({route.workflow}, {route.complexity}, {len(route.tasks)} tasks)"
+        )
         if status == "FAIL":
             failures.append({"id": case["id"], "missing": missing, "errors": errors})
     if failures:

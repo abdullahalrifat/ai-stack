@@ -44,7 +44,9 @@ WEB_FETCH_MAX_BYTES = int(os.getenv("WEB_FETCH_MAX_BYTES", "8000000"))
 # Optional Automatic1111/Forge-compatible image generation API. Ollama vision
 # models analyze images but do not create them, so generation stays separate.
 IMAGE_GENERATION_URL = os.getenv("IMAGE_GENERATION_URL", "").rstrip("/")
-IMAGE_GENERATION_TIMEOUT_SECONDS = int(os.getenv("IMAGE_GENERATION_TIMEOUT_SECONDS", "180"))
+IMAGE_GENERATION_TIMEOUT_SECONDS = int(
+    os.getenv("IMAGE_GENERATION_TIMEOUT_SECONDS", "180")
+)
 
 # Multiple workspace roots can be mounted (e.g. several repositories).
 # WORKSPACE_DIR is kept for backward compatibility and is always included as
@@ -107,8 +109,7 @@ RUNNER_API_KEY = os.getenv("RUNNER_API_KEY")
 # chaining/redirection syntax is rejected outright regardless of allowlist.
 ALLOWED_COMMANDS = env_list(
     "ALLOWED_COMMANDS",
-    "git,ls,cat,pytest,python,python3,npm,node,make,grep,find,"
-    "mypy,ruff,black,flake8",
+    "git,ls,cat,pytest,python,python3,npm,node,make,grep,find,mypy,ruff,black,flake8",
 )
 
 # How long the cached model list from the inference gateway is trusted
@@ -122,7 +123,9 @@ CONTEXT_COMPACT_KEEP_RECENT = int(os.getenv("CONTEXT_COMPACT_KEEP_RECENT", "4"))
 # Compact only when the complete executor transcript is genuinely near the
 # model context budget. The old step-count setting is retained for backwards
 # compatible configuration but is no longer the trigger.
-CONTEXT_COMPACT_THRESHOLD_TOKENS = int(os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "7000"))
+CONTEXT_COMPACT_THRESHOLD_TOKENS = int(
+    os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "7000")
+)
 
 # Embeddings are useful for explicit RAG workflows but expensive on a host
 # that keeps one Ollama model resident. Keep routine Code/Quick turns fast.
@@ -168,7 +171,10 @@ def validate_settings() -> None:
         raise RuntimeError("WEB_FETCH_MAX_BYTES must be greater than zero")
     if OPENAI_INPUT_MAX_CHARS < 1000:
         raise RuntimeError("OPENAI_INPUT_MAX_CHARS must be at least 1000")
-    if CONTEXT_TOKEN_LIMIT < 1024 or CONTEXT_OUTPUT_RESERVE_TOKENS >= CONTEXT_TOKEN_LIMIT:
+    if (
+        CONTEXT_TOKEN_LIMIT < 1024
+        or CONTEXT_OUTPUT_RESERVE_TOKENS >= CONTEXT_TOKEN_LIMIT
+    ):
         raise RuntimeError("Invalid model context token budget")
     if MAX_CONCURRENT_AGENT_RUNS < 1:
         raise RuntimeError("MAX_CONCURRENT_AGENT_RUNS must be at least 1")

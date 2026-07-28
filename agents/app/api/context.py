@@ -18,7 +18,9 @@ def _excerpt(text: str, limit: int) -> str:
     return f"{text[:head]}\n...[earlier client context omitted]...\n{text[-tail:]}"
 
 
-def compact_openai_messages(messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_CHARS) -> list[dict[str, str]]:
+def compact_openai_messages(
+    messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_CHARS
+) -> list[dict[str, str]]:
     """Keep the current request while fitting client context into a local budget.
 
     Continue and Open WebUI can send large codebase snippets or tool payloads
@@ -31,7 +33,10 @@ def compact_openai_messages(messages: Iterable[object], max_chars: int = OPENAI_
     """
 
     normalized = [
-        {"role": str(getattr(message, "role", "user")), "content": str(getattr(message, "content", ""))}
+        {
+            "role": str(getattr(message, "role", "user")),
+            "content": str(getattr(message, "content", "")),
+        }
         for message in messages
         if str(getattr(message, "content", "")).strip()
     ]
@@ -50,7 +55,11 @@ def compact_openai_messages(messages: Iterable[object], max_chars: int = OPENAI_
     # The latest user turn is the request that must never be displaced by old
     # editor context. Reserve most of the remaining budget for it.
     latest_user_index = next(
-        (index for index in range(len(non_system) - 1, -1, -1) if non_system[index]["role"] == "user"),
+        (
+            index
+            for index in range(len(non_system) - 1, -1, -1)
+            if non_system[index]["role"] == "user"
+        ),
         len(non_system) - 1,
     )
     latest = non_system[latest_user_index]
@@ -74,7 +83,9 @@ def compact_openai_messages(messages: Iterable[object], max_chars: int = OPENAI_
     return result
 
 
-def openai_prompt(messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_CHARS) -> str:
+def openai_prompt(
+    messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_CHARS
+) -> str:
     """Convert compacted client messages into an unambiguous agent task."""
 
     messages = list(messages)
@@ -86,8 +97,7 @@ def openai_prompt(messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_
     history = compacted[:-1]
     latest = compacted[-1]
     history_text = "\n".join(
-        f"Prior {message['role']} message:\n{message['content']}"
-        for message in history
+        f"Prior {message['role']} message:\n{message['content']}" for message in history
     )
     prefix = (
         "Client conversation background (reference only; do not repeat or "
@@ -96,13 +106,7 @@ def openai_prompt(messages: Iterable[object], max_chars: int = OPENAI_INPUT_MAX_
         if history_text
         else ""
     )
-    task = (
-        f"{prefix}Current user request — perform this task now:\n"
-        f"{latest['content']}"
-    )
+    task = f"{prefix}Current user request — perform this task now:\n{latest['content']}"
     if document_context:
-        task += (
-            "\n\nClient-supplied retrieval context:\n"
-            f"{document_context}"
-        )
+        task += f"\n\nClient-supplied retrieval context:\n{document_context}"
     return task

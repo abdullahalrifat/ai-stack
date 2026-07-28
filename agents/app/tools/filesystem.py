@@ -77,7 +77,9 @@ def _runner_preexec() -> None:
     memory = RUNNER_MEMORY_MB * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE_SIZE * 10, MAX_FILE_SIZE * 10))
-    resource.setrlimit(resource.RLIMIT_NOFILE, (RUNNER_MAX_OPEN_FILES, RUNNER_MAX_OPEN_FILES))
+    resource.setrlimit(
+        resource.RLIMIT_NOFILE, (RUNNER_MAX_OPEN_FILES, RUNNER_MAX_OPEN_FILES)
+    )
 
 
 def _run_limited(parts: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -105,13 +107,19 @@ def _run_in_isolated_runner(command: str, cwd: Path) -> dict:
         return {"error": "Commands may run only inside a disposable sandbox worktree."}
     try:
         response = requests.post(
-            f"{RUNNER_URL}/execute", json={"command": command, "directory": str(cwd)},
-            headers={"X-Runner-Key": RUNNER_API_KEY or ""}, timeout=COMMAND_TIMEOUT_SECONDS + 5,
+            f"{RUNNER_URL}/execute",
+            json={"command": command, "directory": str(cwd)},
+            headers={"X-Runner-Key": RUNNER_API_KEY or ""},
+            timeout=COMMAND_TIMEOUT_SECONDS + 5,
         )
         if not response.ok:
             return {"error": "Isolated runner rejected command."}
         payload = response.json()
-        return {"command": command, "exit_code": payload["exit_code"], "output": payload.get("output", "")}
+        return {
+            "command": command,
+            "exit_code": payload["exit_code"],
+            "output": payload.get("output", ""),
+        }
     except requests.RequestException:
         return {"error": "Isolated runner is unavailable."}
 
@@ -615,7 +623,9 @@ def inspect_files(
                     {
                         "path": item,
                         "type": "file",
-                        "content": path.read_text(encoding="utf-8", errors="ignore")[:MAX_FILE_SIZE],
+                        "content": path.read_text(encoding="utf-8", errors="ignore")[
+                            :MAX_FILE_SIZE
+                        ],
                     }
                 )
 
@@ -746,7 +756,9 @@ def run_command(command: str, directory: str = "."):
     except subprocess.TimeoutExpired:
         return {"error": "Command timed out."}
     except FileNotFoundError:
-        return {"error": f"Executable not found: {command.split()[0] if command.split() else command}"}
+        return {
+            "error": f"Executable not found: {command.split()[0] if command.split() else command}"
+        }
     except Exception as e:
         return {"error": str(e)}
 

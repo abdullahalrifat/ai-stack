@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-
 _SOURCE_BLOCK = re.compile(
     r"<source\b[^>]*>(.*?)</source>|<context\b[^>]*>(.*?)</context>",
     re.IGNORECASE | re.DOTALL,

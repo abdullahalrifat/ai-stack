@@ -18,11 +18,25 @@ import requests
 
 import app.tools.register
 from app.agent.planner import create_plan
-from app.agent.service import approve_run, discard_run, ingest_documents, ingest_extracted_documents, run_agent, submit_run
+from app.agent.service import (
+    approve_run,
+    discard_run,
+    ingest_documents,
+    ingest_extracted_documents,
+    run_agent,
+    submit_run,
+)
 from app.core.config import DOCUMENT_MAX_BYTES
 from app.memory.documents import extract_document
 from app.agent.state import AgentState
-from app.core.config import AGENT_MODEL_ID, DEFAULT_MODEL, DEFAULT_WORKSPACE, IMAGE_GENERATION_TIMEOUT_SECONDS, IMAGE_GENERATION_URL, WORKSPACE_ROOTS
+from app.core.config import (
+    AGENT_MODEL_ID,
+    DEFAULT_MODEL,
+    DEFAULT_WORKSPACE,
+    IMAGE_GENERATION_TIMEOUT_SECONDS,
+    IMAGE_GENERATION_URL,
+    WORKSPACE_ROOTS,
+)
 from app.llm.client import get_available_models
 from app.memory.embeddings import create_embedding
 from app.memory.memory import get_conversation, search_memory
@@ -39,7 +53,18 @@ from app.tools.registry import registry
 from .dependencies import require_run_store, verify_api_key
 from .context import openai_prompt
 from .profiles import PROFILES, resolve_profile
-from .schemas import ChatRequest, ExecuteRequest, ImageGenerationRequest, IngestRequest, MemoryQuery, OpenAIChatCompletionRequest, OpenAIEmbeddingRequest, PlanRequest, ProjectRequest, RunRequest
+from .schemas import (
+    ChatRequest,
+    ExecuteRequest,
+    ImageGenerationRequest,
+    IngestRequest,
+    MemoryQuery,
+    OpenAIChatCompletionRequest,
+    OpenAIEmbeddingRequest,
+    PlanRequest,
+    ProjectRequest,
+    RunRequest,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -68,7 +93,9 @@ def debug_tools():
         "count": len(registry.list_tools()),
         "tools": registry.list_tools(),
         "workspace_roots": [str(r) for r in WORKSPACE_ROOTS],
-        "workspace": os.listdir(DEFAULT_WORKSPACE) if DEFAULT_WORKSPACE.exists() else [],
+        "workspace": (
+            os.listdir(DEFAULT_WORKSPACE) if DEFAULT_WORKSPACE.exists() else []
+        ),
         "default_workspace": str(DEFAULT_WORKSPACE),
     }
 
@@ -84,10 +111,16 @@ async def chat(request: ChatRequest):
     if not request.message.strip():
         raise HTTPException(400, "Message cannot be empty")
     if request.allow_write:
-        raise HTTPException(400, "Direct chat is read-only. Use POST /runs for reviewed sandbox writes.")
+        raise HTTPException(
+            400, "Direct chat is read-only. Use POST /runs for reviewed sandbox writes."
+        )
 
     try:
-        profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
+        profile = (
+            resolve_profile(request.model or AGENT_MODEL_ID)
+            if (request.model or AGENT_MODEL_ID) in PROFILES
+            else None
+        )
         workspace = resolve_request_workspace(request.workspace, request.message)
         return await run_in_threadpool(
             run_agent,
@@ -112,8 +145,15 @@ async def chat(request: ChatRequest):
 @router.post("/execute", dependencies=[Depends(verify_api_key)])
 async def execute(request: ExecuteRequest):
     if request.allow_write:
-        raise HTTPException(400, "Direct execute is read-only. Use POST /runs for reviewed sandbox writes.")
-    profile = resolve_profile(request.model or AGENT_MODEL_ID) if (request.model or AGENT_MODEL_ID) in PROFILES else None
+        raise HTTPException(
+            400,
+            "Direct execute is read-only. Use POST /runs for reviewed sandbox writes.",
+        )
+    profile = (
+        resolve_profile(request.model or AGENT_MODEL_ID)
+        if (request.model or AGENT_MODEL_ID) in PROFILES
+        else None
+    )
     workspace = resolve_request_workspace(request.workspace, request.task)
     return await run_in_threadpool(
         run_agent,
@@ -141,7 +181,9 @@ async def execute(request: ExecuteRequest):
 #
 
 
-@router.post("/runs", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
+@router.post(
+    "/runs", dependencies=[Depends(verify_api_key), Depends(require_run_store)]
+)
 async def create_run(request: RunRequest):
     if not request.task.strip():
         raise HTTPException(400, "task cannot be empty")
@@ -171,7 +213,9 @@ async def create_run(request: RunRequest):
     return {"run_id": run_id, "status": "queued"}
 
 
-@router.get("/runs/{run_id}", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
+@router.get(
+    "/runs/{run_id}", dependencies=[Depends(verify_api_key), Depends(require_run_store)]
+)
 async def get_run(run_id: str):
     store = get_run_store()
     run = await run_in_threadpool(store.get_run, run_id)
@@ -185,18 +229,24 @@ async def list_runs(limit: int = 50):
     return {"runs": await run_in_threadpool(get_run_store().list_runs, limit)}
 
 
-@router.get("/projects", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
+@router.get(
+    "/projects", dependencies=[Depends(verify_api_key), Depends(require_run_store)]
+)
 async def list_projects():
     return {"projects": await run_in_threadpool(get_run_store().list_projects)}
 
 
-@router.post("/projects", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
+@router.post(
+    "/projects", dependencies=[Depends(verify_api_key), Depends(require_run_store)]
+)
 async def create_project(request: ProjectRequest):
     if not request.name.strip():
         raise HTTPException(400, "Project name cannot be empty")
     try:
         workspace = resolve_request_workspace(request.workspace)
-        return await run_in_threadpool(get_run_store().create_project, request.name, workspace)
+        return await run_in_threadpool(
+            get_run_store().create_project, request.name, workspace
+        )
     except (ValueError, PermissionError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -218,7 +268,13 @@ async def run_events(run_id: str, after: int = 0):
     if run is None:
         raise HTTPException(404, "Run not found")
 
-    terminal_statuses = {"completed", "awaiting_approval", "failed", "discarded", "cancelled"}
+    terminal_statuses = {
+        "completed",
+        "awaiting_approval",
+        "failed",
+        "discarded",
+        "cancelled",
+    }
 
     async def event_stream():
         last_id = after
@@ -228,9 +284,13 @@ async def run_events(run_id: str, after: int = 0):
             # Subscribe first, then replay from PostgreSQL. Any event that
             # arrives during replay carries an id and is de-duplicated below.
             try:
-                subscription = await run_in_threadpool(get_event_publisher().subscribe, run_id)
+                subscription = await run_in_threadpool(
+                    get_event_publisher().subscribe, run_id
+                )
             except Exception:
-                logger.exception("Redis Pub/Sub unavailable; falling back to durable polling")
+                logger.exception(
+                    "Redis Pub/Sub unavailable; falling back to durable polling"
+                )
 
             while True:
                 events = await run_in_threadpool(store.events_after, run_id, last_id)
@@ -240,15 +300,19 @@ async def run_events(run_id: str, after: int = 0):
                         "id": event["id"],
                         "event_type": event["event_type"],
                         "payload": event["payload"],
-                        "created_at": event["created_at"].isoformat()
-                        if isinstance(event["created_at"], datetime)
-                        else event["created_at"],
+                        "created_at": (
+                            event["created_at"].isoformat()
+                            if isinstance(event["created_at"], datetime)
+                            else event["created_at"]
+                        ),
                     }
                     yield f"data: {json.dumps(payload, default=str)}\n\n"
                     last_emit = time.monotonic()
 
                 if subscription is not None:
-                    while message := await run_in_threadpool(subscription.get_message, timeout=0):
+                    while message := await run_in_threadpool(
+                        subscription.get_message, timeout=0
+                    ):
                         try:
                             event = json.loads(message["data"])
                         except (KeyError, TypeError, json.JSONDecodeError):
@@ -261,7 +325,11 @@ async def run_events(run_id: str, after: int = 0):
                         last_emit = time.monotonic()
 
                 current = await run_in_threadpool(store.get_run, run_id)
-                if current is not None and current["status"] in terminal_statuses and not events:
+                if (
+                    current is not None
+                    and current["status"] in terminal_statuses
+                    and not events
+                ):
                     yield f"data: {json.dumps({'event_type': 'stream_closed', 'status': current['status']})}\n\n"
                     break
                 if time.monotonic() - last_emit >= RUN_STREAM_HEARTBEAT_SECONDS:
@@ -289,7 +357,9 @@ async def cancel(run_id: str):
         run = await run_in_threadpool(store.get_run, run_id)
         if run is None:
             raise HTTPException(404, "Run not found")
-        raise HTTPException(409, f"Run cannot be cancelled from status '{run['status']}'")
+        raise HTTPException(
+            409, f"Run cannot be cancelled from status '{run['status']}'"
+        )
     run = await run_in_threadpool(store.get_run, run_id)
     status = str(run["status"]) if run else "cancelling"
     event = await run_in_threadpool(
@@ -352,7 +422,10 @@ async def openai_chat(
     if not prompt.strip():
         raise HTTPException(400, "A user message is required")
     if request.allow_write:
-        raise HTTPException(400, "OpenAI-compatible chat is read-only. Use POST /runs for reviewed sandbox writes.")
+        raise HTTPException(
+            400,
+            "OpenAI-compatible chat is read-only. Use POST /runs for reviewed sandbox writes.",
+        )
     workspace = resolve_request_workspace(request.workspace, prompt)
 
     created = int(datetime.now(timezone.utc).timestamp())
@@ -363,6 +436,7 @@ async def openai_chat(
     conversation_id = x_conversation_id or request.conversation_id or str(uuid.uuid4())
 
     if request.stream:
+
         async def completion_stream():
             """OpenAI SSE with real model-token deltas and tool-status comments."""
             updates: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -376,7 +450,9 @@ async def openai_chat(
                         workspace,
                         profile.model,
                         False,
-                        on_event=lambda kind, payload: updates.put(("event", (kind, payload))),
+                        on_event=lambda kind, payload: updates.put(
+                            ("event", (kind, payload))
+                        ),
                         on_token=lambda content: updates.put(("token", content)),
                         force_research=profile.force_research,
                         prompt_mode=profile.prompt_mode,
@@ -392,9 +468,13 @@ async def openai_chat(
             worker = threading.Thread(target=run_stream, daemon=True)
             worker.start()
             initial = {
-                "id": f"chatcmpl-{created}", "object": "chat.completion.chunk",
-                "created": created, "model": request.model or AGENT_MODEL_ID,
-                "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+                "id": f"chatcmpl-{created}",
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": request.model or AGENT_MODEL_ID,
+                "choices": [
+                    {"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}
+                ],
             }
             yield f"data: {json.dumps(initial)}\n\n"
             emitted_token = False
@@ -409,9 +489,17 @@ async def openai_chat(
                 if kind == "token":
                     emitted_token = True
                     delta = {
-                        "id": f"chatcmpl-{created}", "object": "chat.completion.chunk",
-                        "created": created, "model": request.model or AGENT_MODEL_ID,
-                        "choices": [{"index": 0, "delta": {"content": payload}, "finish_reason": None}],
+                        "id": f"chatcmpl-{created}",
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": request.model or AGENT_MODEL_ID,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": payload},
+                                "finish_reason": None,
+                            }
+                        ],
                     }
                     yield f"data: {json.dumps(delta)}\n\n"
                 elif kind == "event":
@@ -420,23 +508,43 @@ async def openai_chat(
 
             if finished.get("error"):
                 error_delta = {
-                    "id": f"chatcmpl-{created}", "object": "chat.completion.chunk",
-                    "created": created, "model": request.model or AGENT_MODEL_ID,
-                    "choices": [{"index": 0, "delta": {"content": f"Agent request failed: {finished['error']}"}, "finish_reason": None}],
+                    "id": f"chatcmpl-{created}",
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": request.model or AGENT_MODEL_ID,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "content": f"Agent request failed: {finished['error']}"
+                            },
+                            "finish_reason": None,
+                        }
+                    ],
                 }
                 yield f"data: {json.dumps(error_delta)}\n\n"
             elif not emitted_token:
                 # A backend may not stream content even though it accepts a
                 # streaming request. Preserve a useful OpenAI response.
                 fallback = {
-                    "id": f"chatcmpl-{created}", "object": "chat.completion.chunk",
-                    "created": created, "model": request.model or AGENT_MODEL_ID,
-                    "choices": [{"index": 0, "delta": {"content": finished.get("answer", "")}, "finish_reason": None}],
+                    "id": f"chatcmpl-{created}",
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": request.model or AGENT_MODEL_ID,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": finished.get("answer", "")},
+                            "finish_reason": None,
+                        }
+                    ],
                 }
                 yield f"data: {json.dumps(fallback)}\n\n"
             final = {
-                "id": f"chatcmpl-{created}", "object": "chat.completion.chunk",
-                "created": created, "model": request.model or AGENT_MODEL_ID,
+                "id": f"chatcmpl-{created}",
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": request.model or AGENT_MODEL_ID,
                 "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
             }
             yield f"data: {json.dumps(final)}\n\n"
@@ -511,7 +619,10 @@ def available_models():
 
 @router.get("/images/status", dependencies=[Depends(verify_api_key)])
 def image_generation_status():
-    return {"available": bool(IMAGE_GENERATION_URL), "provider": "automatic1111" if IMAGE_GENERATION_URL else None}
+    return {
+        "available": bool(IMAGE_GENERATION_URL),
+        "provider": "automatic1111" if IMAGE_GENERATION_URL else None,
+    }
 
 
 @router.post("/images/generations", dependencies=[Depends(verify_api_key)])
@@ -522,7 +633,10 @@ async def generate_image(request: ImageGenerationRequest):
     arbitrary destination. Returned images remain data URLs for the local UI.
     """
     if not IMAGE_GENERATION_URL:
-        raise HTTPException(503, "Image generation is not configured. Set IMAGE_GENERATION_URL to an Automatic1111/Forge API.")
+        raise HTTPException(
+            503,
+            "Image generation is not configured. Set IMAGE_GENERATION_URL to an Automatic1111/Forge API.",
+        )
     if not request.prompt.strip():
         raise HTTPException(400, "Image prompt cannot be empty")
     payload = request.model_dump()
@@ -538,7 +652,10 @@ async def generate_image(request: ImageGenerationRequest):
     except requests.RequestException as exc:
         logger.exception("Image generation backend failed")
         raise HTTPException(502, "Image generation backend is unavailable") from exc
-    return {"created": int(datetime.now(timezone.utc).timestamp()), "data": [{"url": f"data:image/png;base64,{image}"} for image in images]}
+    return {
+        "created": int(datetime.now(timezone.utc).timestamp()),
+        "data": [{"url": f"data:image/png;base64,{image}"} for image in images],
+    }
 
 
 @router.get("/v1/models/{model_id}", dependencies=[Depends(verify_api_key)])
@@ -645,7 +762,9 @@ def conversation(conversation_id: str):
 async def memory_search(request: MemoryQuery):
     return {
         "query": request.query,
-        "results": await run_in_threadpool(search_memory, request.query, request.top_k, request.scope),
+        "results": await run_in_threadpool(
+            search_memory, request.query, request.top_k, request.scope
+        ),
     }
 
 

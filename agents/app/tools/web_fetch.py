@@ -10,7 +10,11 @@ from langchain.tools import tool
 from pypdf import PdfReader
 import requests
 
-from app.core.config import WEB_FETCH_MAX_BYTES, WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS
+from app.core.config import (
+    WEB_FETCH_MAX_BYTES,
+    WEB_SEARCH_ENABLED,
+    WEB_SEARCH_TIMEOUT_SECONDS,
+)
 
 MAX_TEXT_CHARS = 12_000
 MAX_PDF_PAGES = 12
@@ -23,11 +27,15 @@ def _public_http_url(url: str) -> bool:
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username:
         return False
     try:
-        addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+        addresses = socket.getaddrinfo(
+            parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM
+        )
     except socket.gaierror:
         return False
     try:
-        return bool(addresses) and all(ip_address(item[4][0]).is_global for item in addresses)
+        return bool(addresses) and all(
+            ip_address(item[4][0]).is_global for item in addresses
+        )
     except ValueError:
         return False
 
@@ -66,7 +74,9 @@ def web_fetch(url: str):
         )
         response.raise_for_status()
         if response.is_redirect:
-            return {"error": "Redirects are not followed; search for the final public URL."}
+            return {
+                "error": "Redirects are not followed; search for the final public URL."
+            }
         content_type = response.headers.get("content-type", "").lower()
         payload = _read_bounded(response)
         if "pdf" in content_type or url.lower().split("?", 1)[0].endswith(".pdf"):
@@ -78,7 +88,9 @@ def web_fetch(url: str):
             head = list(range(min(MAX_PDF_PAGES // 2, total_pages)))
             tail_start = max(len(head), total_pages - (MAX_PDF_PAGES - len(head)))
             page_numbers = head + list(range(tail_start, total_pages))
-            text = "\n".join((reader.pages[index].extract_text() or "") for index in page_numbers)
+            text = "\n".join(
+                (reader.pages[index].extract_text() or "") for index in page_numbers
+            )
             document_type = "pdf"
         elif "html" in content_type or "text/" in content_type or not content_type:
             soup = BeautifulSoup(payload, "html.parser")

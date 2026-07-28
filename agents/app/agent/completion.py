@@ -2,7 +2,6 @@
 
 import re
 
-
 _CHANGE_REQUEST = re.compile(
     r"\b(?:add|build|change|create|edit|fix|implement|improve|modify|"
     r"refactor|remove|rename|replace|update|write)\b",
@@ -48,11 +47,7 @@ def _tool_category(tool_name: str, args: dict) -> str:
     if tool_name == "run_command":
         command = str(args.get("command", "")).strip()
         executable = command.split(maxsplit=1)[0] if command else ""
-        return (
-            "verification"
-            if executable in _VERIFICATION_COMMANDS
-            else "command"
-        )
+        return "verification" if executable in _VERIFICATION_COMMANDS else "command"
     if tool_name in {"web_search", "web_fetch"}:
         return "external_evidence"
     return "inspection"

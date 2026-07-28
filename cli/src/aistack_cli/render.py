@@ -18,11 +18,11 @@ def _compact(value: Any, limit: int = 320) -> str:
 
 class EventRenderer:
     def __init__(
-            self,
-            *,
-            output: str = "text",
-            stream: TextIO | None = None,
-            color: bool | None = None,
+        self,
+        *,
+        output: str = "text",
+        stream: TextIO | None = None,
+        color: bool | None = None,
     ):
         self.output = output
         self.stream = stream or sys.stdout

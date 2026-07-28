@@ -6,7 +6,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, GENERATED_MEMORY_ENABLED, MAX_CONCURRENT_AGENT_RUNS, MEMORY_CONTEXT_TOKENS, MEMORY_ENABLED, MEMORY_FOR_CODE_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
+from ..core.config import (
+    DEFAULT_MODEL,
+    DEFAULT_WORKSPACE,
+    GENERATED_MEMORY_ENABLED,
+    MAX_CONCURRENT_AGENT_RUNS,
+    MEMORY_CONTEXT_TOKENS,
+    MEMORY_ENABLED,
+    MEMORY_FOR_CODE_RUNS,
+    RESEARCH_MODEL,
+    RUN_EVENT_BATCH_CHARS,
+    RUN_EVENT_BATCH_SECONDS,
+)
 from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
@@ -23,7 +34,13 @@ from ..memory.embeddings import create_embedding
 from .planner import create_plan, deterministic_plan
 from .router import route_request
 from ..runs.store import get_run_store
-from ..runs.sandbox import Sandbox, create_sandbox, merge_sandbox, remove_sandbox, sandbox_diff
+from ..runs.sandbox import (
+    Sandbox,
+    create_sandbox,
+    merge_sandbox,
+    remove_sandbox,
+    sandbox_diff,
+)
 from .state import AgentState
 from ..tools.filesystem import workspace_context
 from ..api.profiles import resolve_profile
@@ -133,7 +150,9 @@ def _apply_auto_route(state, on_event=None) -> None:
     state.task_progress = {task.id: "pending" for task in decision.tasks}
     brief_parts = [f"Translated objective:\n{decision.translated_task}"]
     if state.routing_entities:
-        brief_parts.append("Grounded entities:\n- " + "\n- ".join(state.routing_entities))
+        brief_parts.append(
+            "Grounded entities:\n- " + "\n- ".join(state.routing_entities)
+        )
     rejected_entities = [
         entity for entity in decision.entities if entity not in state.routing_entities
     ]
@@ -146,7 +165,9 @@ def _apply_auto_route(state, on_event=None) -> None:
     if decision.constraints:
         brief_parts.append("Constraints:\n- " + "\n- ".join(decision.constraints))
     if decision.deliverables:
-        brief_parts.append("Required deliverables:\n- " + "\n- ".join(decision.deliverables))
+        brief_parts.append(
+            "Required deliverables:\n- " + "\n- ".join(decision.deliverables)
+        )
     if decision.missing_inputs:
         brief_parts.append(
             "Known missing inputs (continue when safe; do not invent them):\n- "
@@ -169,8 +190,7 @@ def _apply_auto_route(state, on_event=None) -> None:
         )
     if decision.validation_warnings:
         brief_parts.append(
-            "Route validation warnings:\n- "
-            + "\n- ".join(decision.validation_warnings)
+            "Route validation warnings:\n- " + "\n- ".join(decision.validation_warnings)
         )
     task_lines = []
     for task in decision.tasks:
@@ -303,13 +323,22 @@ def run_agent(
         # only a short server-side tail is needed for direct API callers.
         state.history = get_conversation(conversation_id, limit=4)
         state.memory_scope = str(workspace)
-        state.memories = memory_context(search_memory(message, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode) else []
-        state.document_evidence = (
-            build_document_evidence(message, state.memories)
-            or build_inline_document_evidence(message)
+        state.memories = (
+            memory_context(
+                search_memory(message, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS
+            )
+            if _uses_memory(state.prompt_mode)
+            else []
         )
+        state.document_evidence = build_document_evidence(
+            message, state.memories
+        ) or build_inline_document_evidence(message)
         _apply_auto_route(state, on_event)
-        research_mode = force_research or state.requires_external_evidence or requires_external_search(message)
+        research_mode = (
+            force_research
+            or state.requires_external_evidence
+            or requires_external_search(message)
+        )
         state.plan = _execution_plan(state, research_mode)
         answer = execute_plan(
             state,
@@ -433,21 +462,33 @@ def execute_run(run_id: str) -> None:
             state.pending_failure_categories = set(
                 checkpoint.get("pending_failure_categories") or []
             )
-            on_event("checkpoint_restored", {"steps": state.steps, "observations": len(state.observations)})
+            on_event(
+                "checkpoint_restored",
+                {"steps": state.steps, "observations": len(state.observations)},
+            )
         store.update_run(run_id, active_workspace=active_workspace)
 
         with workspace_context(active_workspace):
             state.history = get_conversation(conversation_id, limit=4)
             state.memory_scope = run.get("document_scope") or str(requested_workspace)
-            state.memories = memory_context(search_memory(task, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode, run.get("document_scope")) else []
-            state.document_evidence = (
-                build_document_evidence(task, state.memories)
-                or build_inline_document_evidence(task)
+            state.memories = (
+                memory_context(
+                    search_memory(task, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS
+                )
+                if _uses_memory(state.prompt_mode, run.get("document_scope"))
+                else []
             )
+            state.document_evidence = build_document_evidence(
+                task, state.memories
+            ) or build_inline_document_evidence(task)
 
             on_event("planning", {})
             _apply_auto_route(state, on_event)
-            research_mode = force_research or state.requires_external_evidence or requires_external_search(task)
+            research_mode = (
+                force_research
+                or state.requires_external_evidence
+                or requires_external_search(task)
+            )
             state.plan = _execution_plan(state, research_mode)
             on_event("plan_ready", {"plan": state.plan})
 
@@ -457,7 +498,9 @@ def execute_run(run_id: str) -> None:
                 on_token=lambda content: on_event("output_delta", {"content": content}),
                 should_cancel=cancelled,
                 force_research=force_research or state.requires_external_evidence,
-                on_checkpoint=lambda checkpoint: store.update_checkpoint(run_id, checkpoint),
+                on_checkpoint=lambda checkpoint: store.update_checkpoint(
+                    run_id, checkpoint
+                ),
             )
 
         diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
@@ -577,7 +620,11 @@ def _document_chunks_with_positions(text: str, size: int = 1_800, overlap: int =
         # Exceptionally long machine-generated lines still need a hard bound.
         if len(line) > size:
             if current:
-                yield "".join(item[1] for item in current), current[0][0], current[-1][0]
+                yield (
+                    "".join(item[1] for item in current),
+                    current[0][0],
+                    current[-1][0],
+                )
                 current, current_size = [], 0
             start = 0
             while start < len(line):
@@ -609,14 +656,18 @@ def _document_chunks(text: str, size: int = 1_800, overlap: int = 240):
         yield chunk
 
 
-def ingest_documents(texts: list[str], metadata: dict[str, Any] | None = None, scope: str | None = None):
+def ingest_documents(
+    texts: list[str], metadata: dict[str, Any] | None = None, scope: str | None = None
+):
     stored = 0
 
     for document_index, text in enumerate(texts):
         if not text or not text.strip():
             continue
 
-        for chunk_index, (chunk, row_start, row_end) in enumerate(_document_chunks_with_positions(text)):
+        for chunk_index, (chunk, row_start, row_end) in enumerate(
+            _document_chunks_with_positions(text)
+        ):
             embedding = create_embedding(chunk)
             save_long_term_memory(
                 chunk,

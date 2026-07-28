@@ -13,8 +13,15 @@ from docx import Document as DocxDocument
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
-
-SUPPORTED_DOCUMENT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".pdf", ".docx", ".xlsx"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".csv",
+    ".json",
+    ".pdf",
+    ".docx",
+    ".xlsx",
+}
 
 
 @dataclass(frozen=True)
@@ -27,11 +34,15 @@ def extraction_quality(text: str) -> dict[str, str | int | float | bool]:
     """Return cheap, format-independent extraction diagnostics."""
     stripped = text.strip()
     characters = len(stripped)
-    printable = sum(character.isprintable() or character in "\n\t" for character in stripped)
+    printable = sum(
+        character.isprintable() or character in "\n\t" for character in stripped
+    )
     replacement = stripped.count("\ufffd")
     lines = [line for line in stripped.splitlines() if line.strip()]
     table_rows = sum(
-        1 for line in lines if line.count("|") >= 1 or len(re.split(r"\s{2,}", line.strip())) >= 3
+        1
+        for line in lines
+        if line.count("|") >= 1 or len(re.split(r"\s{2,}", line.strip())) >= 3
     )
     printable_ratio = printable / max(characters, 1)
     replacement_ratio = replacement / max(characters, 1)
@@ -39,9 +50,7 @@ def extraction_quality(text: str) -> dict[str, str | int | float | bool]:
         0.0,
         min(
             1.0,
-            printable_ratio
-            - replacement_ratio * 4
-            - (0.35 if characters < 20 else 0),
+            printable_ratio - replacement_ratio * 4 - (0.35 if characters < 20 else 0),
         ),
     )
     return {
@@ -50,7 +59,9 @@ def extraction_quality(text: str) -> dict[str, str | int | float | bool]:
         "line_count": len(lines),
         "table_row_count": table_rows,
         "needs_ocr": characters < 20 or score < 0.55,
-        "extraction_status": "low_quality" if characters < 20 or score < 0.55 else "usable",
+        "extraction_status": (
+            "low_quality" if characters < 20 or score < 0.55 else "usable"
+        ),
     }
 
 
@@ -62,11 +73,17 @@ def _section_metadata(text: str) -> dict[str, str | int]:
         if len(line) <= 160
         and (
             line.endswith(":")
-            or (len(line.split()) <= 12 and line.upper() == line and any(c.isalpha() for c in line))
+            or (
+                len(line.split()) <= 12
+                and line.upper() == line
+                and any(c.isalpha() for c in line)
+            )
         )
     ][:8]
     lowered = " ".join(headings or lines[:3]).lower()
-    if re.search(r"\b(history|historical|appendix|example|prior|previous|archive)\b", lowered):
+    if re.search(
+        r"\b(history|historical|appendix|example|prior|previous|archive)\b", lowered
+    ):
         section_kind = "supplementary"
     elif re.search(r"\b(total|summary|overview)\b", lowered):
         section_kind = "summary"
@@ -172,7 +189,11 @@ def extract_document(filename: str, content: bytes) -> list[ExtractedDocument]:
         return sections
     if suffix == ".docx":
         document = DocxDocument(io.BytesIO(content))
-        blocks = [paragraph.text for paragraph in document.paragraphs if paragraph.text.strip()]
+        blocks = [
+            paragraph.text
+            for paragraph in document.paragraphs
+            if paragraph.text.strip()
+        ]
         for table in document.tables:
             blocks.extend(
                 " | ".join(cell.text.strip() for cell in row.cells)
@@ -180,7 +201,11 @@ def extract_document(filename: str, content: bytes) -> list[ExtractedDocument]:
                 if any(cell.text.strip() for cell in row.cells)
             )
         text = "\n".join(blocks)
-        return [_with_diagnostics(text, {**base, "location": "document"})] if text.strip() else []
+        return (
+            [_with_diagnostics(text, {**base, "location": "document"})]
+            if text.strip()
+            else []
+        )
     if suffix == ".xlsx":
         workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         sections: list[ExtractedDocument] = []
@@ -213,4 +238,8 @@ def extract_document(filename: str, content: bytes) -> list[ExtractedDocument]:
             text = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
         except json.JSONDecodeError:
             pass
-    return [_with_diagnostics(text, {**base, "location": "document"})] if text.strip() else []
+    return (
+        [_with_diagnostics(text, {**base, "location": "document"})]
+        if text.strip()
+        else []
+    )

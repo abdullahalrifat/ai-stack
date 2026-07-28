@@ -31,12 +31,21 @@ def main() -> int:
         )
         answer = response.json().get("answer", "") if response.ok else response.text
         lower = answer.lower()
-        missing = [value for value in case["must_contain"] if value.lower() not in lower]
+        missing = [
+            value for value in case["must_contain"] if value.lower() not in lower
+        ]
         forbidden = [value for value in case["forbid"] if value.lower() in lower]
         status = "PASS" if response.ok and not missing and not forbidden else "FAIL"
         print(f"{status} {case['id']}")
         if status == "FAIL":
-            failures.append({"id": case["id"], "http": response.status_code, "missing": missing, "forbidden": forbidden})
+            failures.append(
+                {
+                    "id": case["id"],
+                    "http": response.status_code,
+                    "missing": missing,
+                    "forbidden": forbidden,
+                }
+            )
     if failures:
         print(json.dumps(failures, indent=2))
         return 1

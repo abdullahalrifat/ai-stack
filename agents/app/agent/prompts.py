@@ -211,6 +211,7 @@ def executor_prompt(prompt_mode: str, research_mode: bool) -> str:
         return VISION_PROMPT
     return EXECUTOR_PROMPT + SHARED_RELIABILITY_PROMPT
 
+
 # ============================================================
 # Reflection
 # ============================================================

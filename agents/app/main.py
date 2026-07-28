@@ -37,7 +37,9 @@ async def lifespan(_: FastAPI):
                 try:
                     remove_sandbox(run["repository_path"], run["sandbox_path"])
                 except Exception:
-                    logger.exception("Could not clean up interrupted sandbox for run %s", run["id"])
+                    logger.exception(
+                        "Could not clean up interrupted sandbox for run %s", run["id"]
+                    )
         for run_id in queued:
             logger.info("Resuming queued run %s after service restart", run_id)
             submit_run(run_id)

@@ -122,7 +122,9 @@ def financial_price_query(message: str) -> str:
     """
 
     subject = message
-    match = re.search(r"\b(?:search|find|look\s+up)\s+([\w.-]+)", message, re.IGNORECASE)
+    match = re.search(
+        r"\b(?:search|find|look\s+up)\s+([\w.-]+)", message, re.IGNORECASE
+    )
     if match:
         subject = match.group(1)
 
@@ -130,12 +132,18 @@ def financial_price_query(message: str) -> str:
     return f"{subject} {market} latest closing price previous close historical data"
 
 
-def financial_research_queries(message: str, entities: list[str] | None = None) -> list[str]:
+def financial_research_queries(
+    message: str, entities: list[str] | None = None
+) -> list[str]:
     """Return a minimal evidence set for an investment-style research request."""
 
     named_entities = [item.strip() for item in (entities or []) if item.strip()][:10]
     if named_entities:
-        market = "DSE Bangladesh" if re.search(r"\bdse\b|bangladesh", message, re.IGNORECASE) else "stock market"
+        market = (
+            "DSE Bangladesh"
+            if re.search(r"\bdse\b|bangladesh", message, re.IGNORECASE)
+            else "stock market"
+        )
         return [
             f"{entity} {market} latest price annual report revenue profit debt latest news"
             for entity in named_entities
@@ -166,7 +174,8 @@ def financial_document_urls(searches: list[dict]) -> list[str]:
         candidates = [
             item
             for item in results
-            if company and company in f"{item.get('title', '')} {item.get('url', '')}".lower()
+            if company
+            and company in f"{item.get('title', '')} {item.get('url', '')}".lower()
         ]
         if not company:
             candidates = [item for item in results if isinstance(item, dict)]
@@ -200,7 +209,7 @@ def financial_document_excerpt(text: str, limit: int = 3_000) -> str:
     if len(text) <= limit:
         return text
     head = limit // 2
-    return f"{text[:head]}\n...[middle omitted]...\n{text[-(limit - head):]}"
+    return f"{text[:head]}\n...[middle omitted]...\n{text[-(limit - head) :]}"
 
 
 def _prefetch_external_search(state, available_tools: list[str], on_event):
@@ -219,7 +228,8 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
     search_task = getattr(state, "execution_brief", "") or state.user_message
     queries = (
         financial_research_queries(search_task, getattr(state, "routing_entities", []))
-        if getattr(state, "prompt_mode", "") == "finance" or is_financial_query(search_task)
+        if getattr(state, "prompt_mode", "") == "finance"
+        or is_financial_query(search_task)
         else [search_task]
     )
     searches = []
@@ -232,7 +242,9 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
             logger.exception("Prefetch web search failed")
             result = {"error": str(exc)}
         state.add_tool("web_search", result)
-        on_event("tool_result", {"tool": "web_search", "result": result, "prefetch": True})
+        on_event(
+            "tool_result", {"tool": "web_search", "result": result, "prefetch": True}
+        )
         searches.append(result)
 
     if len(searches) == 1:
@@ -252,7 +264,9 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
                 # Preserve room for both documents in the model context.
                 result = {**result, "text": financial_document_excerpt(result["text"])}
             state.add_tool("web_fetch", result)
-            on_event("tool_result", {"tool": "web_fetch", "result": result, "prefetch": True})
+            on_event(
+                "tool_result", {"tool": "web_fetch", "result": result, "prefetch": True}
+            )
             documents.append(result)
             linked_pdf = report_pdf_link(result) if isinstance(result, dict) else None
             if linked_pdf:
@@ -260,16 +274,27 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
                 # model context instead of spending that space on the archive.
                 documents.pop()
                 pdf_args = {"url": linked_pdf}
-                on_event("tool_call", {"tool": "web_fetch", "args": pdf_args, "prefetch": True})
+                on_event(
+                    "tool_call",
+                    {"tool": "web_fetch", "args": pdf_args, "prefetch": True},
+                )
                 try:
                     pdf_result = registry.execute("web_fetch", pdf_args)
                 except Exception as exc:
                     logger.exception("Prefetch report PDF fetch failed")
                     pdf_result = {"error": str(exc)}
-                if isinstance(pdf_result, dict) and isinstance(pdf_result.get("text"), str):
-                    pdf_result = {**pdf_result, "text": financial_document_excerpt(pdf_result["text"])}
+                if isinstance(pdf_result, dict) and isinstance(
+                    pdf_result.get("text"), str
+                ):
+                    pdf_result = {
+                        **pdf_result,
+                        "text": financial_document_excerpt(pdf_result["text"]),
+                    }
                 state.add_tool("web_fetch", pdf_result)
-                on_event("tool_result", {"tool": "web_fetch", "result": pdf_result, "prefetch": True})
+                on_event(
+                    "tool_result",
+                    {"tool": "web_fetch", "result": pdf_result, "prefetch": True},
+                )
                 documents.append(pdf_result)
 
     # Keep the price evidence and full-document extracts first: context is
@@ -307,8 +332,10 @@ def _leaked_tool_call(text: str) -> bool:
     for item in items:
         if not isinstance(item, dict):
             return False
-        if "function" in item or "tool_calls" in item or (
-            "tool" in item and "args" in item
+        if (
+            "function" in item
+            or "tool_calls" in item
+            or ("tool" in item and "args" in item)
         ):
             continue
         return False
@@ -381,7 +408,12 @@ def _compact_history(messages: list, model: str) -> list:
 
 
 def _needs_compaction(messages: list, system_prompt: str, tools: list[dict]) -> bool:
-    return estimate_tokens(messages) + estimate_tokens(system_prompt) + estimate_tokens(tools) >= CONTEXT_COMPACT_THRESHOLD_TOKENS
+    return (
+        estimate_tokens(messages)
+        + estimate_tokens(system_prompt)
+        + estimate_tokens(tools)
+        >= CONTEXT_COMPACT_THRESHOLD_TOKENS
+    )
 
 
 def _synthesize_partial_answer(state) -> str:
@@ -431,7 +463,13 @@ Collected tool evidence:
     return "I could not complete the investigation. Please retry the request."
 
 
-def _stream_message(messages: list, tools: list, model: str, max_tokens: int | None = None, timeout_seconds: int | None = None) -> SimpleNamespace:
+def _stream_message(
+    messages: list,
+    tools: list,
+    model: str,
+    max_tokens: int | None = None,
+    timeout_seconds: int | None = None,
+) -> SimpleNamespace:
     """Collect one streamed model turn without publishing unaudited answer text.
 
     OpenAI-compatible APIs stream a function call in fragments.  The tool
@@ -443,7 +481,13 @@ def _stream_message(messages: list, tools: list, model: str, max_tokens: int | N
     reasoning_parts: list[str] = []
     calls: dict[int, dict] = {}
 
-    for chunk in chat_with_tools_stream(messages, tools=tools, model=model, max_tokens=max_tokens, timeout_seconds=timeout_seconds):
+    for chunk in chat_with_tools_stream(
+        messages,
+        tools=tools,
+        model=model,
+        max_tokens=max_tokens,
+        timeout_seconds=timeout_seconds,
+    ):
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             continue
@@ -459,7 +503,9 @@ def _stream_message(messages: list, tools: list, model: str, max_tokens: int | N
         # separate field. They are not an answer or a tool call, but recording
         # them prevents us from treating the stream shape as mysterious when
         # debugging a model/provider mismatch.
-        reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+        reasoning = getattr(delta, "reasoning_content", None) or getattr(
+            delta, "reasoning", None
+        )
         if reasoning:
             reasoning_parts.append(reasoning)
 
@@ -491,7 +537,14 @@ def _stream_message(messages: list, tools: list, model: str, max_tokens: int | N
     )
 
 
-def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_research=False, on_checkpoint=None) -> str:
+def execute_plan(
+    state,
+    on_event=None,
+    on_token=None,
+    should_cancel=None,
+    force_research=False,
+    on_checkpoint=None,
+) -> str:
     """Run the tool-calling loop until the model produces a final answer.
 
     `on_event(event_type, payload)` is called for each notable step so a
@@ -520,12 +573,16 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_
 
     research_mode = force_research or requires_external_search(state.user_message)
     if getattr(state, "prompt_mode", "code") == "quick" and not research_mode:
-        available_tools = [tool for tool in available_tools if tool in QUICK_WORKSPACE_TOOLS]
+        available_tools = [
+            tool for tool in available_tools if tool in QUICK_WORKSPACE_TOOLS
+        ]
 
     if research_mode and "web_search" in available_tools:
         # Prevent a coding-oriented model from wandering through the mounted
         # repository when the user asked for current external information.
-        available_tools = [tool for tool in ("web_search", "web_fetch") if tool in available_tools]
+        available_tools = [
+            tool for tool in ("web_search", "web_fetch") if tool in available_tools
+        ]
 
     tools = schemas_for(available_tools)
     external_search = _prefetch_external_search(state, available_tools, on_event)
@@ -574,11 +631,16 @@ Plan:
             + "\n"
         )
 
-    system_prompt = executor_prompt(getattr(state, "prompt_mode", "code"), research_mode)
+    system_prompt = executor_prompt(
+        getattr(state, "prompt_mode", "code"), research_mode
+    )
     task_context, budget = fit_user_context(system_prompt, tools, task_context)
     if budget["trimmed"]:
         on_event("context_budgeted", budget)
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task_context}]
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": task_context},
+    ]
 
     leaked_tool_call_count = 0
     research_retry_count = 0
@@ -686,9 +748,7 @@ Plan:
                                 state, "successful_verification", False
                             ),
                             "pending_failure_categories": sorted(
-                                getattr(
-                                    state, "pending_failure_categories", set()
-                                )
+                                getattr(state, "pending_failure_categories", set())
                             ),
                         }
                     )
@@ -700,9 +760,13 @@ Plan:
                     empty_search_count = 0
 
                 unproductive = failed
-                fingerprint = f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
+                fingerprint = (
+                    f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
+                )
                 if unproductive:
-                    unproductive_calls[fingerprint] = unproductive_calls.get(fingerprint, 0) + 1
+                    unproductive_calls[fingerprint] = (
+                        unproductive_calls.get(fingerprint, 0) + 1
+                    )
                     failed_tools.append(tool_name)
                 else:
                     unproductive_calls.clear()
@@ -759,7 +823,9 @@ Plan:
                 "empty_model_turn",
                 {
                     "count": empty_turn_count,
-                    "reasoning_chars": len(getattr(message, "reasoning_content", "") or ""),
+                    "reasoning_chars": len(
+                        getattr(message, "reasoning_content", "") or ""
+                    ),
                 },
             )
             if empty_turn_count >= MAX_EMPTY_MODEL_TURNS:
@@ -799,7 +865,10 @@ Plan:
         if research_mode and external_search and _RESEARCH_REFUSAL.search(answer):
             research_retry_count += 1
             if research_retry_count <= 1:
-                on_event("research_answer_retry", {"reason": "model ignored retrieved evidence"})
+                on_event(
+                    "research_answer_retry",
+                    {"reason": "model ignored retrieved evidence"},
+                )
                 messages.append(
                     {
                         "role": "user",
@@ -875,9 +944,8 @@ Plan:
                     }
                 )
                 continue
-            answer = (
-                f"{answer}\n\nIncomplete requirements:\n- "
-                + "\n- ".join(audit_failures)
+            answer = f"{answer}\n\nIncomplete requirements:\n- " + "\n- ".join(
+                audit_failures
             )
             return finalize(answer, partial=True)
 

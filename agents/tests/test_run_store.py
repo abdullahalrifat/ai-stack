@@ -79,9 +79,7 @@ def test_recovery_only_takes_expired_or_legacy_leases():
 
     assert queued == ["queued", "read-only"]
     assert interrupted[0]["id"] == "write-run"
-    recovery_queries = [
-        call.args[0] for call in cursor.execute.call_args_list[1:]
-    ]
+    recovery_queries = [call.args[0] for call in cursor.execute.call_args_list[1:]]
     assert all(
         "lease_expires_at IS NULL OR lease_expires_at < NOW()" in query
         for query in recovery_queries

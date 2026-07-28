@@ -16,9 +16,19 @@ from app.agent.router import (
 @pytest.mark.parametrize(
     ("message", "attachment", "proposed", "expected"),
     [
-        ("Analyze this for the long term", "DSE portfolio holdings", "research", "finance"),
+        (
+            "Analyze this for the long term",
+            "DSE portfolio holdings",
+            "research",
+            "finance",
+        ),
         ("Review the authentication module", "", "research", "code"),
-        ("Compare current release support using primary sources", "", "quick", "research"),
+        (
+            "Compare current release support using primary sources",
+            "",
+            "quick",
+            "research",
+        ),
         ("Evaluate the architecture trade-offs", "", "research", "deep"),
         ("Rewrite this sentence plainly", "", "quick", "quick"),
     ],
@@ -115,7 +125,9 @@ def test_route_request_rejects_unusable_translation(mock_chat, mock_extract_json
 
 @patch("app.agent.router.extract_json")
 @patch("app.agent.router.chat")
-def test_route_request_builds_dependency_validated_task_graph(mock_chat, mock_extract_json):
+def test_route_request_builds_dependency_validated_task_graph(
+    mock_chat, mock_extract_json
+):
     mock_chat.return_value = "{}"
     mock_extract_json.return_value = {
         "workflow": "finance",

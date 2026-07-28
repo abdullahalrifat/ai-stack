@@ -92,34 +92,51 @@ def test_inspect_files_bounds_requested_paths(workspace, monkeypatch):
 
 def test_write_edit_and_read_stay_inside_workspace(workspace):
     with filesystem.workspace_context(str(workspace)):
-        assert filesystem.write_file.invoke(
-            {"file_path": "src/example.txt", "content": "before"}
-        )["status"] == "written"
-        assert filesystem.edit_file.invoke(
-            {
-                "file_path": "src/example.txt",
-                "old_string": "before",
-                "new_string": "after",
-            }
-        )["status"] == "edited"
+        assert (
+            filesystem.write_file.invoke(
+                {"file_path": "src/example.txt", "content": "before"}
+            )["status"]
+            == "written"
+        )
+        assert (
+            filesystem.edit_file.invoke(
+                {
+                    "file_path": "src/example.txt",
+                    "old_string": "before",
+                    "new_string": "after",
+                }
+            )["status"]
+            == "edited"
+        )
         assert filesystem.read_file.invoke({"file_path": "src/example.txt"}) == "after"
-        assert "Access outside workspace denied" in filesystem.write_file.invoke(
-            {"file_path": "../outside.txt", "content": "nope"}
-        )["error"]
+        assert (
+            "Access outside workspace denied"
+            in filesystem.write_file.invoke(
+                {"file_path": "../outside.txt", "content": "nope"}
+            )["error"]
+        )
 
 
 def test_run_command_enforces_policy_before_execution(workspace, monkeypatch):
     monkeypatch.setattr(filesystem, "ALLOWED_COMMANDS", ["echo"])
     monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
-    monkeypatch.setattr(filesystem, "_run_in_isolated_runner", lambda command, cwd: {"command": command, "exit_code": 0, "output": "ok"})
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda command, cwd: {"command": command, "exit_code": 0, "output": "ok"},
+    )
 
     with filesystem.workspace_context(str(workspace)):
-        assert "not permitted" in filesystem.run_command.invoke(
-            {"command": "echo ok; echo unsafe"}
-        )["error"]
-        assert "not an approved command" in filesystem.run_command.invoke(
-            {"command": "git status"}
-        )["error"]
+        assert (
+            "not permitted"
+            in filesystem.run_command.invoke({"command": "echo ok; echo unsafe"})[
+                "error"
+            ]
+        )
+        assert (
+            "not an approved command"
+            in filesystem.run_command.invoke({"command": "git status"})["error"]
+        )
         result = filesystem.run_command.invoke({"command": "echo ok"})
 
     assert result["exit_code"] == 0
@@ -153,8 +170,10 @@ def test_run_tests_coverage_uses_explicit_package_target(workspace, monkeypatch)
     monkeypatch.setattr(
         filesystem,
         "_run_in_isolated_runner",
-        lambda command, cwd: commands.append(command)
-        or {"command": command, "exit_code": 0, "output": "covered"},
+        lambda command, cwd: (
+            commands.append(command)
+            or {"command": command, "exit_code": 0, "output": "covered"}
+        ),
     )
 
     with filesystem.workspace_context(str(workspace)):

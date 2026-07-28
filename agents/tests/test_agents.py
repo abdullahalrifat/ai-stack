@@ -227,7 +227,12 @@ def test_run_event_buffer_batches_output_and_publishes_durable_event(monkeypatch
 
         def append_event(self, run_id, event_type, payload):
             self.calls.append((run_id, event_type, payload))
-            return {"id": len(self.calls), "run_id": run_id, "event_type": event_type, "payload": payload}
+            return {
+                "id": len(self.calls),
+                "run_id": run_id,
+                "event_type": event_type,
+                "payload": payload,
+            }
 
     class Publisher:
         def __init__(self):
@@ -344,7 +349,10 @@ def test_cancelled_before_start_is_not_executed(monkeypatch):
     store = FakeRunStore()
     store.is_cancel_requested = lambda _run_id: True
     monkeypatch.setattr(agent, "get_event_publisher", lambda: None)
-    with patch("app.agent.service.get_run_store", return_value=store), patch("app.agent.service.execute_plan") as execute:
+    with (
+        patch("app.agent.service.get_run_store", return_value=store),
+        patch("app.agent.service.execute_plan") as execute,
+    ):
         agent.execute_run("run-1")
 
     assert store.run["status"] == "cancelled"

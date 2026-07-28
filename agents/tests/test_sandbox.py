@@ -8,11 +8,19 @@ from app.runs import sandbox
 
 def make_repository(path: Path) -> None:
     subprocess.run(["git", "init", str(path)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.email", "test@example.com"], check=True)
-    subprocess.run(["git", "-C", str(path), "config", "user.name", "Test User"], check=True)
+    subprocess.run(
+        ["git", "-C", str(path), "config", "user.email", "test@example.com"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(path), "config", "user.name", "Test User"], check=True
+    )
     (path / "tracked.txt").write_text("before\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "tracked.txt"], check=True)
-    subprocess.run(["git", "-C", str(path), "commit", "-m", "initial"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(path), "commit", "-m", "initial"],
+        check=True,
+        capture_output=True,
+    )
 
 
 def test_git_can_use_an_explicit_safe_directory(tmp_path, monkeypatch):
@@ -26,7 +34,9 @@ def test_git_can_use_an_explicit_safe_directory(tmp_path, monkeypatch):
 
     sandbox._git(tmp_path, "status", safe_directory=tmp_path)
 
-    assert calls == [["git", "-c", f"safe.directory={tmp_path}", "-C", str(tmp_path), "status"]]
+    assert calls == [
+        ["git", "-c", f"safe.directory={tmp_path}", "-C", str(tmp_path), "status"]
+    ]
 
 
 def test_sandbox_diff_includes_untracked_files(tmp_path, monkeypatch):
@@ -51,7 +61,9 @@ def test_merge_sandbox_applies_tracked_and_new_files(tmp_path, monkeypatch):
     make_repository(repository)
     sandbox_root = tmp_path / "sandboxes"
     monkeypatch.setattr(sandbox, "SANDBOX_ROOT", sandbox_root)
-    monkeypatch.setattr(sandbox, "validate_workspace", lambda path: Path(path).resolve())
+    monkeypatch.setattr(
+        sandbox, "validate_workspace", lambda path: Path(path).resolve()
+    )
 
     worktree = sandbox.create_sandbox(str(repository), "run-1")
     (worktree.path / "tracked.txt").write_text("after\n", encoding="utf-8")
@@ -70,13 +82,19 @@ def test_merge_sandbox_rejects_a_changed_base_commit(tmp_path, monkeypatch):
     repository.mkdir()
     make_repository(repository)
     monkeypatch.setattr(sandbox, "SANDBOX_ROOT", tmp_path / "sandboxes")
-    monkeypatch.setattr(sandbox, "validate_workspace", lambda path: Path(path).resolve())
+    monkeypatch.setattr(
+        sandbox, "validate_workspace", lambda path: Path(path).resolve()
+    )
     worktree = sandbox.create_sandbox(str(repository), "run-1")
     (worktree.path / "tracked.txt").write_text("agent edit\n", encoding="utf-8")
 
     (repository / "other.txt").write_text("concurrent commit\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(repository), "add", "other.txt"], check=True)
-    subprocess.run(["git", "-C", str(repository), "commit", "-m", "concurrent"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "-m", "concurrent"],
+        check=True,
+        capture_output=True,
+    )
 
     with pytest.raises(RuntimeError, match="HEAD changed"):
         sandbox.merge_sandbox(worktree)

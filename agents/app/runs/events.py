@@ -23,7 +23,9 @@ class RunEventPublisher:
         self.client = redis.Redis.from_url(url, decode_responses=True)
 
     def publish(self, event: dict[str, Any]) -> None:
-        self.client.publish(channel_for(str(event["run_id"])), json.dumps(event, default=str))
+        self.client.publish(
+            channel_for(str(event["run_id"])), json.dumps(event, default=str)
+        )
 
     def subscribe(self, run_id: str):
         subscription = self.client.pubsub(ignore_subscribe_messages=True)

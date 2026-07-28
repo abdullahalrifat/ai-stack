@@ -23,7 +23,7 @@ _llm_slots = threading.BoundedSemaphore(MAX_CONCURRENT_LLM_CALLS)
 
 
 def get_client():
-    
+
     global _client
 
     if _client is None:
@@ -49,6 +49,7 @@ def resolve_agent_model(model: str | None):
     _ensure_model_available(model)
 
     return model
+
 
 def get_available_models(force_refresh: bool = False):
     """Return the list of model ids the gateway currently serves.
@@ -126,7 +127,14 @@ def chat(
     return response.choices[0].message.content
 
 
-def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", max_tokens: int | None = None, timeout_seconds: int | None = None):
+def chat_with_tools(
+    messages,
+    tools,
+    model=DEFAULT_MODEL,
+    tool_choice="auto",
+    max_tokens: int | None = None,
+    timeout_seconds: int | None = None,
+):
     """Completion using native function calling.
 
     Returns the raw response message object, exposing both `.content` and
@@ -151,7 +159,14 @@ def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", ma
     return response.choices[0].message
 
 
-def chat_with_tools_stream(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", max_tokens: int | None = None, timeout_seconds: int | None = None):
+def chat_with_tools_stream(
+    messages,
+    tools,
+    model=DEFAULT_MODEL,
+    tool_choice="auto",
+    max_tokens: int | None = None,
+    timeout_seconds: int | None = None,
+):
     """Return an OpenAI-compatible streaming tool-call response iterator.
 
     The executor assembles streamed tool-call argument fragments before it

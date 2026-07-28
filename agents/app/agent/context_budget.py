@@ -15,17 +15,31 @@ def estimate_tokens(value: object) -> int:
     return max(pieces, (len(text) + 2) // 3)
 
 
-def fit_user_context(system: str, tools: list[dict], user: str) -> tuple[str, dict[str, int]]:
+def fit_user_context(
+    system: str, tools: list[dict], user: str
+) -> tuple[str, dict[str, int]]:
     """Reserve response space and trim only user context when necessary."""
     fixed = estimate_tokens(system) + estimate_tokens(tools)
     available = max(256, CONTEXT_TOKEN_LIMIT - CONTEXT_OUTPUT_RESERVE_TOKENS - fixed)
     used = estimate_tokens(user)
     if used <= available:
-        return user, {"fixed": fixed, "available": available, "used": used, "trimmed": 0}
+        return user, {
+            "fixed": fixed,
+            "available": available,
+            "used": used,
+            "trimmed": 0,
+        }
     # The task begins near the front; recent context/evidence is normally at
     # the tail. Preserve both with an explicit omission marker.
     max_chars = available * 3
     head = max_chars * 2 // 3
     tail = max_chars - head
-    compacted = f"{user[:head]}\n...[context omitted to fit model budget]...\n{user[-tail:]}"
-    return compacted, {"fixed": fixed, "available": available, "used": used, "trimmed": used - estimate_tokens(compacted)}
+    compacted = (
+        f"{user[:head]}\n...[context omitted to fit model budget]...\n{user[-tail:]}"
+    )
+    return compacted, {
+        "fixed": fixed,
+        "available": available,
+        "used": used,
+        "trimmed": used - estimate_tokens(compacted),
+    }

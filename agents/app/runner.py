@@ -16,7 +16,14 @@ COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "120"))
 CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "90"))
 MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "2048"))
 MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
-ALLOWED = {item.strip() for item in os.getenv("ALLOWED_COMMANDS", "git,pytest,python,python3,npm,node,make,mypy,ruff,black,flake8").split(",") if item.strip()}
+ALLOWED = {
+    item.strip()
+    for item in os.getenv(
+        "ALLOWED_COMMANDS",
+        "git,pytest,python,python3,npm,node,make,mypy,ruff,black,flake8",
+    ).split(",")
+    if item.strip()
+}
 
 app = FastAPI(title="Private agent runner")
 
@@ -36,7 +43,11 @@ def _preexec() -> None:
 
 @app.post("/execute")
 def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):
-    if not RUNNER_API_KEY or not x_runner_key or not hmac.compare_digest(x_runner_key, RUNNER_API_KEY):
+    if (
+        not RUNNER_API_KEY
+        or not x_runner_key
+        or not hmac.compare_digest(x_runner_key, RUNNER_API_KEY)
+    ):
         raise HTTPException(401, "Invalid runner key")
     forbidden = ["&&", "||", "|", ";", ">", "<", "`", "$("]
     if any(token in request.command for token in forbidden):
@@ -54,11 +65,23 @@ def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):
         raise HTTPException(400, "Sandbox directory does not exist")
     try:
         result = subprocess.run(
-            parts, cwd=directory, text=True, capture_output=True, check=False,
+            parts,
+            cwd=directory,
+            text=True,
+            capture_output=True,
+            check=False,
             timeout=COMMAND_TIMEOUT_SECONDS,
-            env={"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "HOME": "/tmp/runner", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+            env={
+                "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                "HOME": "/tmp/runner",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+            },
             preexec_fn=_preexec,
         )
     except subprocess.TimeoutExpired:
         return {"exit_code": 124, "output": "Command timed out"}
-    return {"exit_code": result.returncode, "output": (result.stdout + "\n" + result.stderr).strip()[-30_000:]}
+    return {
+        "exit_code": result.returncode,
+        "output": (result.stdout + "\n" + result.stderr).strip()[-30_000:],
+    }

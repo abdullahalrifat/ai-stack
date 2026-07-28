@@ -12,8 +12,18 @@ from app.memory.memory import (
 
 def test_rerank_prefers_exact_document_evidence():
     results = [
-        {"memory": {"text": "General market discussion", "source": "general.pdf"}, "score": 0.8},
-        {"memory": {"text": "Renata revenue increased in FY2025", "source": "report.pdf", "location": "page 12"}, "score": 0.7},
+        {
+            "memory": {"text": "General market discussion", "source": "general.pdf"},
+            "score": 0.8,
+        },
+        {
+            "memory": {
+                "text": "Renata revenue increased in FY2025",
+                "source": "report.pdf",
+                "location": "page 12",
+            },
+            "score": 0.7,
+        },
     ]
 
     ranked = _rerank("Renata revenue FY2025", results, 2)

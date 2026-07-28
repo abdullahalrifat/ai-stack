@@ -5,7 +5,11 @@ from urllib.parse import urlparse
 import requests
 from langchain.tools import tool
 
-from app.core.config import WEB_SEARCH_ENABLED, WEB_SEARCH_TIMEOUT_SECONDS, WEB_SEARCH_URL
+from app.core.config import (
+    WEB_SEARCH_ENABLED,
+    WEB_SEARCH_TIMEOUT_SECONDS,
+    WEB_SEARCH_URL,
+)
 
 # Search snippets are evidence, not a document dump.  A small, focused set
 # keeps local-model prompts inside their usable context window.

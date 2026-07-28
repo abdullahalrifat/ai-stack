@@ -17,13 +17,13 @@ class APIError(RuntimeError):
 
 class AgentClient:
     def __init__(
-            self,
-            base_url: str,
-            api_key: str,
-            *,
-            timeout: float = 30,
-            stream_timeout: float = 90,
-            opener=urlopen,
+        self,
+        base_url: str,
+        api_key: str,
+        *,
+        timeout: float = 30,
+        stream_timeout: float = 90,
+        opener=urlopen,
     ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -32,12 +32,12 @@ class AgentClient:
         self._opener = opener
 
     def _request(
-            self,
-            method: str,
-            path: str,
-            payload: dict[str, Any] | None = None,
-            *,
-            timeout: float | None = None,
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        timeout: float | None = None,
     ):
         body = None
         headers = {
@@ -70,10 +70,10 @@ class AgentClient:
             raise APIError(f"Could not reach {self.base_url}: {exc.reason}") from exc
 
     def request(
-            self,
-            method: str,
-            path: str,
-            payload: dict[str, Any] | None = None,
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         with self._request(method, path, payload) as response:
             raw = response.read().decode()
@@ -95,13 +95,13 @@ class AgentClient:
         return list(self.request("GET", "/projects").get("projects", []))
 
     def create_run(
-            self,
-            task: str,
-            *,
-            workspace: str,
-            conversation_id: str,
-            allow_write: bool,
-            project_id: str | None = None,
+        self,
+        task: str,
+        *,
+        workspace: str,
+        conversation_id: str,
+        allow_write: bool,
+        project_id: str | None = None,
     ) -> dict[str, Any]:
         return self.request(
             "POST",
@@ -132,10 +132,10 @@ class AgentClient:
         )
 
     def stream_events(
-            self,
-            run_id: str,
-            *,
-            after: int = 0,
+        self,
+        run_id: str,
+        *,
+        after: int = 0,
     ) -> Iterator[dict[str, Any]]:
         query = urlencode({"after": after})
         response = self._request(

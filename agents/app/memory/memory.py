@@ -176,7 +176,11 @@ def _lexical_score(query: str, payload: dict) -> float:
 def _section_adjustment(query: str, payload: dict) -> float:
     """Prefer primary/current sections unless the user explicitly asks for history."""
     query_lower = query.lower()
-    wants_history = bool(re.search(r"\b(history|historical|previous|prior|archive|example)\b", query_lower))
+    wants_history = bool(
+        re.search(
+            r"\b(history|historical|previous|prior|archive|example)\b", query_lower
+        )
+    )
     kind = payload.get("section_kind")
     if kind == "supplementary" and not wants_history:
         return -0.18
@@ -195,17 +199,27 @@ def _rerank(query: str, results: list[dict], limit: int) -> list[dict]:
         lexical = float(result.get("lexical_score", _lexical_score(query, payload)))
         result["semantic_score"] = semantic
         result["lexical_score"] = lexical
-        result["score"] = semantic * 0.72 + min(lexical, 2.0) * 0.28 + _section_adjustment(query, payload)
+        result["score"] = (
+            semantic * 0.72
+            + min(lexical, 2.0) * 0.28
+            + _section_adjustment(query, payload)
+        )
         result["citation"] = _citation(result["memory"])
     return sorted(results, key=lambda item: item["score"], reverse=True)[:limit]
 
 
-def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str | None = None):
+def search_long_term_memory(
+    embedding: list[float], limit: int = 5, scope: str | None = None
+):
 
     if not _collection_exists():
         return []
 
-    query_filter = Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))]) if scope else None
+    query_filter = (
+        Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))])
+        if scope
+        else None
+    )
     result = qdrant.query_points(
         collection_name=COLLECTION,
         query=embedding,
@@ -214,7 +228,12 @@ def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str |
     )
 
     return [
-        {"id": str(item.id), "memory": item.payload, "score": item.score, "semantic_score": item.score}
+        {
+            "id": str(item.id),
+            "memory": item.payload,
+            "score": item.score,
+            "semantic_score": item.score,
+        }
         for item in result.points
     ]
 
@@ -222,7 +241,11 @@ def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str |
 def _scoped_payloads(scope: str | None, limit: int = 2_000) -> list[dict]:
     if not _collection_exists():
         return []
-    query_filter = Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))]) if scope else None
+    query_filter = (
+        Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))])
+        if scope
+        else None
+    )
     results = []
     offset = None
     while len(results) < limit:
@@ -244,16 +267,12 @@ def _scoped_payloads(scope: str | None, limit: int = 2_000) -> list[dict]:
     return results
 
 
-def _lexical_payloads(
-    query: str, scope: str | None, limit: int = 100
-) -> list[dict]:
+def _lexical_payloads(query: str, scope: str | None, limit: int = 100) -> list[dict]:
     """Use Qdrant's text index instead of scanning an arbitrary first page."""
 
     conditions = [FieldCondition(key="text", match=MatchText(text=query))]
     if scope:
-        conditions.insert(
-            0, FieldCondition(key="scope", match=MatchValue(value=scope))
-        )
+        conditions.insert(0, FieldCondition(key="scope", match=MatchValue(value=scope)))
     points, _ = qdrant.scroll(
         collection_name=COLLECTION,
         scroll_filter=Filter(must=conditions),
@@ -262,8 +281,7 @@ def _lexical_payloads(
         with_vectors=False,
     )
     return [
-        {"id": str(point.id), "memory": point.payload, "score": 0.0}
-        for point in points
+        {"id": str(point.id), "memory": point.payload, "score": 0.0} for point in points
     ]
 
 

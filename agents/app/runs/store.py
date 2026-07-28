@@ -37,12 +37,10 @@ class RunStore:
 
     def initialize(self) -> None:
         with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """CREATE TABLE IF NOT EXISTS agent_schema_migrations (
+            cursor.execute("""CREATE TABLE IF NOT EXISTS agent_schema_migrations (
                        version TEXT PRIMARY KEY,
                        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                   )"""
-            )
+                   )""")
             cursor.execute("SELECT version FROM agent_schema_migrations")
             applied = {str(row["version"]) for row in cursor.fetchall()}
             for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
@@ -72,7 +70,16 @@ class RunStore:
                 """INSERT INTO agent_runs
                    (id, status, task, model, requested_workspace, conversation_id, document_scope, project_id, allow_write)
                    VALUES (%s, 'queued', %s, %s, %s, %s, %s, %s, %s)""",
-                (run_id, task, model, workspace, conversation_id, document_scope, project_id, allow_write),
+                (
+                    run_id,
+                    task,
+                    model,
+                    workspace,
+                    conversation_id,
+                    document_scope,
+                    project_id,
+                    allow_write,
+                ),
             )
         self.append_event(run_id, "queued", {"message": "Run queued"})
         return run_id
@@ -161,7 +168,9 @@ class RunStore:
 
     def list_projects(self) -> list[dict[str, Any]]:
         with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT id, name, workspace, created_at, updated_at FROM agent_projects ORDER BY updated_at DESC")
+            cursor.execute(
+                "SELECT id, name, workspace, created_at, updated_at FROM agent_projects ORDER BY updated_at DESC"
+            )
             return cursor.fetchall()
 
     def create_project(self, name: str, workspace: str) -> dict[str, Any]:
@@ -213,7 +222,10 @@ class RunStore:
 
     def is_cancel_requested(self, run_id: str) -> bool:
         with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT status = 'cancelling' AS cancelling FROM agent_runs WHERE id = %s", (run_id,))
+            cursor.execute(
+                "SELECT status = 'cancelling' AS cancelling FROM agent_runs WHERE id = %s",
+                (run_id,),
+            )
             row = cursor.fetchone()
             return bool(row and row["cancelling"])
 
@@ -225,16 +237,16 @@ class RunStore:
         lease are treated as abandoned.
         """
         with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM agent_runs WHERE status = 'queued' ORDER BY created_at")
-            queued = [str(row["id"]) for row in cursor.fetchall()]
             cursor.execute(
-                """UPDATE agent_runs
+                "SELECT id FROM agent_runs WHERE status = 'queued' ORDER BY created_at"
+            )
+            queued = [str(row["id"]) for row in cursor.fetchall()]
+            cursor.execute("""UPDATE agent_runs
                    SET status = 'queued', error = NULL, worker_id = NULL,
                        lease_expires_at = NULL, updated_at = NOW()
                    WHERE status = 'running' AND allow_write = FALSE
                      AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
-                   RETURNING id"""
-            )
+                   RETURNING id""")
             resumed = [str(row["id"]) for row in cursor.fetchall()]
             queued.extend(run_id for run_id in resumed if run_id not in queued)
             cursor.execute(
@@ -255,7 +267,9 @@ class RunStore:
         for run_id in resumed:
             self.append_event(run_id, "run_resuming", {"reason": "service_restart"})
         for run in interrupted:
-            self.append_event(str(run["id"]), "run_interrupted", {"reason": "service_restart"})
+            self.append_event(
+                str(run["id"]), "run_interrupted", {"reason": "service_restart"}
+            )
         return queued, interrupted
 
 

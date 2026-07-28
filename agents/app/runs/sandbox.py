@@ -85,7 +85,9 @@ def sandbox_diff(path: str) -> str:
     )
     if intent.returncode != 0:
         raise RuntimeError(intent.stderr.strip() or "Could not prepare sandbox diff")
-    result = _git(directory, "diff", "--no-ext-diff", "--binary", safe_directory=directory)
+    result = _git(
+        directory, "diff", "--no-ext-diff", "--binary", safe_directory=directory
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "Could not produce diff")
     return result.stdout
@@ -103,7 +105,9 @@ def merge_sandbox(sandbox: Sandbox) -> None:
     if not diff.strip():
         return
 
-    current = _git(sandbox.repository, "rev-parse", "HEAD", safe_directory=sandbox.repository)
+    current = _git(
+        sandbox.repository, "rev-parse", "HEAD", safe_directory=sandbox.repository
+    )
     if current.returncode != 0 or current.stdout.strip() != sandbox.base_commit:
         raise RuntimeError(
             "Repository HEAD changed since this run started; refresh the run and resolve/retry "
@@ -113,16 +117,28 @@ def merge_sandbox(sandbox: Sandbox) -> None:
     # HEAD alone is not enough: a user may have local edits that an otherwise
     # cleanly-applying agent patch could overwrite. Approval is deliberately
     # conservative; commit/stash user changes or rerun from the new state.
-    dirty = _git(sandbox.repository, "status", "--porcelain", safe_directory=sandbox.repository)
+    dirty = _git(
+        sandbox.repository, "status", "--porcelain", safe_directory=sandbox.repository
+    )
     if dirty.returncode != 0:
-        raise RuntimeError("Could not inspect repository status before applying sandbox diff")
+        raise RuntimeError(
+            "Could not inspect repository status before applying sandbox diff"
+        )
     if dirty.stdout.strip():
         raise RuntimeError(
             "Repository has uncommitted changes; commit or stash them before approving this run."
         )
 
     check = subprocess.run(
-        ["git", "-C", str(sandbox.repository), "apply", "--check", "--whitespace=nowarn", "-"],
+        [
+            "git",
+            "-C",
+            str(sandbox.repository),
+            "apply",
+            "--check",
+            "--whitespace=nowarn",
+            "-",
+        ],
         input=diff,
         text=True,
         capture_output=True,
@@ -130,7 +146,9 @@ def merge_sandbox(sandbox: Sandbox) -> None:
         check=False,
     )
     if check.returncode != 0:
-        raise RuntimeError(f"Sandbox diff conflicts with the repository: {check.stderr.strip()}")
+        raise RuntimeError(
+            f"Sandbox diff conflicts with the repository: {check.stderr.strip()}"
+        )
 
     result = subprocess.run(
         ["git", "-C", str(sandbox.repository), "apply", "--whitespace=nowarn", "-"],
@@ -149,7 +167,9 @@ def remove_sandbox(repository: str, path: str) -> None:
     directory = Path(path).resolve()
     if SANDBOX_ROOT not in directory.parents:
         raise PermissionError("Sandbox path is outside the sandbox root")
-    result = _git(repo, "worktree", "remove", "--force", str(directory), safe_directory=repo)
+    result = _git(
+        repo, "worktree", "remove", "--force", str(directory), safe_directory=repo
+    )
     if result.returncode != 0 and directory.exists():
         raise RuntimeError(result.stderr.strip() or "Could not remove sandbox")
     if directory.exists():

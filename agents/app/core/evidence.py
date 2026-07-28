@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 _HISTORICAL = re.compile(
     r"\b(history|historical|previous|prior|archive|example)\b",
     re.IGNORECASE,
@@ -70,7 +69,11 @@ def _looks_like_section_heading(line: str) -> bool:
         return False
     if len(line.split()) > 12 or not _SECTION_HEADING.search(line):
         return False
-    return line.upper() == line or line.title() == line or line.endswith(("%", "Statement"))
+    return (
+        line.upper() == line
+        or line.title() == line
+        or line.endswith(("%", "Statement"))
+    )
 
 
 def _split_internal_sections(text: str) -> list[tuple[str, str]]:
@@ -182,7 +185,9 @@ def _coverage(items: list[dict[str, Any]]) -> dict[str, Any]:
     return {"complete_for_retrieved_ranges": complete, "sections": sections}
 
 
-def build_document_evidence(query: str, memories: list[dict[str, Any]]) -> dict[str, Any]:
+def build_document_evidence(
+    query: str, memories: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Create a model-independent evidence ledger from retrieved chunks."""
     document_items = [
         item for item in memories if (item.get("provenance") or {}).get("source")
@@ -238,9 +243,9 @@ def build_document_evidence(query: str, memories: list[dict[str, Any]]) -> dict[
         for item in selected
         if (item.get("provenance") or {}).get("extraction_status") == "low_quality"
     ]
-    excluded_records = [
-        record for item in excluded_items for record in _records(item)
-    ][:160]
+    excluded_records = [record for item in excluded_items for record in _records(item)][
+        :160
+    ]
     selected_entities = _entity_phrases(records)
     excluded_entities = sorted(_entity_phrases(excluded_records) - selected_entities)
     return {
@@ -270,9 +275,7 @@ def build_inline_document_evidence(query: str) -> dict[str, Any]:
             _split_internal_sections(excerpt),
             start=1,
         ):
-            section_kind = (
-                "supplementary" if _HISTORICAL.search(heading) else "primary"
-            )
+            section_kind = "supplementary" if _HISTORICAL.search(heading) else "primary"
             rows = len(section_text.splitlines())
             memories.append(
                 {

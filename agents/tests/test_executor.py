@@ -82,10 +82,13 @@ def test_answer_audit_checks_entities_deliverables_and_document_provenance():
 
     assert "deliverable may be missing: Risk matrix" in failures
     assert "document provenance is not cited" in failures
-    assert _answer_audit(
-        state,
-        "Contract Alpha appears in report.pdf. Risk matrix: medium likelihood.",
-    ) == []
+    assert (
+        _answer_audit(
+            state,
+            "Contract Alpha appears in report.pdf. Risk matrix: medium likelihood.",
+        )
+        == []
+    )
 
 
 def test_answer_audit_rejects_entities_from_excluded_document_sections():
@@ -182,13 +185,18 @@ def test_normalize_tool_args_no_change():
 
 
 def test_financial_price_query_keeps_company_and_market():
-    assert financial_price_query(
-        "search renata last closing day price from DSE also analyze it in five years"
-    ) == "renata DSE latest closing price previous close historical data"
+    assert (
+        financial_price_query(
+            "search renata last closing day price from DSE also analyze it in five years"
+        )
+        == "renata DSE latest closing price previous close historical data"
+    )
 
 
 def test_financial_research_queries_cover_company_and_sector_evidence():
-    queries = financial_research_queries("search renata last closing day price from DSE")
+    queries = financial_research_queries(
+        "search renata last closing day price from DSE"
+    )
 
     assert len(queries) == 4
     assert "renata DSE" in queries[0]
@@ -200,7 +208,12 @@ def test_financial_research_queries_cover_company_and_sector_evidence():
 def test_financial_document_urls_prefer_filing_pdf_and_company_news():
     searches = [
         {},
-        {"results": [{"url": "https://company.test/report"}, {"url": "https://company.test/report.pdf"}]},
+        {
+            "results": [
+                {"url": "https://company.test/report"},
+                {"url": "https://company.test/report.pdf"},
+            ]
+        },
         {"results": [{"url": "https://news.test/company"}]},
     ]
 
@@ -213,10 +226,16 @@ def test_financial_document_urls_prefer_filing_pdf_and_company_news():
 def test_financial_document_urls_reject_unrelated_pdf():
     searches = [
         {},
-        {"query": "Renata annual report", "results": [
-            {"title": "Renata annual report", "url": "https://renata.test/archive"},
-            {"title": "Other company annual report", "url": "https://other.test/report.pdf"},
-        ]},
+        {
+            "query": "Renata annual report",
+            "results": [
+                {"title": "Renata annual report", "url": "https://renata.test/archive"},
+                {
+                    "title": "Other company annual report",
+                    "url": "https://other.test/report.pdf",
+                },
+            ],
+        },
         {"results": [{"title": "Renata update", "url": "https://news.test/renata"}]},
     ]
 
@@ -227,9 +246,14 @@ def test_financial_document_urls_reject_unrelated_pdf():
 
 
 def test_report_pdf_link_uses_annual_report_pdf_only():
-    assert report_pdf_link({"links": ["https://company.test/about.pdf", "https://company.test/annual-report.pdf"]}) == (
-        "https://company.test/annual-report.pdf"
-    )
+    assert report_pdf_link(
+        {
+            "links": [
+                "https://company.test/about.pdf",
+                "https://company.test/annual-report.pdf",
+            ]
+        }
+    ) == ("https://company.test/annual-report.pdf")
 
 
 def test_financial_document_excerpt_keeps_end_of_report():
@@ -319,7 +343,9 @@ def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_regis
     mock_registry.list_tools.return_value = ["list_files"]
     mock_registry.execute.return_value = {"files": ["README.md"]}
     mock_chat_with_tools.side_effect = [
-        make_message(tool_calls=[make_tool_call("call_1", "list_files", {"directory": "."})]),
+        make_message(
+            tool_calls=[make_tool_call("call_1", "list_files", {"directory": "."})]
+        ),
         make_message(content="Done"),
     ]
     checkpoints = []
@@ -329,7 +355,9 @@ def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_regis
         {
             "steps": 1,
             "plan": [],
-            "observations": [{"tool": "list_files", "result": {"files": ["README.md"]}}],
+            "observations": [
+                {"tool": "list_files", "result": {"files": ["README.md"]}}
+            ],
             "route_tasks": [],
             "task_progress": {},
             "successful_mutation": False,
@@ -341,7 +369,9 @@ def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_regis
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_prefetches_current_external_information(mock_chat_with_tools, mock_registry):
+def test_execute_plan_prefetches_current_external_information(
+    mock_chat_with_tools, mock_registry
+):
     state = DummyState()
     state.user_message = "Search Renata last closing price on DSE today"
     mock_registry.list_tools.return_value = ["web_search"]
@@ -357,14 +387,19 @@ def test_execute_plan_prefetches_current_external_information(mock_chat_with_too
     assert mock_registry.execute.call_args_list[0].args[1]["query"] == (
         "Renata DSE latest closing price previous close historical data"
     )
-    assert "https://example.test/renata" in mock_chat_with_tools.call_args.args[0][1]["content"]
+    assert (
+        "https://example.test/renata"
+        in mock_chat_with_tools.call_args.args[0][1]["content"]
+    )
     tools = mock_chat_with_tools.call_args.kwargs["tools"]
     assert [tool["function"]["name"] for tool in tools] == ["web_search"]
 
 
 @patch("app.agent.executor.chat_with_tools")
 @patch("app.agent.executor.registry")
-def test_finance_policy_prefetches_even_without_current_keyword(mock_registry, mock_chat_with_tools):
+def test_finance_policy_prefetches_even_without_current_keyword(
+    mock_registry, mock_chat_with_tools
+):
     state = DummyState()
     state.user_message = "Analyze my uploaded portfolio for the long term"
     state.prompt_mode = "finance"
@@ -373,7 +408,9 @@ def test_finance_policy_prefetches_even_without_current_keyword(mock_registry, m
     state.routing_entities = ["Fortune Shoes", "Orion Pharma"]
     mock_registry.list_tools.return_value = ["web_search"]
     mock_registry.execute.return_value = {"results": []}
-    mock_chat_with_tools.return_value = type("Message", (), {"content": "Evidence is unavailable.", "tool_calls": None})()
+    mock_chat_with_tools.return_value = type(
+        "Message", (), {"content": "Evidence is unavailable.", "tool_calls": None}
+    )()
 
     execute_plan(state, force_research=True)
 
@@ -388,19 +425,32 @@ def test_execute_plan_retries_research_refusal(mock_chat_with_tools, mock_regist
     state = DummyState()
     state.user_message = "DSE stock closing price today"
     mock_registry.list_tools.return_value = ["web_search"]
-    mock_registry.execute.return_value = {"results": [{"url": "https://example.test", "content": "Previous close 470.60"}]}
+    mock_registry.execute.return_value = {
+        "results": [{"url": "https://example.test", "content": "Previous close 470.60"}]
+    }
     mock_chat_with_tools.side_effect = [
-        make_message(content="I cannot directly access real-time stock market data.", tool_calls=None),
-        make_message(content="The retrieved result reports a previous close of 470.60.", tool_calls=None),
+        make_message(
+            content="I cannot directly access real-time stock market data.",
+            tool_calls=None,
+        ),
+        make_message(
+            content="The retrieved result reports a previous close of 470.60.",
+            tool_calls=None,
+        ),
     ]
 
-    assert execute_plan(state) == "The retrieved result reports a previous close of 470.60."
+    assert (
+        execute_plan(state)
+        == "The retrieved result reports a previous close of 470.60."
+    )
     assert mock_chat_with_tools.call_count == 2
 
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_retries_price_refusal_with_retrieved_evidence(mock_chat_with_tools, mock_registry):
+def test_execute_plan_retries_price_refusal_with_retrieved_evidence(
+    mock_chat_with_tools, mock_registry
+):
     state = DummyState()
     state.user_message = "Search Renata last closing price on DSE"
     mock_registry.list_tools.return_value = ["web_search"]
@@ -408,8 +458,12 @@ def test_execute_plan_retries_price_refusal_with_retrieved_evidence(mock_chat_wi
         "results": [{"url": "https://example.test", "content": "Previous close 470.60"}]
     }
     mock_chat_with_tools.side_effect = [
-        make_message(content="I cannot provide the last closing day price based on current information."),
-        make_message(content="The source reports a previous close of 470.60.", tool_calls=None),
+        make_message(
+            content="I cannot provide the last closing day price based on current information."
+        ),
+        make_message(
+            content="The source reports a previous close of 470.60.", tool_calls=None
+        ),
     ]
 
     assert execute_plan(state) == "The source reports a previous close of 470.60."
@@ -469,7 +523,10 @@ def test_execute_plan_empty_content_retries(
     assert mock_chat_with_tools.call_count == 2
 
 
-@patch("app.agent.executor._synthesize_partial_answer", return_value="Partial evidence-based answer")
+@patch(
+    "app.agent.executor._synthesize_partial_answer",
+    return_value="Partial evidence-based answer",
+)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_synthesizes_after_repeated_empty_turns(
@@ -492,7 +549,10 @@ def test_execute_plan_synthesizes_after_repeated_empty_turns(
     mock_synthesize.assert_called_once_with(state)
 
 
-@patch("app.agent.executor._synthesize_partial_answer", return_value="Useful partial answer")
+@patch(
+    "app.agent.executor._synthesize_partial_answer",
+    return_value="Useful partial answer",
+)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_stops_after_repeated_empty_searches(
@@ -508,14 +568,22 @@ def test_execute_plan_stops_after_repeated_empty_searches(
     )
 
     events = []
-    assert execute_plan(state, on_event=lambda kind, payload: events.append((kind, payload))) == "Useful partial answer"
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Useful partial answer"
+    )
 
     assert mock_chat_with_tools.call_count == 3
     mock_synthesize.assert_called_once_with(state)
     assert ("unproductive_search_loop", {"empty_searches": 3}) in events
 
 
-@patch("app.agent.executor._synthesize_partial_answer", return_value="Useful partial answer")
+@patch(
+    "app.agent.executor._synthesize_partial_answer",
+    return_value="Useful partial answer",
+)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_stops_after_repeated_failed_tool_calls(
@@ -531,7 +599,12 @@ def test_execute_plan_stops_after_repeated_failed_tool_calls(
     )
 
     events = []
-    assert execute_plan(state, on_event=lambda kind, payload: events.append((kind, payload))) == "Useful partial answer"
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Useful partial answer"
+    )
 
     assert mock_chat_with_tools.call_count == 3
     mock_synthesize.assert_called_once_with(state)
@@ -579,9 +652,7 @@ def test_execute_plan_instructs_model_to_recover_after_failed_command(
             )
         if len(seen_messages) == 3:
             return make_message(
-                tool_calls=[
-                    make_tool_call("fallback", "run_tests", {"kind": "pytest"})
-                ]
+                tool_calls=[make_tool_call("fallback", "run_tests", {"kind": "pytest"})]
             )
         return make_message(content="Tests pass using the available test runner.")
 
@@ -659,10 +730,14 @@ def test_execute_plan_buffers_text_until_completion_audit(mock_stream, mock_regi
     mock_registry.list_tools.return_value = []
     mock_stream.return_value = [
         SimpleNamespace(
-            choices=[SimpleNamespace(delta=SimpleNamespace(content="Hel", tool_calls=None))]
+            choices=[
+                SimpleNamespace(delta=SimpleNamespace(content="Hel", tool_calls=None))
+            ]
         ),
         SimpleNamespace(
-            choices=[SimpleNamespace(delta=SimpleNamespace(content="lo", tool_calls=None))]
+            choices=[
+                SimpleNamespace(delta=SimpleNamespace(content="lo", tool_calls=None))
+            ]
         ),
     ]
     tokens = []
@@ -747,7 +822,9 @@ def test_execute_plan_reassembles_streamed_tool_arguments(mock_stream, mock_regi
                                 SimpleNamespace(
                                     index=0,
                                     id=None,
-                                    function=SimpleNamespace(name=None, arguments='"."}'),
+                                    function=SimpleNamespace(
+                                        name=None, arguments='"."}'
+                                    ),
                                 )
                             ],
                         )
@@ -757,7 +834,11 @@ def test_execute_plan_reassembles_streamed_tool_arguments(mock_stream, mock_regi
         ],
         [
             SimpleNamespace(
-                choices=[SimpleNamespace(delta=SimpleNamespace(content="Done", tool_calls=None))]
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content="Done", tool_calls=None)
+                    )
+                ]
             )
         ],
     ]

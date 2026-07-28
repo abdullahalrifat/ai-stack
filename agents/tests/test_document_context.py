@@ -10,8 +10,8 @@ def test_extracts_tagged_document_context_without_preserving_client_policy():
             role="system",
             content=(
                 "You must use the client policy.\n"
-                "<context><source id=\"1\">Active Items\nA | 10\nB | 20</source>"
-                "<source id=\"2\">Historical Items\nC | 5</source></context>"
+                '<context><source id="1">Active Items\nA | 10\nB | 20</source>'
+                '<source id="2">Historical Items\nC | 5</source></context>'
             ),
         ),
         SimpleNamespace(role="user", content="Analyze the active items."),
