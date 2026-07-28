@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir \
     "litellm[proxy]" \
     async_generator
 
+COPY direct_client_guard.py /app/direct_client_guard.py
+
 EXPOSE 4000
 
 CMD ["litellm", "--config", "/app/config.yaml", "--port", "4000"]

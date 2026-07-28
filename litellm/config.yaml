@@ -79,6 +79,8 @@ general_settings:
 litellm_settings:
   set_verbose: true
   drop_params: true
+  callbacks:
+    - direct_client_guard.proxy_handler_instance
 
 ###########################################################
 # Router Settings

@@ -374,6 +374,16 @@ UI. LiteLLM's `quick` and `coder` aliases remain useful for non-agent chat;
 `reasoning` and `vision` are deliberate heavyweight choices, and `embedding`
 is only for embeddings.
 
+When an IDE supplies its own tools to a direct LiteLLM model, the gateway adds
+a continuation policy. For code-change requests that have started using IDE
+tools, LiteLLM deterministically requires another tool call until a verification
+command succeeds; the rule is capped at eight tool turns to prevent an infinite
+loop. Shell state is treated as non-persistent, and missing coverage support
+falls back to environment inspection or plain tests rather than unsolicited
+installation. This improves compatibility but cannot provide the complete
+server-side evidence and sandbox contract of `orchestrator`; use the Agent
+endpoint or Runs UI when that guarantee is required.
+
 The agent requires `Authorization: Bearer $AGENT_API_KEY` on every endpoint
 except `/health` and the read-only `/models/available` catalog. Tool calls are made through the model's native function
 calling rather than hand-written JSON, and the tools available to it are:
