@@ -9,17 +9,17 @@ from ..core.config import (
     MAX_AGENT_STEPS,
     MAX_EMPTY_MODEL_TURNS,
     MAX_EMPTY_SEARCH_RESULTS,
-    MAX_UNPRODUCTIVE_TOOL_CALLS,
     MAX_TOOL_OUTPUT_CHARS,
+    MAX_UNPRODUCTIVE_TOOL_CALLS,
 )
-from ..core.exceptions import RunCancelled
 from ..core.evidence import evidence_prompt
+from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
-from .parser import parse_tool_arguments
-from .context_budget import estimate_tokens, fit_user_context
-from .prompts import COMPACTION_PROMPT, PARTIAL_SYNTHESIS_PROMPT, executor_prompt
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
+from .context_budget import estimate_tokens, fit_user_context
+from .parser import parse_tool_arguments
+from .prompts import COMPACTION_PROMPT, PARTIAL_SYNTHESIS_PROMPT, executor_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,24 @@ def normalize_tool_args(tool_name: str, args: dict) -> dict:
                 args[new] = args.pop(old)
 
     return args
+
+
+def tool_result_failed(result) -> bool:
+    """Recognize the failure shapes returned by every tool boundary.
+
+    Registry exceptions use ``tool_error`` while command tools report a
+    non-zero ``exit_code``. Treating either as useful progress can make the
+    model stop at a proposal for the next step instead of recovering.
+    """
+
+    if not result:
+        return True
+    if not isinstance(result, dict):
+        return False
+    if result.get("error") or result.get("tool_error"):
+        return True
+    exit_code = result.get("exit_code")
+    return isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0
 
 
 _LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
@@ -639,6 +657,7 @@ Plan:
 
         if tool_calls:
             empty_turn_count = 0
+            failed_tools: list[str] = []
             messages.append(
                 {
                     "role": "assistant",
@@ -690,15 +709,17 @@ Plan:
                         }
                     )
 
+                failed = tool_result_failed(result)
                 if tool_name == "search_text" and not result:
                     empty_search_count += 1
-                elif result and not (isinstance(result, dict) and result.get("error")):
+                elif not failed:
                     empty_search_count = 0
 
-                unproductive = not result or (isinstance(result, dict) and result.get("error"))
+                unproductive = failed
                 fingerprint = f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
                 if unproductive:
                     unproductive_calls[fingerprint] = unproductive_calls.get(fingerprint, 0) + 1
+                    failed_tools.append(tool_name)
                 else:
                     unproductive_calls.clear()
 
@@ -729,6 +750,20 @@ Plan:
                 on_event("unproductive_tool_loop", {"repeated_calls": repeated})
                 on_event("final_answer", {"answer": answer, "partial": True})
                 return answer
+
+            if failed_tools:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "A tool call failed. Diagnose the returned error and continue toward the "
+                            "requested outcome using a safe alternative or prerequisite check. Do not "
+                            "stop at a future-tense proposal such as 'next I will install or run it'. "
+                            "Only report a blocker after available recovery paths have been exhausted. "
+                            f"Failed tool(s): {', '.join(failed_tools)}."
+                        ),
+                    }
+                )
 
             continue
 

@@ -3,17 +3,17 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-
 from app.agent.executor import (
     _answer_audit,
     _synthesize_partial_answer,
     execute_plan,
-    financial_document_urls,
     financial_document_excerpt,
-    report_pdf_link,
+    financial_document_urls,
     financial_price_query,
     financial_research_queries,
     normalize_tool_args,
+    report_pdf_link,
+    tool_result_failed,
 )
 from app.agent.prompts import executor_prompt
 
@@ -53,6 +53,20 @@ def make_tool_call(call_id: str, name: str, arguments: dict):
 def make_message(content=None, tool_calls=None):
     """Build a stand-in for the OpenAI SDK's response message object."""
     return SimpleNamespace(content=content, tool_calls=tool_calls)
+
+
+@pytest.mark.parametrize(
+    ("result", "failed"),
+    [
+        ({"error": "bad arguments"}, True),
+        ({"tool_error": "dependency missing"}, True),
+        ({"exit_code": 4, "output": "unrecognized arguments: --cov"}, True),
+        ({"exit_code": 0, "output": "passed"}, False),
+        ({"status": "edited"}, False),
+    ],
+)
+def test_tool_result_failed_recognizes_all_tool_failure_shapes(result, failed):
+    assert tool_result_failed(result) is failed
 
 
 def test_answer_audit_checks_entities_deliverables_and_document_provenance():
@@ -483,6 +497,59 @@ def test_execute_plan_stops_after_repeated_failed_tool_calls(
     assert mock_chat_with_tools.call_count == 3
     mock_synthesize.assert_called_once_with(state)
     assert ("unproductive_tool_loop", {"repeated_calls": 3}) in events
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_instructs_model_to_recover_after_failed_command(
+    mock_chat_with_tools,
+    mock_registry,
+):
+    state = DummyState()
+    state.allow_write = True
+    mock_registry.list_tools.return_value = ["run_command", "run_tests"]
+    mock_registry.execute.side_effect = [
+        {
+            "command": "pytest --cov=app",
+            "exit_code": 4,
+            "output": "unrecognized arguments: --cov=app",
+        },
+        {"kind": "pytest", "exit_code": 0, "output": "10 passed"},
+    ]
+    seen_messages = []
+
+    def respond(messages, **kwargs):
+        seen_messages.append([dict(message) for message in messages])
+        if len(seen_messages) == 1:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "coverage",
+                        "run_command",
+                        {"command": "pytest --cov=app"},
+                    )
+                ]
+            )
+        if len(seen_messages) == 2:
+            return make_message(
+                tool_calls=[
+                    make_tool_call("fallback", "run_tests", {"kind": "pytest"})
+                ]
+            )
+        return make_message(content="Tests pass using the available test runner.")
+
+    mock_chat_with_tools.side_effect = respond
+
+    assert execute_plan(state) == "Tests pass using the available test runner."
+
+    recovery_messages = [
+        message["content"]
+        for message in seen_messages[1]
+        if message["role"] == "user" and "A tool call failed" in message["content"]
+    ]
+    assert len(recovery_messages) == 1
+    assert "Do not stop at a future-tense proposal" in recovery_messages[0]
+    assert mock_registry.execute.call_count == 2
 
 
 @patch("app.agent.executor.chat", return_value="Evidence-based answer")

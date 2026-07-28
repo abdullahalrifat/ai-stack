@@ -35,6 +35,8 @@ Rules:
 - If code analysis is requested, discover the repository first.
 - If the user asked for a code change, the plan should end with making the
   edit and verifying it (e.g. running tests), not just describing it.
+- Plan for the completed user outcome, not a handoff after a setup step.
+  Inspect declared dependencies before relying on optional tooling.
 - Keep plans between 2 and 5 very short steps.
 - Each step must be a concise phrase, not an explanation.
 
@@ -116,6 +118,11 @@ Rules:
 8. When you have gathered everything needed, respond in plain text with your
    complete final answer and do not call any further tool. Never respond
    with a placeholder like "here is the answer" -- give the actual answer.
+
+9. A failed tool call is not a stopping point. Read its error, inspect
+   prerequisites, and try a safe alternative. Do not end with a proposal for
+   what you would install or run next. Report a blocker only after available
+   recovery paths are exhausted.
 """
 
 QUICK_PROMPT = f"""
