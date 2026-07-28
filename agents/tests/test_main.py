@@ -168,6 +168,32 @@ def test_cancel_reports_immediate_terminal_status_for_queued_run():
     publisher.publish.assert_called_once()
 
 
+def test_run_event_stream_sends_heartbeat_while_run_is_quiet(monkeypatch):
+    class Store:
+        def get_run(self, _run_id):
+            return {"status": "running"}
+
+        def events_after(self, _run_id, _last_id):
+            return []
+
+    class Publisher:
+        def subscribe(self, _run_id):
+            raise RuntimeError("Redis unavailable in unit test")
+
+    async def first_chunk():
+        response = await routes.run_events("run-1")
+        iterator = response.body_iterator
+        chunk = await anext(iterator)
+        await iterator.aclose()
+        return chunk
+
+    monkeypatch.setattr(routes, "get_run_store", lambda: Store())
+    monkeypatch.setattr(routes, "get_event_publisher", lambda: Publisher())
+    monkeypatch.setattr(routes, "RUN_STREAM_HEARTBEAT_SECONDS", 0)
+
+    assert asyncio.run(first_chunk()) == ": heartbeat\n\n"
+
+
 def test_auto_profile_uses_fast_model_while_code_uses_default_model():
     assert PROFILES["auto"].model == FAST_MODEL
     assert PROFILES["code"].model == DEFAULT_MODEL

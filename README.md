@@ -430,6 +430,61 @@ planning, tool activity, streamed model output, and any reviewable diff. The
 UI uses the same authenticated `/runs` API; it does not store the key in local
 storage or send it to any third party.
 
+### Terminal agent
+
+`cli/` is an independently packaged terminal client for the same durable
+`/runs` API.
+The server remains the only planner and tool executor; the client streams
+events, displays reviewable diffs, and sends explicit approve, discard, or
+cancel actions. See the complete
+[terminal-agent guide](cli/README.md) for command reference,
+automation formats, workspace mapping, troubleshooting, and security details.
+
+From the repository:
+
+```bash
+./cli/scripts/aistack doctor
+./cli/scripts/aistack
+./cli/scripts/aistack "review this repository and run its tests"
+./cli/scripts/aistack run --write "fix the failing tests"
+```
+
+Install the launcher once to use it like other terminal agents:
+
+```bash
+./cli/scripts/install-aistack
+aistack
+```
+
+The no-argument form opens an interactive shell. Use `/help` to see its
+commands, `/write` to enable sandboxed edits, `/read-only` to disable them,
+and `/resume RUN_ID` to replay or continue monitoring a durable run. A
+write-enabled run never applies its diff automatically: an interactive
+terminal asks whether to approve, discard, or leave it pending. The same
+actions are available non-interactively:
+
+```bash
+./cli/scripts/aistack list
+./cli/scripts/aistack resume RUN_ID
+./cli/scripts/aistack approve RUN_ID
+./cli/scripts/aistack discard RUN_ID
+./cli/scripts/aistack cancel RUN_ID
+```
+
+The wrapper reads `AGENT_API_KEY` from the repository `.env` as data without
+executing that file. Override it with `AISTACK_API_KEY`, and override the
+default local endpoint with `AISTACK_URL`. It maps the current host checkout
+to an allowed in-container workspace; use `--workspace /workspace/repository`
+or `--project NAME` when automatic mapping is ambiguous. The installer creates
+`~/.local/bin/aistack` without overwriting an existing command. Remove only
+that managed symlink with `./cli/scripts/install-aistack --uninstall`.
+The old `scripts/aistack` and `scripts/install-aistack` paths remain as
+compatibility shims.
+
+For scripts and CI, `run --output json` emits the final run object and
+`run --output stream-json` emits one durable event per line. Pending write
+runs remain unapproved in non-interactive environments.
+
 The Runs UI exposes one Central AI Agent. Every new task and follow-up uses the
 server-side semantic routing pipeline; users do not choose a profile or
 underlying model. Uploaded `.pdf`,
@@ -702,12 +757,16 @@ agents/app/
   runs/            PostgreSQL run store, live events, Git sandboxes
   tools/           registry, schemas, filesystem, constrained commands, web search
   memory/          Redis conversations and Qdrant vector memory
+cli/               independently packaged terminal client, tests, launchers, and guide
+scripts/aistack    compatibility shim for the former launcher location
 runs-ui/           main React/TypeScript coding-task application
 ```
 
 Keep HTTP routes, agent behavior, persistence, sandboxing, tools, memory, and
-frontends separate. New capabilities should be added to the matching package
-rather than extending `main.py` with business logic.
+frontends separate. The CLI communicates with the service only through the
+Runs HTTP/SSE API and must not import `agents/app`. New capabilities should be
+added to the matching package rather than extending `main.py` with business
+logic.
 
 ## Model selection
 

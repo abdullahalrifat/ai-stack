@@ -6,6 +6,7 @@ import logging
 import os
 import queue
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -42,6 +43,7 @@ from .schemas import ChatRequest, ExecuteRequest, ImageGenerationRequest, Ingest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+RUN_STREAM_HEARTBEAT_SECONDS = 10
 
 
 @router.get("/")
@@ -220,6 +222,7 @@ async def run_events(run_id: str, after: int = 0):
 
     async def event_stream():
         last_id = after
+        last_emit = time.monotonic()
         subscription = None
         try:
             # Subscribe first, then replay from PostgreSQL. Any event that
@@ -242,6 +245,7 @@ async def run_events(run_id: str, after: int = 0):
                         else event["created_at"],
                     }
                     yield f"data: {json.dumps(payload, default=str)}\n\n"
+                    last_emit = time.monotonic()
 
                 if subscription is not None:
                     while message := await run_in_threadpool(subscription.get_message, timeout=0):
@@ -254,11 +258,15 @@ async def run_events(run_id: str, after: int = 0):
                         last_id = event["id"]
                         event["created_at"] = str(event.get("created_at", ""))
                         yield f"data: {json.dumps(event, default=str)}\n\n"
+                        last_emit = time.monotonic()
 
                 current = await run_in_threadpool(store.get_run, run_id)
                 if current is not None and current["status"] in terminal_statuses and not events:
                     yield f"data: {json.dumps({'event_type': 'stream_closed', 'status': current['status']})}\n\n"
                     break
+                if time.monotonic() - last_emit >= RUN_STREAM_HEARTBEAT_SECONDS:
+                    yield ": heartbeat\n\n"
+                    last_emit = time.monotonic()
 
                 # Pub/Sub handles the common case in tens of milliseconds;
                 # durable polling remains the recovery path.

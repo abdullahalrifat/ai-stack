@@ -64,6 +64,9 @@ pipelines/__pycache__/
 __pycache__/
 *.py[cod]
 *$py.class
+.coverage
+.ruff_cache/
+.pytest_cache/
 
 # Virtual environments
 venv/

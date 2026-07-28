@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aistack-cli"
+description = "Terminal client for the durable ai-stack Runs API"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+dynamic = ["version"]
+
+[project.scripts]
+aistack = "aistack_cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "aistack_cli.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+cache_dir = "/tmp/aistack-cli-pytest-cache"
+addopts = "--strict-markers"
