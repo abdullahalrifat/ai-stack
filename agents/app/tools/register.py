@@ -14,6 +14,7 @@ from app.tools.registry import registry
 from app.tools.filesystem import (
     edit_file,
     find_file,
+    inspect_test_environment,
     inspect_files,
     list_files,
     project_summary,
@@ -46,6 +47,8 @@ registry.register(name="search_text", function=search_text)
 
 registry.register(name="project_summary", function=project_summary)
 
+registry.register(name="inspect_test_environment", function=inspect_test_environment)
+
 registry.register(name="inspect_files", function=inspect_files)
 
 registry.register(name="write_file", function=write_file)
@@ -75,6 +78,7 @@ TOOLS = [
     find_file,
     search_text,
     project_summary,
+    inspect_test_environment,
     inspect_files,
     write_file,
     edit_file,

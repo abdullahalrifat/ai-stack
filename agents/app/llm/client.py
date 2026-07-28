@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 
 import requests
@@ -10,6 +11,7 @@ from ..core.config import (
     DEFAULT_MODEL,
     LLM_MAX_COMPLETION_TOKENS,
     LLM_TIMEOUT_SECONDS,
+    MAX_CONCURRENT_LLM_CALLS,
     MODEL_LIST_CACHE_SECONDS,
 )
 
@@ -17,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _client = None
 _model_cache: dict = {"models": None, "fetched_at": 0.0}
+_llm_slots = threading.BoundedSemaphore(MAX_CONCURRENT_LLM_CALLS)
 
 
 def get_client():
@@ -117,7 +120,8 @@ def chat(
     )
     if response_format is not None:
         kwargs["response_format"] = response_format
-    response = client.chat.completions.create(**kwargs)
+    with _llm_slots:
+        response = client.chat.completions.create(**kwargs)
 
     return response.choices[0].message.content
 
@@ -133,15 +137,16 @@ def chat_with_tools(messages, tools, model=DEFAULT_MODEL, tool_choice="auto", ma
     _ensure_model_available(model)
     client = get_client()
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
-        temperature=0,
-        max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
-        timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
-    )
+    with _llm_slots:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            temperature=0,
+            max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
+            timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
+        )
 
     return response.choices[0].message
 
@@ -157,13 +162,17 @@ def chat_with_tools_stream(messages, tools, model=DEFAULT_MODEL, tool_choice="au
     _ensure_model_available(model)
     client = get_client()
 
-    return client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=tools,
-        tool_choice=tool_choice,
-        temperature=0,
-        max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
-        timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
-        stream=True,
-    )
+    def stream():
+        with _llm_slots:
+            yield from client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=0,
+                max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
+                timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
+                stream=True,
+            )
+
+    return stream()

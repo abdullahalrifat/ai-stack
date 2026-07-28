@@ -33,6 +33,7 @@ searxng/data/
 
 # PostgreSQL files
 *.sql
+!agents/app/runs/migrations/*.sql
 *.dump
 *.sqlite
 *.db

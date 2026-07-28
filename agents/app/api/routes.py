@@ -282,12 +282,16 @@ async def cancel(run_id: str):
         if run is None:
             raise HTTPException(404, "Run not found")
         raise HTTPException(409, f"Run cannot be cancelled from status '{run['status']}'")
-    event = await run_in_threadpool(store.append_event, run_id, "cancel_requested", {})
+    run = await run_in_threadpool(store.get_run, run_id)
+    status = str(run["status"]) if run else "cancelling"
+    event = await run_in_threadpool(
+        store.append_event, run_id, "cancel_requested", {"status": status}
+    )
     try:
         await run_in_threadpool(get_event_publisher().publish, event)
     except Exception:
         logger.exception("Could not publish cancellation for run %s", run_id)
-    return {"run_id": run_id, "status": "cancelling"}
+    return {"run_id": run_id, "status": status}
 
 
 @router.post(

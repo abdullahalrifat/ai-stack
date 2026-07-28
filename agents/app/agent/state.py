@@ -22,6 +22,12 @@ class AgentState:
 
     observations: list = field(default_factory=list)
 
+    successful_mutation: bool = False
+
+    successful_verification: bool = False
+
+    pending_failure_categories: set[str] = field(default_factory=set)
+
     model: str = DEFAULT_MODEL
 
     prompt_mode: str = "code"
@@ -33,6 +39,10 @@ class AgentState:
     route_deliverables: list[str] = field(default_factory=list)
 
     route_completion_criteria: list[str] = field(default_factory=list)
+
+    route_tasks: list[dict[str, Any]] = field(default_factory=list)
+
+    task_progress: dict[str, str] = field(default_factory=dict)
 
     requires_external_evidence: bool = False
 

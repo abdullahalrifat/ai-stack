@@ -106,6 +106,40 @@ def test_answer_audit_rejects_entities_from_excluded_document_sections():
     assert "uses entities found only in excluded document sections" in failures[0]
 
 
+def test_answer_audit_enforces_mutation_verification_and_task_contract():
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Improve test coverage and verify the tests pass"
+    state.successful_mutation = False
+    state.successful_verification = False
+    state.pending_failure_categories = {"verification"}
+    state.route_tasks = [
+        {
+            "id": "improve_coverage",
+            "completion_criteria": [
+                "Update tests",
+                "Verify the test suite passes",
+            ],
+        }
+    ]
+    state.task_progress = {}
+
+    failures = _answer_audit(state, "I will run coverage next.")
+
+    assert "requested workspace change has not been made" in failures
+    assert "requested verification has not completed successfully" in failures
+    assert "unresolved failed tool categories: verification" in failures
+    assert "task completion criteria not met: improve_coverage" in failures
+    assert state.task_progress["improve_coverage"] == "pending"
+
+    state.successful_mutation = True
+    state.successful_verification = True
+    state.pending_failure_categories.clear()
+
+    assert _answer_audit(state, "Updated tests; the test suite passes.") == []
+    assert state.task_progress["improve_coverage"] == "completed"
+
+
 @pytest.fixture(autouse=True)
 def no_real_compaction():
     """Executor tests never run long enough to need real compaction, and
@@ -296,6 +330,11 @@ def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_regis
             "steps": 1,
             "plan": [],
             "observations": [{"tool": "list_files", "result": {"files": ["README.md"]}}],
+            "route_tasks": [],
+            "task_progress": {},
+            "successful_mutation": False,
+            "successful_verification": False,
+            "pending_failure_categories": [],
         }
     ]
 
@@ -517,6 +556,7 @@ def test_execute_plan_instructs_model_to_recover_after_failed_command(
         {"kind": "pytest", "exit_code": 0, "output": "10 passed"},
     ]
     seen_messages = []
+    events = []
 
     def respond(messages, **kwargs):
         seen_messages.append([dict(message) for message in messages])
@@ -532,6 +572,13 @@ def test_execute_plan_instructs_model_to_recover_after_failed_command(
             )
         if len(seen_messages) == 2:
             return make_message(
+                content=(
+                    "Let's first check the pytest version and then run the tests "
+                    "with the correct coverage options."
+                )
+            )
+        if len(seen_messages) == 3:
+            return make_message(
                 tool_calls=[
                     make_tool_call("fallback", "run_tests", {"kind": "pytest"})
                 ]
@@ -540,7 +587,13 @@ def test_execute_plan_instructs_model_to_recover_after_failed_command(
 
     mock_chat_with_tools.side_effect = respond
 
-    assert execute_plan(state) == "Tests pass using the available test runner."
+    assert (
+        execute_plan(
+            state,
+            on_event=lambda kind, payload: events.append((kind, payload)),
+        )
+        == "Tests pass using the available test runner."
+    )
 
     recovery_messages = [
         message["content"]
@@ -549,6 +602,14 @@ def test_execute_plan_instructs_model_to_recover_after_failed_command(
     ]
     assert len(recovery_messages) == 1
     assert "Do not stop at a future-tense proposal" in recovery_messages[0]
+    retry_messages = [
+        message["content"]
+        for message in seen_messages[2]
+        if message["role"] == "user" and "progress announcement" in message["content"]
+    ]
+    assert len(retry_messages) == 1
+    assert "explicit path" in retry_messages[0]
+    assert any(kind == "premature_handoff_retry" for kind, _ in events)
     assert mock_registry.execute.call_count == 2
 
 
@@ -593,7 +654,7 @@ def test_execute_plan_emits_events(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools_stream")
-def test_execute_plan_streams_text_deltas(mock_stream, mock_registry):
+def test_execute_plan_buffers_text_until_completion_audit(mock_stream, mock_registry):
     state = DummyState()
     mock_registry.list_tools.return_value = []
     mock_stream.return_value = [
@@ -609,7 +670,46 @@ def test_execute_plan_streams_text_deltas(mock_stream, mock_registry):
     result = execute_plan(state, on_token=tokens.append)
 
     assert result == "Hello"
-    assert tokens == ["Hel", "lo"]
+    assert tokens == ["Hello"]
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools_stream")
+def test_streaming_completion_repairs_rejected_draft_before_emitting(
+    mock_stream, mock_registry
+):
+    state = DummyState()
+    state.route_deliverables = ["Coverage report"]
+    mock_registry.list_tools.return_value = []
+    mock_stream.side_effect = [
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content="Done", tool_calls=None)
+                    )
+                ]
+            )
+        ],
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content="Coverage report complete", tool_calls=None
+                        )
+                    )
+                ]
+            )
+        ],
+    ]
+    tokens = []
+
+    result = execute_plan(state, on_token=tokens.append)
+
+    assert result == "Coverage report complete"
+    assert tokens == ["Coverage report complete"]
+    assert mock_stream.call_count == 2
 
 
 @patch("app.agent.executor.registry")

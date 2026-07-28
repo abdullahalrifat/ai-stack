@@ -95,9 +95,10 @@ SANDBOX_ROOT = Path(os.getenv("SANDBOX_ROOT", "/tmp/agent-sandboxes")).resolve()
 RUNNER_CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "90"))
 RUNNER_MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "2048"))
 RUNNER_MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
-RUN_EVENT_BATCH_CHARS = int(os.getenv("RUN_EVENT_BATCH_CHARS", "256"))
-RUN_EVENT_BATCH_SECONDS = float(os.getenv("RUN_EVENT_BATCH_SECONDS", "0.10"))
-MAX_CONCURRENT_AGENT_RUNS = int(os.getenv("MAX_CONCURRENT_AGENT_RUNS", "1"))
+RUN_EVENT_BATCH_CHARS = int(os.getenv("RUN_EVENT_BATCH_CHARS", "2048"))
+RUN_EVENT_BATCH_SECONDS = float(os.getenv("RUN_EVENT_BATCH_SECONDS", "0.50"))
+MAX_CONCURRENT_AGENT_RUNS = int(os.getenv("MAX_CONCURRENT_AGENT_RUNS", "2"))
+MAX_CONCURRENT_LLM_CALLS = int(os.getenv("MAX_CONCURRENT_LLM_CALLS", "1"))
 RUNNER_URL = os.getenv("RUNNER_URL", "http://agent-runner:8001").rstrip("/")
 RUNNER_API_KEY = os.getenv("RUNNER_API_KEY")
 
@@ -127,6 +128,9 @@ CONTEXT_COMPACT_THRESHOLD_TOKENS = int(os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKE
 # that keeps one Ollama model resident. Keep routine Code/Quick turns fast.
 MEMORY_ENABLED = env_flag("MEMORY_ENABLED", True)
 MEMORY_FOR_CODE_RUNS = env_flag("MEMORY_FOR_CODE_RUNS", False)
+# Model-generated answers are not trusted source material by default. Persist
+# them only when an operator explicitly accepts the feedback-loop risk.
+GENERATED_MEMORY_ENABLED = env_flag("GENERATED_MEMORY_ENABLED", False)
 MEMORY_CONTEXT_TOKENS = int(os.getenv("MEMORY_CONTEXT_TOKENS", "1200"))
 DOCUMENT_MAX_BYTES = int(os.getenv("DOCUMENT_MAX_BYTES", "10000000"))
 
@@ -168,6 +172,10 @@ def validate_settings() -> None:
         raise RuntimeError("Invalid model context token budget")
     if MAX_CONCURRENT_AGENT_RUNS < 1:
         raise RuntimeError("MAX_CONCURRENT_AGENT_RUNS must be at least 1")
+    if MAX_CONCURRENT_LLM_CALLS < 1:
+        raise RuntimeError("MAX_CONCURRENT_LLM_CALLS must be at least 1")
+    if RUN_EVENT_BATCH_CHARS < 1 or RUN_EVENT_BATCH_SECONDS <= 0:
+        raise RuntimeError("Run event batch settings must be greater than zero")
     if MAX_EMPTY_MODEL_TURNS < 1:
         raise RuntimeError("MAX_EMPTY_MODEL_TURNS must be at least 1")
     if MAX_EMPTY_SEARCH_RESULTS < 1:

@@ -1,6 +1,6 @@
 import asyncio
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -139,6 +139,33 @@ def test_openai_models_expose_only_central_router_agent():
     ids = {model["id"] for model in routes.models()["data"]}
 
     assert ids == {AGENT_MODEL_ID}
+
+
+def test_cancel_reports_immediate_terminal_status_for_queued_run():
+    class Store:
+        def request_cancel(self, _run_id):
+            return True
+
+        def get_run(self, _run_id):
+            return {"status": "cancelled"}
+
+        def append_event(self, run_id, event_type, payload):
+            return {
+                "run_id": run_id,
+                "event_type": event_type,
+                "payload": payload,
+            }
+
+    publisher = MagicMock()
+    with (
+        patch("app.api.routes.get_run_store", return_value=Store()),
+        patch("app.api.routes.get_event_publisher") as get_publisher,
+    ):
+        get_publisher.return_value = publisher
+        result = asyncio.run(routes.cancel("run-1"))
+
+    assert result == {"run_id": "run-1", "status": "cancelled"}
+    publisher.publish.assert_called_once()
 
 
 def test_auto_profile_uses_fast_model_while_code_uses_default_model():

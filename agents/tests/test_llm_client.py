@@ -80,3 +80,28 @@ def test_client_disables_sdk_retries_for_local_inference(openai):
         client._client = previous
 
     assert openai.call_args.kwargs["max_retries"] == 0
+
+
+@patch("app.llm.client._ensure_model_available")
+def test_stream_holds_llm_slot_for_the_complete_iteration(_available):
+    events = []
+
+    class Slot:
+        def __enter__(self):
+            events.append("acquired")
+
+        def __exit__(self, *_args):
+            events.append("released")
+
+    fake_client, completion = _completion_client()
+    completion.return_value = iter(["first", "second"])
+    with (
+        patch("app.llm.client.get_client", return_value=fake_client),
+        patch.object(client, "_llm_slots", Slot()),
+    ):
+        stream = client.chat_with_tools_stream([], [], model="coder")
+        assert events == []
+        assert list(stream) == ["first", "second"]
+
+    assert events == ["acquired", "released"]
+    assert completion.call_args.kwargs["stream"] is True

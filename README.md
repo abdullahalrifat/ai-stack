@@ -309,7 +309,10 @@ The planner also distinguishes:
 
 The validated graph is included in the expert execution brief and summarized
 in the `route_selected` event with complexity, task count, and participating
-workflow types.
+workflow types. Its completion criteria are tracked against successful tool
+observations. A write request cannot be reported complete without an observed
+mutation, requested verification must have succeeded, and failed tool
+categories must be recovered before the final answer is accepted.
 
 At present, one primary expert model executes the complete graph in a single
 tool loop. Per-task workflow annotations establish the contract for future
@@ -326,11 +329,12 @@ planner development independent from later expert orchestration work.
 
    Generate long random values for all credentials. Set `WORKSPACE_PATH` to the
    smallest host directory that contains repositories you want the agent to see.
-   `DEFAULT_WORKSPACE_DIR` defaults to `/workspace`. The Router UI lets you
-   select a narrower repository, and all clients automatically narrow to a
-   valid path explicitly named in the prompt (for example
-   `/workspace/ai-stack`), preventing repository reviews from scanning sibling
-   directories in the broader workspace mount.
+   `DEFAULT_WORKSPACE_DIR` defaults to the project-neutral `/workspace`. For a
+   narrower default, set it to a mounted repository such as
+   `/workspace/my-project`. The Runs UI also lets you select a narrower
+   repository, and clients automatically narrow to a valid path explicitly
+   named in the prompt, preventing repository reviews from scanning unrelated
+   sibling directories when a project path is supplied.
    If you need the agent to see more than one directory, mount each one as its
    own volume in `docker-compose.yaml` and list the in-container paths in
    `WORKSPACE_ROOTS` (comma-separated).
@@ -361,17 +365,22 @@ planner development independent from later expert orchestration work.
 | Ollama | `http://localhost:11434` | Local inference runtime |
 | Qdrant | `http://localhost:6333` | Vector store |
 
-Use LiteLLM from IDE tools that support an OpenAI-compatible endpoint. In CPU
-mode, select `quick` for ordinary chat and research and `coder` for code work.
-`reasoning` and `vision` are deliberate heavyweight choices; `embedding` is
-only for embeddings.
+Use LiteLLM from IDE tools that support an OpenAI-compatible endpoint only for
+direct model chat. Those aliases do **not** invoke the planner, tools,
+completion audit, durable run store, or review sandbox. For autonomous
+repository work, point the client at the Agent's OpenAI-compatible
+`http://localhost:8000/v1` endpoint and select `orchestrator`, or use the Runs
+UI. LiteLLM's `quick` and `coder` aliases remain useful for non-agent chat;
+`reasoning` and `vision` are deliberate heavyweight choices, and `embedding`
+is only for embeddings.
 
 The agent requires `Authorization: Bearer $AGENT_API_KEY` on every endpoint
 except `/health` and the read-only `/models/available` catalog. Tool calls are made through the model's native function
 calling rather than hand-written JSON, and the tools available to it are:
 `list_files`, `tree`, `read_file`, `find_file`, `search_text`,
-`project_summary`, `inspect_files`, `edit_file`, `write_file`, `run_command`,
-`run_tests`, and `web_search`. `edit_file`, `write_file`, and `run_command` are
+`project_summary`, `inspect_files`, `inspect_test_environment`, `edit_file`,
+`write_file`, `run_command`, `run_tests`, and `web_search`. `edit_file`,
+`write_file`, and `run_command` are
 only exposed when a request explicitly sets `allow_write: true`; it is `false`
 by default.
 
@@ -451,8 +460,9 @@ same-origin while still sending the user-provided API key.
 not hold the HTTP request open, and its event stream reports planning, tool
 calls/results, model output deltas, and a reviewable diff as they occur. The
 OpenAI-compatible `/v1/chat/completions` endpoint also accepts `stream: true`
-and forwards model-token deltas in standard OpenAI SSE chunks; tool activity is
-carried in SSE comments for compatible clients to ignore safely.
+and buffers final prose until the completion audit accepts it, then forwards a
+standard OpenAI SSE chunk. Tool activity is carried in SSE comments for
+compatible clients to ignore safely.
 
 ### Keeping local runs fast and reliable
 
@@ -462,6 +472,11 @@ swapping Ollama from the chat model to the embedding model twice on every
 routine coding question. Research, Finance, Deep, and custom profiles retain
 scoped retrieval. Set `MEMORY_FOR_CODE_RUNS=true` only when repository RAG is
 more valuable than that latency.
+
+Model-generated answers are not written back into long-term retrieval by
+default, preventing unsupported output from becoming future evidence. Set
+`GENERATED_MEMORY_ENABLED=true` only when this feedback-loop tradeoff is
+intentional; generated records are tagged and scoped to their workspace.
 
 The executor compacts its transcript only when its estimated token usage
 approaches `CONTEXT_COMPACT_THRESHOLD_TOKENS`, rather than after an arbitrary
@@ -479,9 +494,11 @@ queues run workers instead of starting an unbounded thread for every request.
 The agent does not have shell access. `run_command` executes a single,
 allowlisted executable (no `&&`, `|`, `;`, `>`, backticks, or subshells) with a
 timeout, configured via `ALLOWED_COMMANDS` (defaults to a set of common dev
-tools: `git`, `pytest`, `npm`, `make`, linters, etc.). `run_tests` remains
-available as a smaller, fixed-preset alternative (`pytest`, `python_compile`,
-`npm_test`).
+tools: `git`, `pytest`, `npm`, `make`, linters, etc.).
+`inspect_test_environment` first identifies test configuration, virtual
+environments, and coverage support. `run_tests` then provides fixed presets
+(`pytest`, `pytest_coverage`, `python_compile`, `npm_test`, `ruff`), avoiding
+shell activation and interpreter mismatches.
 
 ### Tests and coverage
 
@@ -510,6 +527,12 @@ coverage measures the code under test:
 ```bash
 docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tests --cov=app --cov-report=term-missing
 ```
+
+Python dependencies are resolved in `agents/requirements.lock`;
+`agents/requirements.txt` remains the short direct-dependency list. Review
+dependency upgrades and update the lock intentionally. CI uses Python 3.12,
+enforces the current coverage floor, builds the TypeScript UI, and validates
+the Compose configuration.
 
 The agent service has a Compose build definition, so changes under `agents/`
 are deployed with `docker compose build agents` followed by
@@ -650,7 +673,7 @@ agents/app/
   main.py          stable FastAPI/OpenAI-compatible entry point
   api/             routes, request/response schemas, authentication dependencies
   core/            configuration and shared exceptions
-  agent/           planning, prompts, state, parsing, tool loop, orchestration
+  agent/           planning, completion contracts, state, tool loop, orchestration
   llm/             LiteLLM gateway client and model discovery
   runs/            PostgreSQL run store, live events, Git sandboxes
   tools/           registry, schemas, filesystem, constrained commands, web search
@@ -691,10 +714,13 @@ change `FINANCE_MODEL` independently for financial workloads.
 
 ### CPU model management
 
-The Compose stack keeps at most one model loaded and unloads it after 10
-minutes. It uses an 8192-token context so Open WebUI's attached tool schemas
-fit without a context-size error. This prevents the 8B, 14B, and vision models
-all occupying RAM on a CPU-only host. Models are never deleted automatically.
+The Compose stack permits up to three resident models so the router, executor,
+and embedding model do not constantly evict one another. Inference remains
+serialized by default (`MAX_CONCURRENT_LLM_CALLS=1`) to protect CPU latency,
+while bounded runs may overlap tool and retrieval I/O. Models unload after 10
+minutes and use an 8192-token context so Open WebUI's attached tool schemas fit
+without a context-size error. Lower `OLLAMA_MAX_LOADED_MODELS` on
+memory-constrained hosts. Models are never deleted automatically.
 Use:
 
 ```bash

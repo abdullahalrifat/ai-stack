@@ -1,6 +1,6 @@
 import uuid
 from contextlib import nullcontext
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.agent.service import ingest_documents, run_agent
 from app.agent import service as agent
@@ -81,10 +81,26 @@ def test_run_agent_generates_conversation_id(
 
 
 def test_memory_persistence_failure_is_non_fatal(caplog):
-    with patch("app.agent.service.save_memory", side_effect=RuntimeError("embedding too long")):
-        agent._save_memory_best_effort("question", "answer")
+    with (
+        patch("app.agent.service.GENERATED_MEMORY_ENABLED", True),
+        patch(
+            "app.agent.service.save_memory",
+            side_effect=RuntimeError("embedding too long"),
+        ),
+    ):
+        agent._save_memory_best_effort("question", "answer", scope="/workspace/repo")
 
     assert "Could not persist conversation memory" in caplog.text
+
+
+def test_generated_memory_is_opt_in():
+    with (
+        patch("app.agent.service.GENERATED_MEMORY_ENABLED", False),
+        patch("app.agent.service.save_memory") as mock_save_memory,
+    ):
+        agent._save_memory_best_effort("question", "answer", scope="/workspace/repo")
+
+    mock_save_memory.assert_not_called()
 
 
 @patch("app.agent.service.save_long_term_memory")
@@ -151,6 +167,15 @@ class FakeRunStore:
     def update_run(self, run_id, **fields):
         assert run_id == "run-1"
         self.run.update(fields)
+
+    def claim_run(self, run_id, worker_id, lease_seconds=600):
+        assert run_id == "run-1"
+        self.run.update(status="running", worker_id=worker_id)
+        return True
+
+    def heartbeat_run(self, run_id, worker_id, lease_seconds=600):
+        assert run_id == "run-1"
+        return self.run.get("worker_id") == worker_id
 
     def append_event(self, run_id, event_type, payload):
         assert run_id == "run-1"
@@ -222,6 +247,29 @@ def test_run_event_buffer_batches_output_and_publishes_durable_event(monkeypatch
 
     assert store.calls == [("run-1", "output_delta", {"content": "abcdef"})]
     assert publisher.events[0]["payload"] == {"content": "abcdef"}
+
+
+def test_run_event_buffer_logs_auditable_failure_reason(caplog, monkeypatch):
+    class Store:
+        def append_event(self, run_id, event_type, payload):
+            return {
+                "id": 1,
+                "run_id": run_id,
+                "event_type": event_type,
+                "payload": payload,
+            }
+
+    publisher = MagicMock()
+    monkeypatch.setattr(agent, "get_event_publisher", lambda: publisher)
+    buffer = agent.RunEventBuffer(Store(), "run-1")
+
+    buffer.emit(
+        "answer_audit_failed",
+        {"failures": ["requested verification has not completed successfully"]},
+    )
+
+    assert "answer_audit_failed" in caplog.text
+    assert "requested verification has not completed successfully" in caplog.text
 
 
 def test_auto_route_hands_full_planning_contract_to_executor(monkeypatch):

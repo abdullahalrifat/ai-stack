@@ -104,6 +104,22 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "inspect_test_environment",
+            "description": (
+                "Inspect test configuration, virtual environments, and stable "
+                "runner capabilities before choosing a test or coverage command."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "default": "."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "inspect_files",
             "description": "Inspect multiple files or directories in a single call.",
             "parameters": {
@@ -176,7 +192,8 @@ TOOL_SCHEMAS = [
             "description": (
                 "Run a single allowlisted shell command (e.g. git, pytest, "
                 "npm, make) inside the workspace. No pipes, redirects, or "
-                "chaining."
+                "chaining. Each call uses a fresh shell; use explicit virtual-"
+                "environment executable paths because shell state does not persist."
             ),
             "parameters": {
                 "type": "object",
@@ -192,16 +209,31 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_tests",
-            "description": "Run a preset test command: pytest, python_compile, or npm_test.",
+            "description": (
+                "Run a stable preset: pytest, pytest_coverage, "
+                "python_compile, npm_test, or ruff."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "kind": {
                         "type": "string",
-                        "enum": ["pytest", "python_compile", "npm_test"],
+                        "enum": [
+                            "pytest",
+                            "pytest_coverage",
+                            "python_compile",
+                            "npm_test",
+                            "ruff",
+                        ],
                         "default": "pytest",
                     },
                     "directory": {"type": "string", "default": "."},
+                    "coverage_target": {
+                        "type": "string",
+                        "description": (
+                            "Dotted Python package for pytest_coverage, such as app."
+                        ),
+                    },
                 },
             },
         },

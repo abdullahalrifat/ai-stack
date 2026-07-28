@@ -17,6 +17,11 @@ from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
+from .completion import (
+    answer_audit as _answer_audit,
+    record_tool_progress as _record_tool_progress,
+    tool_result_failed,
+)
 from .context_budget import estimate_tokens, fit_user_context
 from .parser import parse_tool_arguments
 from .prompts import COMPACTION_PROMPT, PARTIAL_SYNTHESIS_PROMPT, executor_prompt
@@ -64,24 +69,6 @@ def normalize_tool_args(tool_name: str, args: dict) -> dict:
     return args
 
 
-def tool_result_failed(result) -> bool:
-    """Recognize the failure shapes returned by every tool boundary.
-
-    Registry exceptions use ``tool_error`` while command tools report a
-    non-zero ``exit_code``. Treating either as useful progress can make the
-    model stop at a proposal for the next step instead of recovering.
-    """
-
-    if not result:
-        return True
-    if not isinstance(result, dict):
-        return False
-    if result.get("error") or result.get("tool_error"):
-        return True
-    exit_code = result.get("exit_code")
-    return isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0
-
-
 _LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
 
 # How many times a model may leak a tool call as text before the loop gives
@@ -108,6 +95,12 @@ _RESEARCH_REFUSAL = re.compile(
     r"(?:no|lack of)\s+(?:real[ -]?time|timestamped|verified).*?(?:data|price)|"
     r"(?:do not|does not)\s+(?:contain|include).*?(?:closing|price)|"
     r"do not have access to real[ -]?time",
+    re.IGNORECASE | re.DOTALL,
+)
+_PREMATURE_RECOVERY_HANDOFF = re.compile(
+    r"\b(?:i(?:'ll| will|'m going to| am going to)|we(?:'ll| will)|"
+    r"let(?:'s| us)|next|now)\b.{0,120}\b"
+    r"(?:check|run|execute|install|try|start|proceed|continue)\b",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -338,47 +331,6 @@ def _bounded_context(value, limit: int) -> str:
     return f"{text[:limit]}\n...[older stored context omitted]"
 
 
-def _answer_audit(state, answer: str) -> list[str]:
-    """Check observable route requirements before accepting a final answer."""
-    lowered = answer.casefold()
-    failures: list[str] = []
-    missing_entities = [
-        entity for entity in getattr(state, "routing_entities", [])[:30]
-        if entity.casefold() not in lowered
-    ]
-    if missing_entities:
-        failures.append("missing grounded entities: " + ", ".join(missing_entities))
-
-    for deliverable in getattr(state, "route_deliverables", [])[:12]:
-        keywords = [
-            token for token in re.findall(r"[a-z0-9]{4,}", deliverable.casefold())
-            if token not in {"provide", "include", "analysis", "summary"}
-        ]
-        if keywords and not any(keyword in lowered for keyword in keywords):
-            failures.append(f"deliverable may be missing: {deliverable}")
-
-    evidence = getattr(state, "document_evidence", {}) or {}
-    if evidence and evidence.get("provenance_required"):
-        sources = {
-            str(record.get("source")).casefold()
-            for record in evidence.get("records", [])
-            if record.get("source")
-        }
-        if sources and not any(source in lowered for source in sources):
-            failures.append("document provenance is not cited")
-        excluded_entities = [
-            entity
-            for entity in evidence.get("excluded_entities", [])
-            if len(entity) >= 5 and entity.casefold() in lowered
-        ]
-        if excluded_entities:
-            failures.append(
-                "uses entities found only in excluded document sections: "
-                + ", ".join(excluded_entities[:12])
-            )
-    return failures
-
-
 def _compact_history(messages: list, model: str) -> list:
     """Summarize older tool exchanges once the transcript grows large.
 
@@ -479,13 +431,12 @@ Collected tool evidence:
     return "I could not complete the investigation. Please retry the request."
 
 
-def _stream_message(messages: list, tools: list, model: str, on_token, max_tokens: int | None = None, timeout_seconds: int | None = None) -> SimpleNamespace:
-    """Collect one streamed model turn while forwarding text deltas promptly.
+def _stream_message(messages: list, tools: list, model: str, max_tokens: int | None = None, timeout_seconds: int | None = None) -> SimpleNamespace:
+    """Collect one streamed model turn without publishing unaudited answer text.
 
     OpenAI-compatible APIs stream a function call in fragments.  The tool
-    loop needs the completed call before it can execute it, whereas text can
-    be delivered to the caller immediately.  This keeps tool use reliable
-    without holding the final natural-language answer until the request ends.
+    loop needs the completed call before it can execute it. Natural-language
+    output remains buffered until completion auditing accepts the final turn.
     """
 
     content_parts: list[str] = []
@@ -503,7 +454,6 @@ def _stream_message(messages: list, tools: list, model: str, on_token, max_token
         content = getattr(delta, "content", None)
         if content:
             content_parts.append(content)
-            on_token(content)
 
         # Qwen-family OpenAI-compatible streams can emit thought tokens on a
         # separate field. They are not an answer or a tool call, but recording
@@ -551,6 +501,18 @@ def execute_plan(state, on_event=None, on_token=None, should_cancel=None, force_
 
     on_event = on_event or _noop_event
     should_cancel = should_cancel or (lambda: False)
+
+    def finalize(answer: str, *, partial: bool = False) -> str:
+        """Publish exactly one audited or explicitly partial terminal answer."""
+
+        state.finished = True
+        if on_token is not None:
+            on_token(answer)
+        payload = {"answer": answer}
+        if partial:
+            payload["partial"] = True
+        on_event("final_answer", payload)
+        return answer
 
     available_tools = registry.list_tools()
     if not state.allow_write:
@@ -604,6 +566,13 @@ Plan:
 {external_context}
 {document_context}
 """
+    restored_observations = getattr(state, "observations", [])
+    if restored_observations:
+        task_context += (
+            "\nRestored evidence from a checkpoint:\n"
+            + _bounded_context(restored_observations[-8:], 3_000)
+            + "\n"
+        )
 
     system_prompt = executor_prompt(getattr(state, "prompt_mode", "code"), research_mode)
     task_context, budget = fit_user_context(system_prompt, tools, task_context)
@@ -617,6 +586,8 @@ Plan:
     empty_turn_count = 0
     empty_search_count = 0
     unproductive_calls: dict[str, int] = {}
+    recovery_required = False
+    recovery_handoff_count = 0
 
     for step in range(MAX_STEPS):
         if should_cancel():
@@ -639,7 +610,6 @@ Plan:
                 messages,
                 tools,
                 state.model,
-                on_token,
                 getattr(state, "max_completion_tokens", None),
                 getattr(state, "timeout_seconds", None),
             )
@@ -699,6 +669,7 @@ Plan:
                         result = {"error": str(e)}
 
                 state.add_tool(tool_name, result)
+                _record_tool_progress(state, tool_name, args, result)
                 on_event("tool_result", {"tool": tool_name, "result": result})
                 if on_checkpoint is not None:
                     on_checkpoint(
@@ -706,6 +677,19 @@ Plan:
                             "steps": state.steps,
                             "plan": state.plan,
                             "observations": state.observations[-12:],
+                            "route_tasks": getattr(state, "route_tasks", []),
+                            "task_progress": getattr(state, "task_progress", {}),
+                            "successful_mutation": getattr(
+                                state, "successful_mutation", False
+                            ),
+                            "successful_verification": getattr(
+                                state, "successful_verification", False
+                            ),
+                            "pending_failure_categories": sorted(
+                                getattr(
+                                    state, "pending_failure_categories", set()
+                                )
+                            ),
                         }
                     )
 
@@ -735,23 +719,20 @@ Plan:
 
             if empty_search_count >= MAX_EMPTY_SEARCH_RESULTS:
                 answer = _synthesize_partial_answer(state)
-                state.finished = True
                 on_event(
                     "unproductive_search_loop",
                     {"empty_searches": empty_search_count},
                 )
-                on_event("final_answer", {"answer": answer, "partial": True})
-                return answer
+                return finalize(answer, partial=True)
 
             repeated = max(unproductive_calls.values(), default=0)
             if repeated >= MAX_UNPRODUCTIVE_TOOL_CALLS:
                 answer = _synthesize_partial_answer(state)
-                state.finished = True
                 on_event("unproductive_tool_loop", {"repeated_calls": repeated})
-                on_event("final_answer", {"answer": answer, "partial": True})
-                return answer
+                return finalize(answer, partial=True)
 
             if failed_tools:
+                recovery_required = True
                 messages.append(
                     {
                         "role": "user",
@@ -764,6 +745,9 @@ Plan:
                         ),
                     }
                 )
+            else:
+                recovery_required = False
+                recovery_handoff_count = 0
 
             continue
 
@@ -780,9 +764,7 @@ Plan:
             )
             if empty_turn_count >= MAX_EMPTY_MODEL_TURNS:
                 answer = _synthesize_partial_answer(state)
-                state.finished = True
-                on_event("final_answer", {"answer": answer, "partial": True})
-                return answer
+                return finalize(answer, partial=True)
             messages.append(
                 {
                     "role": "user",
@@ -792,6 +774,27 @@ Plan:
             continue
 
         empty_turn_count = 0
+
+        if recovery_required and _PREMATURE_RECOVERY_HANDOFF.search(answer):
+            recovery_handoff_count += 1
+            on_event(
+                "premature_handoff_retry",
+                {"count": recovery_handoff_count, "answer": answer},
+            )
+            messages.append({"role": "assistant", "content": answer})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "This is a progress announcement, not the requested outcome. Perform the "
+                        "stated check or recovery action now using an available tool. Remember that "
+                        "each command runs in a fresh shell: activation and shell state do not persist, "
+                        "so invoke a virtual environment executable by its explicit path. Return a "
+                        "final answer only after completing the task or exhausting recovery paths."
+                    ),
+                }
+            )
+            continue
 
         if research_mode and external_search and _RESEARCH_REFUSAL.search(answer):
             research_retry_count += 1
@@ -836,9 +839,7 @@ Plan:
                     "tool-capable model such as qwen2.5-coder or llama3.1), "
                     "then retry."
                 )
-                state.finished = True
-                on_event("final_answer", {"answer": diagnostic})
-                return diagnostic
+                return finalize(diagnostic)
 
             messages.append(
                 {
@@ -856,10 +857,10 @@ Plan:
         audit_failures = _answer_audit(state, answer)
         if audit_failures:
             on_event("answer_audit_failed", {"failures": audit_failures})
-            # A streamed draft has already reached the client, so do not emit a
-            # duplicate replacement. Non-streaming API calls receive one
-            # bounded repair turn using the same evidence.
-            if completion_retry_count < 1 and on_token is None:
+            # Draft text is buffered until this audit succeeds, so both
+            # streaming and non-streaming callers can receive one repair turn
+            # without exposing the rejected draft.
+            if completion_retry_count < 1:
                 completion_retry_count += 1
                 messages.append({"role": "assistant", "content": answer})
                 messages.append(
@@ -874,13 +875,14 @@ Plan:
                     }
                 )
                 continue
+            answer = (
+                f"{answer}\n\nIncomplete requirements:\n- "
+                + "\n- ".join(audit_failures)
+            )
+            return finalize(answer, partial=True)
 
-        state.finished = True
-        on_event("final_answer", {"answer": answer})
-        return answer
+        return finalize(answer)
 
     answer = _synthesize_partial_answer(state)
-    state.finished = True
     on_event("max_steps_reached", {"steps": state.steps})
-    on_event("final_answer", {"answer": answer, "partial": True})
-    return answer
+    return finalize(answer, partial=True)

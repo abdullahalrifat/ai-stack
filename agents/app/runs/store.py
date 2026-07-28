@@ -4,6 +4,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -11,6 +12,8 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from ..core.config import POSTGRES_URL
+
+MIGRATIONS_DIR = Path(__file__).with_name("migrations")
 
 
 class RunStore:
@@ -34,51 +37,23 @@ class RunStore:
 
     def initialize(self) -> None:
         with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS agent_runs (
-                    id UUID PRIMARY KEY,
-                    status TEXT NOT NULL,
-                    task TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    requested_workspace TEXT NOT NULL,
-                    active_workspace TEXT,
-                    conversation_id TEXT,
-                    document_scope TEXT,
-                    project_id UUID,
-                    allow_write BOOLEAN NOT NULL DEFAULT FALSE,
-                    sandbox_path TEXT,
-                    repository_path TEXT,
-                    base_commit TEXT,
-                    checkpoint JSONB,
-                    answer TEXT,
-                    error TEXT,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    started_at TIMESTAMPTZ,
-                    completed_at TIMESTAMPTZ,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-                CREATE TABLE IF NOT EXISTS agent_run_events (
-                    id BIGSERIAL PRIMARY KEY,
-                    run_id UUID NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
-                    event_type TEXT NOT NULL,
-                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-                CREATE INDEX IF NOT EXISTS agent_run_events_run_id_id_idx
-                    ON agent_run_events (run_id, id);
-                CREATE TABLE IF NOT EXISTS agent_projects (
-                    id UUID PRIMARY KEY,
-                    name TEXT NOT NULL UNIQUE,
-                    workspace TEXT NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-                ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS repository_path TEXT;
-                ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS base_commit TEXT;
-                ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS document_scope TEXT;
-                ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS checkpoint JSONB;
-                ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS project_id UUID;
-            """)
+            cursor.execute(
+                """CREATE TABLE IF NOT EXISTS agent_schema_migrations (
+                       version TEXT PRIMARY KEY,
+                       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                   )"""
+            )
+            cursor.execute("SELECT version FROM agent_schema_migrations")
+            applied = {str(row["version"]) for row in cursor.fetchall()}
+            for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                version = migration.stem.split("_", 1)[0]
+                if version in applied:
+                    continue
+                cursor.execute(migration.read_text())
+                cursor.execute(
+                    "INSERT INTO agent_schema_migrations (version) VALUES (%s)",
+                    (version,),
+                )
 
     def create_run(
         self,
@@ -134,6 +109,41 @@ class RunStore:
     def update_checkpoint(self, run_id: str, checkpoint: dict[str, Any]) -> None:
         self.update_run(run_id, checkpoint=Jsonb(checkpoint))
 
+    def claim_run(self, run_id: str, worker_id: str, lease_seconds: int = 600) -> bool:
+        """Atomically claim queued work or an expired lease."""
+
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_runs
+                   SET status = 'running', worker_id = %s,
+                       lease_expires_at = NOW() + (%s * INTERVAL '1 second'),
+                       started_at = COALESCE(started_at, NOW()), updated_at = NOW()
+                   WHERE id = %s
+                     AND (
+                       status = 'queued'
+                       OR (
+                         status = 'running'
+                         AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+                       )
+                     )
+                   RETURNING id""",
+                (worker_id, max(lease_seconds, 30), run_id),
+            )
+            return cursor.fetchone() is not None
+
+    def heartbeat_run(
+        self, run_id: str, worker_id: str, lease_seconds: int = 600
+    ) -> bool:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_runs
+                   SET lease_expires_at = NOW() + (%s * INTERVAL '1 second'),
+                       updated_at = NOW()
+                   WHERE id = %s AND status = 'running' AND worker_id = %s""",
+                (max(lease_seconds, 30), run_id, worker_id),
+            )
+            return cursor.rowcount == 1
+
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute("SELECT * FROM agent_runs WHERE id = %s", (run_id,))
@@ -174,10 +184,27 @@ class RunStore:
             return cursor.fetchall()
 
     def request_cancel(self, run_id: str) -> bool:
-        """Mark a queued/running run for cooperative cancellation."""
+        """Cancel queued work immediately or signal a claimed worker."""
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
-                """UPDATE agent_runs SET status = 'cancelling', updated_at = NOW()
+                """UPDATE agent_runs
+                   SET status = CASE
+                         WHEN status = 'queued' THEN 'cancelled'
+                         ELSE 'cancelling'
+                       END,
+                       completed_at = CASE
+                         WHEN status = 'queued' THEN NOW()
+                         ELSE completed_at
+                       END,
+                       worker_id = CASE
+                         WHEN status = 'queued' THEN NULL
+                         ELSE worker_id
+                       END,
+                       lease_expires_at = CASE
+                         WHEN status = 'queued' THEN NULL
+                         ELSE lease_expires_at
+                       END,
+                       updated_at = NOW()
                    WHERE id = %s AND status IN ('queued', 'running')""",
                 (run_id,),
             )
@@ -191,21 +218,37 @@ class RunStore:
             return bool(row and row["cancelling"])
 
     def recover_interrupted_runs(self) -> tuple[list[str], list[dict[str, Any]]]:
-        """Resume checkpointed read-only work; clean up interrupted writes."""
+        """Recover only abandoned work whose worker lease has expired.
+
+        This is safe when several API replicas start at the same time: a
+        healthy worker's future lease is left alone, while legacy rows with no
+        lease are treated as abandoned.
+        """
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute("SELECT id FROM agent_runs WHERE status = 'queued' ORDER BY created_at")
             queued = [str(row["id"]) for row in cursor.fetchall()]
             cursor.execute(
-                """UPDATE agent_runs SET status = 'queued', error = NULL, updated_at = NOW()
+                """UPDATE agent_runs
+                   SET status = 'queued', error = NULL, worker_id = NULL,
+                       lease_expires_at = NULL, updated_at = NOW()
                    WHERE status = 'running' AND allow_write = FALSE
+                     AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
                    RETURNING id"""
             )
             resumed = [str(row["id"]) for row in cursor.fetchall()]
             queued.extend(run_id for run_id in resumed if run_id not in queued)
             cursor.execute(
                 """UPDATE agent_runs SET status = 'failed', error = 'Agent service restarted while run was active',
-                       completed_at = NOW(), updated_at = NOW()
-                   WHERE (status = 'running' AND allow_write = TRUE) OR status = 'cancelling'
+                       completed_at = NOW(), worker_id = NULL,
+                       lease_expires_at = NULL, updated_at = NOW()
+                   WHERE (
+                         status = 'running' AND allow_write = TRUE
+                         AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+                       )
+                       OR (
+                         status = 'cancelling'
+                         AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+                       )
                    RETURNING id, repository_path, sandbox_path"""
             )
             interrupted = list(cursor.fetchall())

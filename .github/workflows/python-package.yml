@@ -1,52 +1,59 @@
-# This workflow will install Python dependencies, run tests and lint
-
-name: Python package
+name: Validate
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
-defaults:
-  run:
-    working-directory: agents
+permissions:
+  contents: read
 
 jobs:
-  build:
-
+  agents:
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11"]
-
+    defaults:
+      run:
+        working-directory: agents
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agents/requirements.lock
+      - name: Install locked dependencies
+        run: python -m pip install -r requirements.lock
+      - name: Syntax and import safety
+        run: python -m compileall -q app
+      - name: Critical lint
+        run: ruff check app tests --select E9,F63,F7,F82
+      - name: Tests and coverage floor
+        run: python -m pytest -q tests --cov=app --cov-report=term-missing --cov-fail-under=67
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
+  runs-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runs-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: runs-ui/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .
-        pip install flake8 pytest
-
-        if [ -f requirements.txt ]; then
-          pip install -r requirements.txt
-        fi
-
-    - name: Lint with flake8
-      run: |
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-    - name: Test with pytest
-      run: |
-        pytest -v
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        env:
+          AGENT_API_KEY: ci-only-placeholder
+          POSTGRES_PASSWORD: ci-only-placeholder
+          LITELLM_MASTER_KEY: ci-only-placeholder
+        run: docker compose config --quiet

@@ -10,3 +10,6 @@ requires-python = ">=3.10"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.runs" = ["migrations/*.sql"]

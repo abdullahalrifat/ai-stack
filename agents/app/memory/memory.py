@@ -13,6 +13,7 @@ from qdrant_client.models import (
     VectorParams,
     Filter,
     FieldCondition,
+    MatchText,
     MatchValue,
     PayloadSchemaType,
 )
@@ -71,17 +72,22 @@ def ensure_collection(vector_size: int):
 
 @lru_cache(maxsize=1)
 def _ensure_scope_index() -> None:
-    """Create the scoped-retrieval index once per process when supported."""
-    try:
-        qdrant.create_payload_index(
-            collection_name=COLLECTION,
-            field_name="scope",
-            field_schema=PayloadSchemaType.KEYWORD,
-        )
-    except Exception:
-        # Existing collections/indexes and older Qdrant versions remain
-        # compatible; retrieval still works without this optimization.
-        pass
+    """Create server-side scope and lexical indexes when supported."""
+
+    for field_name, field_schema in (
+        ("scope", PayloadSchemaType.KEYWORD),
+        ("text", PayloadSchemaType.TEXT),
+    ):
+        try:
+            qdrant.create_payload_index(
+                collection_name=COLLECTION,
+                field_name=field_name,
+                field_schema=field_schema,
+            )
+        except Exception:
+            # Existing indexes and older Qdrant versions remain compatible;
+            # retrieval falls back to paginated payload scoring.
+            continue
 
 
 # =====================================================
@@ -213,18 +219,52 @@ def search_long_term_memory(embedding: list[float], limit: int = 5, scope: str |
     ]
 
 
-def _scoped_payloads(scope: str | None, limit: int = 200) -> list[dict]:
+def _scoped_payloads(scope: str | None, limit: int = 2_000) -> list[dict]:
     if not _collection_exists():
         return []
     query_filter = Filter(must=[FieldCondition(key="scope", match=MatchValue(value=scope))]) if scope else None
+    results = []
+    offset = None
+    while len(results) < limit:
+        points, next_offset = qdrant.scroll(
+            collection_name=COLLECTION,
+            scroll_filter=query_filter,
+            limit=min(256, limit - len(results)),
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        results.extend(
+            {"id": str(point.id), "memory": point.payload, "score": 0.0}
+            for point in points
+        )
+        if next_offset is None or not points:
+            break
+        offset = next_offset
+    return results
+
+
+def _lexical_payloads(
+    query: str, scope: str | None, limit: int = 100
+) -> list[dict]:
+    """Use Qdrant's text index instead of scanning an arbitrary first page."""
+
+    conditions = [FieldCondition(key="text", match=MatchText(text=query))]
+    if scope:
+        conditions.insert(
+            0, FieldCondition(key="scope", match=MatchValue(value=scope))
+        )
     points, _ = qdrant.scroll(
         collection_name=COLLECTION,
-        scroll_filter=query_filter,
+        scroll_filter=Filter(must=conditions),
         limit=limit,
         with_payload=True,
         with_vectors=False,
     )
-    return [{"id": str(point.id), "memory": point.payload, "score": 0.0} for point in points]
+    return [
+        {"id": str(point.id), "memory": point.payload, "score": 0.0}
+        for point in points
+    ]
 
 
 # =====================================================
@@ -237,9 +277,9 @@ def search_memory(query: str, limit: int = 5, scope: str | None = None):
     embedding = create_embedding(query)
     semantic = search_long_term_memory(embedding, max(limit, 8), scope)
     try:
-        lexical_pool = _scoped_payloads(scope)
+        lexical_pool = _lexical_payloads(query, scope)
     except Exception:
-        lexical_pool = []
+        lexical_pool = _scoped_payloads(scope)
 
     merged: dict[str, dict] = {}
     for result in semantic:
@@ -263,7 +303,8 @@ def search_memory(query: str, limit: int = 5, scope: str | None = None):
         for item in ranked[:limit]
         if item["memory"].get("source")
     }
-    for result in lexical_pool:
+    adjacency_pool = _scoped_payloads(scope) if selected_sections else []
+    for result in adjacency_pool:
         payload = result["memory"]
         if (payload.get("source"), payload.get("location")) not in selected_sections:
             continue
@@ -316,7 +357,7 @@ def memory_context(results: list[dict], token_budget: int = 1_200) -> list[dict]
     return selected
 
 
-def save_memory(question: str, answer: str):
+def save_memory(question: str, answer: str, scope: str | None = None):
 
     text = f"""
 
@@ -333,7 +374,13 @@ Answer:
 
     embedding = create_embedding(text)
 
-    return save_long_term_memory(text, embedding, {"type": "conversation"})
+    metadata = {
+        "type": "conversation",
+        "generated": True,
+    }
+    if scope:
+        metadata["scope"] = scope
+    return save_long_term_memory(text, embedding, metadata)
 
 
 def clear_memory():

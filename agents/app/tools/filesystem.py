@@ -1,7 +1,9 @@
 import os
+import importlib.util
 import re
 import resource
 import shlex
+import shutil
 import subprocess
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -512,6 +514,58 @@ def project_summary():
     }
 
 
+@tool
+def inspect_test_environment(directory: str = "."):
+    """Describe test configuration and stable runner capabilities."""
+
+    try:
+        root = resolve_path(directory)
+        if not root.is_dir():
+            return {"error": "directory is not a directory."}
+        config_names = (
+            "pytest.ini",
+            "pyproject.toml",
+            "setup.cfg",
+            "tox.ini",
+            "package.json",
+        )
+        configs = [name for name in config_names if (root / name).is_file()]
+        virtualenvs = []
+        for name in ("venv", ".venv"):
+            candidate = root / name / "bin"
+            if candidate.is_dir():
+                virtualenvs.append(
+                    {
+                        "path": relative(candidate.parent),
+                        "pytest": (candidate / "pytest").is_file(),
+                        "python": (candidate / "python").is_file(),
+                    }
+                )
+        coverage_target = ""
+        if (root / "app").is_dir():
+            coverage_target = "app"
+        elif (root / "src").is_dir():
+            coverage_target = "src"
+        return {
+            "directory": relative(root),
+            "configs": configs,
+            "virtualenvs": virtualenvs,
+            "runner": {
+                "pytest": bool(shutil.which("pytest")),
+                "pytest_cov": importlib.util.find_spec("pytest_cov") is not None,
+                "ruff": bool(shutil.which("ruff")),
+            },
+            "recommended": {
+                "test_kind": "pytest",
+                "coverage_kind": "pytest_coverage",
+                "coverage_target": coverage_target,
+            },
+            "fresh_shell_per_command": True,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ============================================================
 # Inspect Multiple Files
 # ============================================================
@@ -666,7 +720,8 @@ def run_command(command: str, directory: str = "."):
 
     Only single commands are supported -- no pipes, redirects, subshells, or
     chaining (&&, ||, ;, |, >, <, backticks, $()). The executable must be one
-    of the administrator-approved commands (see ALLOWED_COMMANDS).
+    of the administrator-approved commands (see ALLOWED_COMMANDS). Each call
+    uses a fresh shell; activation and other shell state do not persist.
     """
     try:
         forbidden = ["&&", "||", "|", ";", ">", "<", "`", "$("]
@@ -697,17 +752,35 @@ def run_command(command: str, directory: str = "."):
 
 
 @tool
-def run_tests(kind: str = "pytest", directory: str = "."):
+def run_tests(
+    kind: str = "pytest",
+    directory: str = ".",
+    coverage_target: str = "",
+):
     """Run a small approved test command in the active workspace.
 
-    Supported kinds are pytest, python_compile, and npm_test. Use run_command
-    for anything not covered by these presets.
+    Supported kinds are pytest, pytest_coverage, python_compile, npm_test, and
+    ruff. Coverage uses the runner image's declared pytest-cov dependency.
     """
     commands = {
         "pytest": ["pytest", "-q"],
         "python_compile": ["python", "-m", "compileall", "-q", "."],
         "npm_test": ["npm", "test", "--", "--runInBand"],
+        "ruff": ["ruff", "check", "."],
     }
+    if kind == "pytest_coverage":
+        target = coverage_target.strip()
+        if not target:
+            root = resolve_path(directory)
+            target = "app" if (root / "app").is_dir() else "src"
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", target):
+            return {"error": "coverage_target must be a dotted Python package name."}
+        commands[kind] = [
+            "pytest",
+            "-q",
+            f"--cov={target}",
+            "--cov-report=term-missing",
+        ]
     if kind not in commands:
         return {"error": f"Unsupported test kind: {kind}"}
     try:

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, Run, RunEvent, streamEvents, uploadDocuments } from "./api";
+import { answerAfterEvent, diffAfterEvent, sourceUrls } from "./runEvents";
 
 type Project = { id: string; name: string; workspace: string };
 
@@ -10,10 +11,6 @@ const terminal = new Set([
   "discarded",
   "cancelled",
 ]);
-function sourceUrls(text: string): string[] {
-  return [...new Set(text.match(/https?:\/\/[^\s)\]}>,]+/g) || [])];
-}
-
 export function App() {
   const [key, setKey] = useState("");
   const [task, setTask] = useState("");
@@ -70,10 +67,8 @@ export function App() {
 
   const consume = (event: RunEvent) => {
     setEvents((old) => [...old, event]);
-    if (event.event_type === "output_delta")
-      setAnswer((old) => old + String(event.payload.content || ""));
-    if (event.event_type === "diff_ready")
-      setDiff(String(event.payload.diff || ""));
+    setAnswer((old) => answerAfterEvent(old, event));
+    setDiff((old) => diffAfterEvent(old, event));
     if (event.event_type === "stream_closed")
       setActive((old) =>
         old ? { ...old, status: event.status || old.status } : old,

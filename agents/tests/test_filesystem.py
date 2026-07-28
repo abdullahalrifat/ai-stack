@@ -124,3 +124,59 @@ def test_run_command_enforces_policy_before_execution(workspace, monkeypatch):
 
     assert result["exit_code"] == 0
     assert result["output"] == "ok"
+
+
+def test_inspect_test_environment_reports_stable_coverage_capability(
+    workspace, monkeypatch
+):
+    (workspace / "pytest.ini").write_text("[pytest]\n")
+    (workspace / "app").mkdir()
+    monkeypatch.setattr(filesystem.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        filesystem.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "pytest_cov" else None,
+    )
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.inspect_test_environment.invoke({"directory": "."})
+
+    assert result["configs"] == ["pytest.ini"]
+    assert result["runner"]["pytest_cov"] is True
+    assert result["recommended"]["coverage_target"] == "app"
+    assert result["fresh_shell_per_command"] is True
+
+
+def test_run_tests_coverage_uses_explicit_package_target(workspace, monkeypatch):
+    commands = []
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda command, cwd: commands.append(command)
+        or {"command": command, "exit_code": 0, "output": "covered"},
+    )
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.run_tests.invoke(
+            {
+                "kind": "pytest_coverage",
+                "directory": ".",
+                "coverage_target": "app",
+            }
+        )
+
+    assert result["exit_code"] == 0
+    assert commands == ["pytest -q --cov=app --cov-report=term-missing"]
+
+
+def test_run_tests_rejects_unsafe_coverage_target(workspace):
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.run_tests.invoke(
+            {
+                "kind": "pytest_coverage",
+                "coverage_target": "app; touch unsafe",
+            }
+        )
+
+    assert "dotted Python package" in result["error"]

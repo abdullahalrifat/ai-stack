@@ -1,5 +1,4 @@
 import logging
-import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -7,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, MAX_CONCURRENT_AGENT_RUNS, MEMORY_CONTEXT_TOKENS, MEMORY_ENABLED, MEMORY_FOR_CODE_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
+from ..core.config import DEFAULT_MODEL, DEFAULT_WORKSPACE, GENERATED_MEMORY_ENABLED, MAX_CONCURRENT_AGENT_RUNS, MEMORY_CONTEXT_TOKENS, MEMORY_ENABLED, MEMORY_FOR_CODE_RUNS, RESEARCH_MODEL, RUN_EVENT_BATCH_CHARS, RUN_EVENT_BATCH_SECONDS
 from .executor import execute_plan, requires_external_search
 from ..runs.events import get_event_publisher
 from ..core.exceptions import RunCancelled
@@ -30,17 +29,20 @@ from ..tools.filesystem import workspace_context
 from ..api.profiles import resolve_profile
 
 logger = logging.getLogger(__name__)
-_execution_slots = threading.BoundedSemaphore(MAX_CONCURRENT_AGENT_RUNS)
 _run_executor = ThreadPoolExecutor(
     max_workers=MAX_CONCURRENT_AGENT_RUNS,
     thread_name_prefix="agent-run",
 )
 
 
-def _save_memory_best_effort(question: str, answer: str) -> None:
+def _save_memory_best_effort(
+    question: str, answer: str, scope: str | None = None
+) -> None:
     """Memory persistence must never turn a completed answer into HTTP 500."""
+    if not GENERATED_MEMORY_ENABLED:
+        return
     try:
-        save_memory(question, answer)
+        save_memory(question, answer, scope=scope)
     except Exception as exc:
         logger.warning("Could not persist conversation memory: %s", exc)
 
@@ -117,6 +119,18 @@ def _apply_auto_route(state, on_event=None) -> None:
     state.route_completion_criteria = [
         criterion for task in decision.tasks for criterion in task.completion_criteria
     ]
+    state.route_tasks = [
+        {
+            "id": task.id,
+            "objective": task.objective,
+            "workflow": task.workflow,
+            "depends_on": list(task.depends_on),
+            "required_evidence": list(task.required_evidence),
+            "completion_criteria": list(task.completion_criteria),
+        }
+        for task in decision.tasks
+    ]
+    state.task_progress = {task.id: "pending" for task in decision.tasks}
     brief_parts = [f"Translated objective:\n{decision.translated_task}"]
     if state.routing_entities:
         brief_parts.append("Grounded entities:\n- " + "\n- ".join(state.routing_entities))
@@ -188,14 +202,35 @@ def _apply_auto_route(state, on_event=None) -> None:
 class RunEventBuffer:
     """Batch output deltas while publishing durable events immediately enough for UI."""
 
-    def __init__(self, store, run_id: str):
+    def __init__(self, store, run_id: str, heartbeat=None):
         self.store = store
         self.run_id = run_id
+        self.heartbeat = heartbeat
         self.pending_output = ""
         self.last_flush = time.monotonic()
+        self.last_heartbeat = time.monotonic()
 
     def _persist(self, event_type: str, payload: dict[str, Any]) -> None:
         event = self.store.append_event(self.run_id, event_type, payload)
+        if event_type != "output_delta":
+            log = (
+                logger.warning
+                if event_type
+                in {
+                    "answer_audit_failed",
+                    "max_steps_reached",
+                    "run_failed",
+                    "tool_recovery_required",
+                }
+                else logger.info
+            )
+            log(
+                "Run event run_id=%s type=%s tool=%s failures=%s",
+                self.run_id,
+                event_type,
+                payload.get("tool"),
+                payload.get("failures") or payload.get("error"),
+            )
         if not event:
             return
         try:
@@ -205,6 +240,9 @@ class RunEventBuffer:
             logger.exception("Could not publish live event for run %s", self.run_id)
 
     def emit(self, event_type: str, payload: dict[str, Any]) -> None:
+        if self.heartbeat is not None and time.monotonic() - self.last_heartbeat >= 30:
+            self.heartbeat()
+            self.last_heartbeat = time.monotonic()
         if event_type == "output_delta":
             self.pending_output += str(payload.get("content", ""))
             if (
@@ -258,9 +296,9 @@ def run_agent(
         workspace=workspace,
     )
 
-    # Local Ollama is normally configured for one loaded model. Serializing
-    # agent turns avoids competing tool loops making every request appear hung.
-    with _execution_slots, workspace_context(workspace):
+    # Model calls are serialized in llm.client. Tool and retrieval work may
+    # overlap across bounded runs so slow I/O does not block every request.
+    with workspace_context(workspace):
         # Client-facing OpenAI compatibility already carries recent history;
         # only a short server-side tail is needed for direct API callers.
         state.history = get_conversation(conversation_id, limit=4)
@@ -285,7 +323,7 @@ def run_agent(
     save_conversation(conversation_id, "user", message)
     save_conversation(conversation_id, "assistant", answer)
     if _uses_memory(state.prompt_mode):
-        _save_memory_best_effort(message, answer)
+        _save_memory_best_effort(message, answer, scope=state.memory_scope)
 
     return {"conversation_id": conversation_id, "answer": answer}
 
@@ -306,7 +344,16 @@ def execute_run(run_id: str) -> None:
         logger.error("execute_run called for unknown run_id=%s", run_id)
         return
 
-    events = RunEventBuffer(store, run_id)
+    worker_id = str(uuid.uuid4())
+    if not store.claim_run(run_id, worker_id):
+        logger.info("Run %s is already claimed or no longer queued", run_id)
+        return
+
+    events = RunEventBuffer(
+        store,
+        run_id,
+        heartbeat=lambda: store.heartbeat_run(run_id, worker_id),
+    )
 
     def on_event(event_type: str, payload: dict[str, Any]):
         events.emit(event_type, payload)
@@ -315,12 +362,17 @@ def execute_run(run_id: str) -> None:
         return store.is_cancel_requested(run_id)
 
     if cancelled():
-        store.update_run(run_id, status="cancelled", completed_at=datetime.now(timezone.utc))
+        store.update_run(
+            run_id,
+            status="cancelled",
+            worker_id=None,
+            lease_expires_at=None,
+            completed_at=datetime.now(timezone.utc),
+        )
         on_event("run_cancelled", {"before_start": True})
         events.flush()
         return
 
-    store.update_run(run_id, status="running", started_at=datetime.now(timezone.utc))
     on_event("run_started", {})
 
     conversation_id = run["conversation_id"] or run_id
@@ -372,10 +424,19 @@ def execute_run(run_id: str) -> None:
         if checkpoint and not allow_write:
             state.observations = list(checkpoint.get("observations") or [])
             state.steps = int(checkpoint.get("steps") or 0)
+            state.route_tasks = list(checkpoint.get("route_tasks") or [])
+            state.task_progress = dict(checkpoint.get("task_progress") or {})
+            state.successful_mutation = bool(checkpoint.get("successful_mutation"))
+            state.successful_verification = bool(
+                checkpoint.get("successful_verification")
+            )
+            state.pending_failure_categories = set(
+                checkpoint.get("pending_failure_categories") or []
+            )
             on_event("checkpoint_restored", {"steps": state.steps, "observations": len(state.observations)})
         store.update_run(run_id, active_workspace=active_workspace)
 
-        with _execution_slots, workspace_context(active_workspace):
+        with workspace_context(active_workspace):
             state.history = get_conversation(conversation_id, limit=4)
             state.memory_scope = run.get("document_scope") or str(requested_workspace)
             state.memories = memory_context(search_memory(task, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS) if _uses_memory(state.prompt_mode, run.get("document_scope")) else []
@@ -407,7 +468,7 @@ def execute_run(run_id: str) -> None:
         save_conversation(conversation_id, "user", task)
         save_conversation(conversation_id, "assistant", answer)
         if _uses_memory(state.prompt_mode):
-            _save_memory_best_effort(task, answer)
+            _save_memory_best_effort(task, answer, scope=state.memory_scope)
 
         if sandbox is not None and not has_pending_diff:
             # Nothing changed -- no point holding a worktree open for review.
@@ -419,6 +480,8 @@ def execute_run(run_id: str) -> None:
             status="awaiting_approval" if has_pending_diff else "completed",
             answer=answer,
             checkpoint=None,
+            worker_id=None,
+            lease_expires_at=None,
             completed_at=datetime.now(timezone.utc),
         )
         on_event(
@@ -434,6 +497,8 @@ def execute_run(run_id: str) -> None:
             run_id,
             status="cancelled",
             sandbox_path=None,
+            worker_id=None,
+            lease_expires_at=None,
             completed_at=datetime.now(timezone.utc),
         )
         on_event("run_cancelled", {})
@@ -448,6 +513,8 @@ def execute_run(run_id: str) -> None:
             run_id,
             status="failed",
             error=str(e),
+            worker_id=None,
+            lease_expires_at=None,
             completed_at=datetime.now(timezone.utc),
         )
         on_event("run_failed", {"error": str(e)})
