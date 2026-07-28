@@ -54,7 +54,7 @@ jobs:
       - name: Tests and coverage floor
         run: python -m pytest -q --cov=aistack_cli --cov-report=term-missing --cov-fail-under=70
       - name: Build package
-        run: python -m pip wheel --no-deps --no-build-isolation . --wheel-dir /tmp/aistack-cli-dist
+        run: python -m pip wheel --no-deps . --wheel-dir /tmp/aistack-cli-dist
 
   runs-ui:
     runs-on: ubuntu-latest
