@@ -114,6 +114,7 @@ services:
   ## LiteLLM
   ####################################################
   litellm:
+    build: ./litellm
     image: custom-litellm:latest
     container_name: litellm
     restart: unless-stopped

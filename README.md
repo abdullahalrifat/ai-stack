@@ -608,6 +608,20 @@ policy and preserves the newest user request plus short recent history,
 omitting client system/tool instructions and older/oversized context first.
 Raise it only when using a model with a larger verified context window.
 
+### IDE agent ownership
+
+Continue Agent mode already owns its planning and tool-execution loop. Select
+the direct `coder` model for that mode so Continue remains the only
+orchestrator. The LiteLLM direct-client guard prevents known premature stops
+and safely falls back to plain pytest when optional coverage tooling is
+unavailable.
+
+Use `agent.orchestrator` through the Runs UI or the agent `/runs` API when the
+server should own planning, tool recovery, verification, sandboxing, and
+approval. Do not point Continue Agent mode at `agent.orchestrator`: nesting the
+IDE agent around the server agent duplicates orchestration, increases latency,
+and makes tool and permission ownership ambiguous.
+
 ### Web research
 
 When `WEB_SEARCH_ENABLED=true`, the agent can decide to call `web_search` for a

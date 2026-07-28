@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import shlex
+import uuid
 
 try:
     from litellm.integrations.custom_logger import CustomLogger
 except ImportError:  # Allows policy unit tests without installing LiteLLM.
+
     class CustomLogger:  # type: ignore[no-redef]
         pass
 
@@ -35,11 +39,18 @@ TOOL_FAILURE = re.compile(
     r"permission denied|error:|failed\b)",
     re.IGNORECASE,
 )
+COVERAGE_TOOL_FAILURE = re.compile(
+    r"(?:coverage: command not found|no module named (?:pytest_cov|coverage)|"
+    r"unrecognized arguments?:[^\n]*(?:--cov|--cov-report)|"
+    r"unknown option[^\n]*(?:--cov|--cov-report))",
+    re.IGNORECASE,
+)
 VERIFICATION_COMMAND = re.compile(
     r"(?:^|\s)(?:python(?:3)?\s+-m\s+pytest|pytest|npm\s+(?:run\s+)?test|"
     r"ruff\s+check|mypy|make\s+(?:test|check)|cargo\s+test|go\s+test)(?:\s|$)",
     re.IGNORECASE,
 )
+logger = logging.getLogger("direct_client_guard")
 DIRECT_TOOL_LOOP_POLICY = f"""
 {POLICY_MARKER}
 You are participating in a client-managed tool-execution loop. A prose message
@@ -87,11 +98,14 @@ def _message_text(message: dict) -> str:
     return json.dumps(content, default=str)
 
 
-def _latest_user_task(messages: list) -> str:
-    for message in reversed(messages):
-        if isinstance(message, dict) and message.get("role") == "user":
-            return _message_text(message)
-    return ""
+def _code_change_requested(messages: list) -> bool:
+    """Keep the original task visible when clients encode tool output as user text."""
+
+    return any(
+        CODE_CHANGE_REQUEST.search(_message_text(message))
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "user"
+    )
 
 
 def _tool_turn_count(messages: list) -> int:
@@ -105,9 +119,22 @@ def _tool_turn_count(messages: list) -> int:
 
 
 def _latest_tool_output(messages: list) -> str | None:
-    for message in reversed(messages):
-        if isinstance(message, dict) and message.get("role") == "tool":
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "tool":
             return _message_text(message)
+        # Some IDE tool loops use a user message for the result of the
+        # immediately preceding assistant tool call.
+        if message.get("role") == "user" and index > 0:
+            previous = messages[index - 1]
+            if (
+                isinstance(previous, dict)
+                and previous.get("role") == "assistant"
+                and previous.get("tool_calls")
+            ):
+                return _message_text(message)
     return None
 
 
@@ -129,6 +156,158 @@ def _latest_terminal_command(messages: list) -> str:
     return ""
 
 
+def _terminal_commands(messages: list) -> list[str]:
+    commands = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") if isinstance(call, dict) else None
+            if (
+                not isinstance(function, dict)
+                or function.get("name") != "run_terminal_command"
+            ):
+                continue
+            try:
+                arguments = json.loads(function.get("arguments") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            command = str(arguments.get("command", "")).strip()
+            if command:
+                commands.append(command)
+    return commands
+
+
+def _plain_pytest_command(messages: list) -> str:
+    """Recover from unavailable coverage tooling without installing packages."""
+
+    for command in reversed(_terminal_commands(messages)):
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            continue
+        try:
+            pytest_index = tokens.index("pytest")
+        except ValueError:
+            continue
+        remaining = tokens[pytest_index + 1 :]
+        safe_args = []
+        skip_value = False
+        for token in remaining:
+            if token in {"&&", "||", ";", "|"}:
+                break
+            if skip_value:
+                skip_value = False
+                continue
+            if token in {"--cov", "--cov-report", "--cov-config"}:
+                skip_value = True
+                continue
+            if token.startswith("--cov"):
+                continue
+            safe_args.append(token)
+        return shlex.join(["python", "-m", "pytest", *safe_args])
+    return "python -m pytest"
+
+
+def _plain_pytest_attempted_after(messages: list, start_index: int) -> bool:
+    for message in messages[start_index + 1 :]:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") if isinstance(call, dict) else None
+            if (
+                not isinstance(function, dict)
+                or function.get("name") != "run_terminal_command"
+            ):
+                continue
+            try:
+                arguments = json.loads(function.get("arguments") or "{}")
+                command = str(arguments.get("command", ""))
+                tokens = shlex.split(command)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if "pytest" in tokens and not any(
+                token == "coverage" or token.startswith("--cov") for token in tokens
+            ):
+                return True
+    return False
+
+
+def _coverage_recovery_command(data: dict) -> str | None:
+    messages = data.get("messages")
+    if not isinstance(messages, list) or not require_recovery_tool_call(data):
+        return None
+    failure_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if isinstance(messages[index], dict)
+            and COVERAGE_TOOL_FAILURE.search(_message_text(messages[index]))
+        ),
+        None,
+    )
+    if failure_index is None or _plain_pytest_attempted_after(messages, failure_index):
+        return None
+    return _plain_pytest_command(messages)
+
+
+def _tool_call(command: str) -> dict:
+    return {
+        "id": f"call_recovery_{uuid.uuid4().hex}",
+        "type": "function",
+        "function": {
+            "name": "run_terminal_command",
+            "arguments": json.dumps({"command": command}),
+        },
+    }
+
+
+def _response_has_tool_call(response) -> bool:
+    choices = (
+        response.get("choices", [])
+        if isinstance(response, dict)
+        else getattr(response, "choices", [])
+    )
+    if not choices:
+        return False
+    choice = choices[0]
+    message = (
+        choice.get("message", {})
+        if isinstance(choice, dict)
+        else getattr(choice, "message", None)
+    )
+    if isinstance(message, dict):
+        return bool(message.get("tool_calls"))
+    return bool(message and getattr(message, "tool_calls", None))
+
+
+def enforce_coverage_recovery(data: dict, response):
+    """Replace premature prose with a deterministic safe recovery tool call."""
+
+    command = _coverage_recovery_command(data)
+    if command is None or _response_has_tool_call(response):
+        return response
+    choices = (
+        response.get("choices", [])
+        if isinstance(response, dict)
+        else getattr(response, "choices", [])
+    )
+    if not choices:
+        return response
+    choice = choices[0]
+    if isinstance(choice, dict):
+        message = choice.setdefault("message", {})
+        message["content"] = None
+        message["tool_calls"] = [_tool_call(command)]
+        choice["finish_reason"] = "tool_calls"
+    else:
+        choice.message.content = None
+        choice.message.tool_calls = [_tool_call(command)]
+        choice.finish_reason = "tool_calls"
+    logger.warning("replaced premature coverage prose with plain pytest tool call")
+    return response
+
+
 def require_recovery_tool_call(data: dict) -> bool:
     """Require continued action until verification succeeds, with a hard bound."""
 
@@ -137,7 +316,7 @@ def require_recovery_tool_call(data: dict) -> bool:
     messages = data.get("messages")
     if not isinstance(messages, list):
         return False
-    if not CODE_CHANGE_REQUEST.search(_latest_user_task(messages)):
+    if not _code_change_requested(messages):
         return False
     turns = _tool_turn_count(messages)
     if turns == 0 or turns >= MAX_FORCED_TOOL_TURNS:
@@ -165,7 +344,9 @@ def inject_direct_tool_policy(data: dict) -> dict:
     ):
         return data
 
-    updated = [dict(message) if isinstance(message, dict) else message for message in messages]
+    updated = [
+        dict(message) if isinstance(message, dict) else message for message in messages
+    ]
     system_index = next(
         (
             index
@@ -188,7 +369,23 @@ def inject_direct_tool_policy(data: dict) -> dict:
 
 def apply_direct_client_guard(data: dict) -> dict:
     updated = inject_direct_tool_policy(data)
-    if require_recovery_tool_call(updated):
+    required = require_recovery_tool_call(updated)
+    if _direct_ide_request(updated):
+        messages = updated.get("messages") or []
+        output = _latest_tool_output(messages) if isinstance(messages, list) else None
+        logger.info(
+            "decision required=%s change_request=%s tool_turns=%s "
+            "tool_output=%s tool_failure=%s roles=%s",
+            required,
+            _code_change_requested(messages) if isinstance(messages, list) else False,
+            _tool_turn_count(messages) if isinstance(messages, list) else 0,
+            output is not None,
+            bool(output and TOOL_FAILURE.search(output)),
+            [message.get("role") for message in messages if isinstance(message, dict)][
+                -8:
+            ],
+        )
+    if required:
         updated = {**updated, "tool_choice": "required"}
     return updated
 
@@ -204,6 +401,60 @@ class DirectClientGuard(CustomLogger):
         if call_type not in {"completion", "acompletion"}:
             return data
         return apply_direct_client_guard(data)
+
+    async def async_post_call_success_hook(
+        self,
+        data: dict,
+        user_api_key_dict,
+        response,
+    ):
+        return enforce_coverage_recovery(data, response)
+
+    async def async_post_call_streaming_iterator_hook(
+        self,
+        user_api_key_dict,
+        response,
+        request_data: dict,
+    ):
+        command = _coverage_recovery_command(request_data)
+        if command is None:
+            async for item in response:
+                yield item
+            return
+
+        buffered = []
+        has_tool_call = False
+        async for item in response:
+            buffered.append(item)
+            choices = getattr(item, "choices", None) or []
+            for choice in choices:
+                delta = getattr(choice, "delta", None)
+                if delta and getattr(delta, "tool_calls", None):
+                    has_tool_call = True
+        if has_tool_call:
+            for item in buffered:
+                yield item
+            return
+
+        from litellm.types.utils import ModelResponseStream
+
+        first = buffered[0] if buffered else None
+        yield ModelResponseStream(
+            id=getattr(first, "id", None),
+            model=getattr(first, "model", None),
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{**_tool_call(command), "index": 0}],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        )
+        logger.warning("replaced streamed coverage prose with plain pytest tool call")
 
 
 proxy_handler_instance = DirectClientGuard()
