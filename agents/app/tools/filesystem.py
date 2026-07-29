@@ -1,29 +1,29 @@
-import os
 import importlib.util
+import os
 import re
-import resource
 import shlex
 import shutil
-import subprocess
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+import requests
 from langchain.tools import tool
 
+from app.core.cancellation import cancellation_requested
 from app.core.config import (
     ALLOWED_COMMANDS,
     COMMAND_TIMEOUT_SECONDS,
-    DEFAULT_WORKSPACE as CONFIGURED_DEFAULT_WORKSPACE,
-    RUNNER_CPU_SECONDS,
-    RUNNER_MAX_OPEN_FILES,
-    RUNNER_MEMORY_MB,
-    WORKSPACE_ROOTS,
     RUNNER_API_KEY,
     RUNNER_URL,
     SANDBOX_ROOT,
+    WORKSPACE_ROOTS,
 )
-import requests
+from app.core.config import (
+    DEFAULT_WORKSPACE as CONFIGURED_DEFAULT_WORKSPACE,
+)
+from app.core.exceptions import RunCancelled
 
 # ============================================================
 # Configuration
@@ -68,59 +68,83 @@ MAX_SCAN_FILES = 5_000
 MAX_SEARCH_FILE_SIZE = 512_000
 MAX_INSPECT_PATHS = 20
 MAX_DIRECTORY_ENTRIES = 1_000
-
-
-def _runner_preexec() -> None:
-    """Apply process-level limits inside the isolated agent container."""
-    os.setsid()
-    resource.setrlimit(resource.RLIMIT_CPU, (RUNNER_CPU_SECONDS, RUNNER_CPU_SECONDS))
-    memory = RUNNER_MEMORY_MB * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE_SIZE * 10, MAX_FILE_SIZE * 10))
-    resource.setrlimit(
-        resource.RLIMIT_NOFILE, (RUNNER_MAX_OPEN_FILES, RUNNER_MAX_OPEN_FILES)
-    )
-
-
-def _run_limited(parts: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    safe_env = {
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "HOME": "/tmp/agent-runner",
-        "LANG": "C.UTF-8",
-        "LC_ALL": "C.UTF-8",
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    return subprocess.run(
-        parts,
-        cwd=cwd,
-        text=True,
-        capture_output=True,
-        timeout=COMMAND_TIMEOUT_SECONDS,
-        check=False,
-        env=safe_env,
-        preexec_fn=_runner_preexec,
-    )
+RUNNER_POLL_SECONDS = 0.20
+RUNNER_REQUEST_TIMEOUT_SECONDS = 5
 
 
 def _run_in_isolated_runner(command: str, cwd: Path) -> dict:
     if SANDBOX_ROOT not in cwd.parents:
         return {"error": "Commands may run only inside a disposable sandbox worktree."}
+    job_id: str | None = None
+
+    def cancel_job() -> None:
+        if job_id is None:
+            return
+        try:
+            requests.post(
+                f"{RUNNER_URL}/jobs/{job_id}/cancel",
+                headers={"X-Runner-Key": RUNNER_API_KEY or ""},
+                timeout=RUNNER_REQUEST_TIMEOUT_SECONDS,
+            )
+        except requests.RequestException:
+            pass
+
     try:
         response = requests.post(
-            f"{RUNNER_URL}/execute",
+            f"{RUNNER_URL}/jobs",
             json={"command": command, "directory": str(cwd)},
             headers={"X-Runner-Key": RUNNER_API_KEY or ""},
-            timeout=COMMAND_TIMEOUT_SECONDS + 5,
+            timeout=RUNNER_REQUEST_TIMEOUT_SECONDS,
         )
         if not response.ok:
             return {"error": "Isolated runner rejected command."}
         payload = response.json()
+        job_id = str(payload["job_id"])
+        deadline = time.monotonic() + COMMAND_TIMEOUT_SECONDS + 15
+        while payload.get("status") not in {
+            "completed",
+            "cancelled",
+            "timed_out",
+            "kill_failed",
+        }:
+            if cancellation_requested():
+                try:
+                    cancel_job()
+                finally:
+                    raise RunCancelled()
+            if time.monotonic() >= deadline:
+                cancel_job()
+                return {"error": "Isolated runner status timed out.", "job_id": job_id}
+            time.sleep(RUNNER_POLL_SECONDS)
+            response = requests.get(
+                f"{RUNNER_URL}/jobs/{job_id}",
+                headers={"X-Runner-Key": RUNNER_API_KEY or ""},
+                timeout=RUNNER_REQUEST_TIMEOUT_SECONDS,
+            )
+            if not response.ok:
+                cancel_job()
+                return {
+                    "error": "Could not read isolated runner job.",
+                    "job_id": job_id,
+                }
+            payload = response.json()
+        if payload["status"] == "cancelled":
+            raise RunCancelled()
+        if payload["status"] == "kill_failed":
+            return {
+                "error": "Isolated runner could not terminate the command.",
+                "job_id": job_id,
+                "status": "kill_failed",
+            }
         return {
             "command": command,
+            "job_id": job_id,
+            "status": payload["status"],
             "exit_code": payload["exit_code"],
             "output": payload.get("output", ""),
         }
     except requests.RequestException:
+        cancel_job()
         return {"error": "Isolated runner is unavailable."}
 
 
@@ -753,8 +777,8 @@ def run_command(command: str, directory: str = "."):
             return {"error": "directory is not a directory."}
 
         return _run_in_isolated_runner(command, cwd)
-    except subprocess.TimeoutExpired:
-        return {"error": "Command timed out."}
+    except RunCancelled:
+        raise
     except FileNotFoundError:
         return {
             "error": f"Executable not found: {command.split()[0] if command.split() else command}"
@@ -801,8 +825,8 @@ def run_tests(
             return {"error": "Test directory is not a directory."}
         result = _run_in_isolated_runner(" ".join(commands[kind]), cwd)
         return {"kind": kind, **result}
-    except subprocess.TimeoutExpired:
-        return {"error": "Test command timed out."}
+    except RunCancelled:
+        raise
     except FileNotFoundError:
         return {"error": f"Required executable for {kind} is not installed."}
     except Exception as e:

@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from app.core.cancellation import cancellation_context
+from app.core.exceptions import RunCancelled
 from app.tools import filesystem
 
 
@@ -199,3 +201,79 @@ def test_run_tests_rejects_unsafe_coverage_target(workspace):
         )
 
     assert "dotted Python package" in result["error"]
+
+
+def test_isolated_runner_job_is_cancelled_with_owning_run(workspace, monkeypatch):
+    class Response:
+        ok = True
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    cancellations = []
+    checks = iter([False, True])
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    monkeypatch.setattr(
+        filesystem.requests,
+        "post",
+        lambda url, **kwargs: (
+            cancellations.append(url)
+            or Response({"job_id": "job-1", "status": "cancelling"})
+            if url.endswith("/cancel")
+            else Response({"job_id": "job-1", "status": "running"})
+        ),
+    )
+    monkeypatch.setattr(
+        filesystem.requests,
+        "get",
+        lambda *_args, **_kwargs: Response({"job_id": "job-1", "status": "running"}),
+    )
+    monkeypatch.setattr(filesystem.time, "sleep", lambda _seconds: None)
+
+    with (
+        cancellation_context(lambda: next(checks)),
+        pytest.raises(RunCancelled),
+    ):
+        filesystem._run_in_isolated_runner("pytest -q", workspace)
+
+    assert cancellations[-1].endswith("/jobs/job-1/cancel")
+
+
+def test_isolated_runner_attempts_cleanup_after_network_loss(workspace, monkeypatch):
+    class Response:
+        ok = True
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    posts = []
+
+    def post(url, **_kwargs):
+        posts.append(url)
+        return Response(
+            {"job_id": "job-1", "status": "running"}
+            if url.endswith("/jobs")
+            else {"job_id": "job-1", "status": "cancelling"}
+        )
+
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    monkeypatch.setattr(filesystem.requests, "post", post)
+    monkeypatch.setattr(
+        filesystem.requests,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            filesystem.requests.ConnectionError("lost")
+        ),
+    )
+    monkeypatch.setattr(filesystem.time, "sleep", lambda _seconds: None)
+
+    result = filesystem._run_in_isolated_runner("pytest -q", workspace)
+
+    assert result == {"error": "Isolated runner is unavailable."}
+    assert posts[-1].endswith("/jobs/job-1/cancel")

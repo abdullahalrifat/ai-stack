@@ -11,10 +11,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import requests
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-import requests
 
 import app.tools.register
 from app.agent.planner import create_plan
@@ -26,20 +26,21 @@ from app.agent.service import (
     run_agent,
     submit_run,
 )
-from app.core.config import DOCUMENT_MAX_BYTES
-from app.memory.documents import extract_document
 from app.agent.state import AgentState
 from app.core.config import (
     AGENT_MODEL_ID,
     DEFAULT_MODEL,
     DEFAULT_WORKSPACE,
+    DOCUMENT_MAX_BYTES,
     IMAGE_GENERATION_TIMEOUT_SECONDS,
     IMAGE_GENERATION_URL,
     WORKSPACE_ROOTS,
 )
 from app.llm.client import get_available_models
+from app.memory.documents import extract_document
 from app.memory.embeddings import create_embedding
 from app.memory.memory import get_conversation, search_memory
+from app.runs.client_leases import lease_sweep_metrics
 from app.runs.events import get_event_publisher
 from app.runs.store import get_run_store
 from app.tools.filesystem import (
@@ -50,9 +51,18 @@ from app.tools.filesystem import (
 )
 from app.tools.registry import registry
 
-from .dependencies import require_run_store, verify_api_key
 from .context import openai_prompt
+from .dependencies import require_run_store, verify_api_key
 from .profiles import PROFILES, resolve_profile
+from .protocol import (
+    EVENT_SCHEMA_VERSION,
+    FEATURES,
+    MAX_CLI_PROTOCOL_VERSION,
+    MIN_CLI_PROTOCOL_VERSION,
+    PROTOCOL_VERSION,
+    event_envelope,
+    verify_protocol_version,
+)
 from .schemas import (
     ChatRequest,
     ExecuteRequest,
@@ -67,14 +77,41 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_protocol_version)])
 RUN_STREAM_HEARTBEAT_SECONDS = 10
+RUN_CLIENT_LEASE_SECONDS = 30
+RUN_CLIENT_LEASE_RENEW_SECONDS = 10
 
 
 @router.get("/")
 @router.get("/health")
 def health():
     return {"status": "running", "service": "local-ai-agent"}
+
+
+@router.get("/capabilities", dependencies=[Depends(verify_api_key)])
+def capabilities():
+    return {
+        "api_version": str(PROTOCOL_VERSION),
+        "protocol": {
+            "current": PROTOCOL_VERSION,
+            "min_cli": MIN_CLI_PROTOCOL_VERSION,
+            "max_cli": MAX_CLI_PROTOCOL_VERSION,
+            "event_schema": EVENT_SCHEMA_VERSION,
+        },
+        "features": FEATURES,
+        "deprecations": [],
+    }
+
+
+@router.get("/metrics/runs", dependencies=[Depends(verify_api_key)])
+def run_metrics():
+    """Small authenticated operational snapshot for the foreground sweeper."""
+
+    return {
+        "client_lease_sweeper": lease_sweep_metrics.snapshot(),
+        "client_leases": get_run_store().client_lease_health(),
+    }
 
 
 # =====================================================
@@ -206,11 +243,18 @@ async def create_run(request: RunRequest):
         document_scope=request.document_scope,
         project_id=request.project_id,
         allow_write=request.allow_write,
+        client_id=request.client_id,
+        client_lease_seconds=RUN_CLIENT_LEASE_SECONDS,
     )
 
     submit_run(run_id)
 
-    return {"run_id": run_id, "status": "queued"}
+    return {
+        "run_id": run_id,
+        "status": "queued",
+        "client_id": request.client_id,
+        "protocol_version": PROTOCOL_VERSION,
+    }
 
 
 @router.get(
@@ -221,19 +265,25 @@ async def get_run(run_id: str):
     run = await run_in_threadpool(store.get_run, run_id)
     if run is None:
         raise HTTPException(404, "Run not found")
-    return run
+    return {"protocol_version": PROTOCOL_VERSION, **run}
 
 
 @router.get("/runs", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
 async def list_runs(limit: int = 50):
-    return {"runs": await run_in_threadpool(get_run_store().list_runs, limit)}
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "runs": await run_in_threadpool(get_run_store().list_runs, limit),
+    }
 
 
 @router.get(
     "/projects", dependencies=[Depends(verify_api_key), Depends(require_run_store)]
 )
 async def list_projects():
-    return {"projects": await run_in_threadpool(get_run_store().list_projects)}
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "projects": await run_in_threadpool(get_run_store().list_projects),
+    }
 
 
 @router.post(
@@ -255,7 +305,11 @@ async def create_project(request: ProjectRequest):
     "/runs/{run_id}/events",
     dependencies=[Depends(verify_api_key), Depends(require_run_store)],
 )
-async def run_events(run_id: str, after: int = 0):
+async def run_events(
+    run_id: str,
+    after: int = 0,
+    client_id: str | None = None,
+):
     """Server-Sent Events stream of a run's progress.
 
     Emits one `data:` line per event as JSON, polling the durable event log
@@ -267,6 +321,15 @@ async def run_events(run_id: str, after: int = 0):
     run = await run_in_threadpool(store.get_run, run_id)
     if run is None:
         raise HTTPException(404, "Run not found")
+    owns_client_lease = bool(client_id and run.get("client_id") == client_id)
+    if owns_client_lease:
+        renewed = await run_in_threadpool(
+            store.renew_client_lease,
+            run_id,
+            client_id,
+            RUN_CLIENT_LEASE_SECONDS,
+        )
+        lease_sweep_metrics.renewal(renewed)
 
     terminal_statuses = {
         "completed",
@@ -279,6 +342,8 @@ async def run_events(run_id: str, after: int = 0):
     async def event_stream():
         last_id = after
         last_emit = time.monotonic()
+        last_client_renewal = time.monotonic()
+        lease_attached = owns_client_lease
         subscription = None
         try:
             # Subscribe first, then replay from PostgreSQL. Any event that
@@ -296,16 +361,18 @@ async def run_events(run_id: str, after: int = 0):
                 events = await run_in_threadpool(store.events_after, run_id, last_id)
                 for event in events:
                     last_id = event["id"]
-                    payload = {
-                        "id": event["id"],
-                        "event_type": event["event_type"],
-                        "payload": event["payload"],
-                        "created_at": (
-                            event["created_at"].isoformat()
-                            if isinstance(event["created_at"], datetime)
-                            else event["created_at"]
-                        ),
-                    }
+                    payload = event_envelope(
+                        {
+                            "id": event["id"],
+                            "event_type": event["event_type"],
+                            "payload": event["payload"],
+                            "created_at": (
+                                event["created_at"].isoformat()
+                                if isinstance(event["created_at"], datetime)
+                                else event["created_at"]
+                            ),
+                        }
+                    )
                     yield f"data: {json.dumps(payload, default=str)}\n\n"
                     last_emit = time.monotonic()
 
@@ -321,6 +388,7 @@ async def run_events(run_id: str, after: int = 0):
                             continue
                         last_id = event["id"]
                         event["created_at"] = str(event.get("created_at", ""))
+                        event = event_envelope(event)
                         yield f"data: {json.dumps(event, default=str)}\n\n"
                         last_emit = time.monotonic()
 
@@ -330,8 +398,29 @@ async def run_events(run_id: str, after: int = 0):
                     and current["status"] in terminal_statuses
                     and not events
                 ):
-                    yield f"data: {json.dumps({'event_type': 'stream_closed', 'status': current['status']})}\n\n"
+                    closed = event_envelope(
+                        {
+                            "event_type": "stream_closed",
+                            "status": current["status"],
+                        }
+                    )
+                    yield f"data: {json.dumps(closed)}\n\n"
                     break
+                if (
+                    lease_attached
+                    and time.monotonic() - last_client_renewal
+                    >= RUN_CLIENT_LEASE_RENEW_SECONDS
+                ):
+                    renewed = await run_in_threadpool(
+                        store.renew_client_lease,
+                        run_id,
+                        client_id,
+                        RUN_CLIENT_LEASE_SECONDS,
+                    )
+                    lease_sweep_metrics.renewal(renewed)
+                    if not renewed:
+                        lease_attached = False
+                    last_client_renewal = time.monotonic()
                 if time.monotonic() - last_emit >= RUN_STREAM_HEARTBEAT_SECONDS:
                     yield ": heartbeat\n\n"
                     last_emit = time.monotonic()
@@ -369,7 +458,11 @@ async def cancel(run_id: str):
         await run_in_threadpool(get_event_publisher().publish, event)
     except Exception:
         logger.exception("Could not publish cancellation for run %s", run_id)
-    return {"run_id": run_id, "status": status}
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "run_id": run_id,
+        "status": status,
+    }
 
 
 @router.post(
@@ -378,7 +471,8 @@ async def cancel(run_id: str):
 )
 async def approve(run_id: str):
     try:
-        return await run_in_threadpool(approve_run, run_id)
+        result = await run_in_threadpool(approve_run, run_id)
+        return {"protocol_version": PROTOCOL_VERSION, **result}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
@@ -392,7 +486,8 @@ async def approve(run_id: str):
 )
 async def discard(run_id: str):
     try:
-        return await run_in_threadpool(discard_run, run_id)
+        result = await run_in_threadpool(discard_run, run_id)
+        return {"protocol_version": PROTOCOL_VERSION, **result}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
@@ -787,10 +882,16 @@ def workspace_roots():
 @router.get("/workspace/choices", dependencies=[Depends(verify_api_key)])
 def workspace_choice_list():
     """List selectable mounted repositories without recursively scanning them."""
-    return {"workspaces": workspace_choices()}
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "workspaces": workspace_choices(),
+    }
 
 
 @router.get("/workspace/default", dependencies=[Depends(verify_api_key)])
 def default_workspace():
     """Return the repository selected as the default for new agent requests."""
-    return {"workspace": str(DEFAULT_WORKSPACE)}
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "workspace": str(DEFAULT_WORKSPACE),
+    }

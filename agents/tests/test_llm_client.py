@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import pytest
+
+from app.core.cancellation import cancellation_context
+from app.core.exceptions import RunCancelled
 from app.llm import client
 
 
@@ -113,4 +117,60 @@ def test_stream_holds_llm_slot_for_the_complete_iteration(_available):
         assert list(stream) == ["first", "second"]
 
     assert events == ["acquired", "released"]
+    assert completion.call_args.kwargs["stream"] is True
+
+
+@patch("app.llm.client._ensure_model_available")
+def test_stream_closes_transport_when_run_is_cancelled(_available):
+    class Response:
+        def __init__(self):
+            self.closed = False
+
+        def __iter__(self):
+            yield "first"
+            yield "second"
+
+        def close(self):
+            self.closed = True
+
+    response = Response()
+    fake_client, completion = _completion_client()
+    completion.return_value = response
+    checks = iter([False, True])
+
+    with (
+        patch("app.llm.client.get_client", return_value=fake_client),
+        pytest.raises(RunCancelled),
+    ):
+        list(
+            client.chat_with_tools_stream(
+                [],
+                [],
+                model="coder",
+                should_cancel=lambda: next(checks),
+            )
+        )
+
+    assert response.closed is True
+
+
+@patch("app.llm.client._ensure_model_available")
+def test_planner_completion_streams_when_cancellation_context_exists(_available):
+    chunks = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="one"))]
+        ),
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=" two"))]
+        ),
+    ]
+    fake_client, completion = _completion_client()
+    completion.return_value = iter(chunks)
+
+    with (
+        patch("app.llm.client.get_client", return_value=fake_client),
+        cancellation_context(lambda: False),
+    ):
+        assert client.chat([], model="coder") == "one two"
+
     assert completion.call_args.kwargs["stream"] is True

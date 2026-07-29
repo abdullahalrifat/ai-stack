@@ -63,13 +63,23 @@ class RunStore:
         document_scope: str | None,
         project_id: str | None,
         allow_write: bool,
+        client_id: str | None = None,
+        client_lease_seconds: int = 30,
     ) -> str:
         run_id = str(uuid.uuid4())
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO agent_runs
-                   (id, status, task, model, requested_workspace, conversation_id, document_scope, project_id, allow_write)
-                   VALUES (%s, 'queued', %s, %s, %s, %s, %s, %s, %s)""",
+                   (id, status, task, model, requested_workspace, conversation_id,
+                    document_scope, project_id, allow_write, client_id,
+                    client_lease_expires_at, client_lease_renewed_at)
+                   VALUES (
+                     %s, 'queued', %s, %s, %s, %s, %s, %s, %s, %s,
+                     CASE WHEN %s::text IS NULL THEN NULL
+                          ELSE NOW() + (%s * INTERVAL '1 second')
+                     END,
+                     CASE WHEN %s::text IS NULL THEN NULL ELSE NOW() END
+                   )""",
                 (
                     run_id,
                     task,
@@ -79,6 +89,10 @@ class RunStore:
                     document_scope,
                     project_id,
                     allow_write,
+                    client_id,
+                    client_id,
+                    max(10, client_lease_seconds),
+                    client_id,
                 ),
             )
         self.append_event(run_id, "queued", {"message": "Run queued"})
@@ -150,6 +164,103 @@ class RunStore:
                 (max(lease_seconds, 30), run_id, worker_id),
             )
             return cursor.rowcount == 1
+
+    def renew_client_lease(
+        self,
+        run_id: str,
+        client_id: str,
+        lease_seconds: int = 30,
+    ) -> bool:
+        """Keep a foreground-owned run alive while its terminal is attached."""
+
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_runs
+                   SET client_lease_expires_at =
+                         NOW() + (%s * INTERVAL '1 second'),
+                       client_lease_renewed_at = NOW(),
+                       updated_at = NOW()
+                   WHERE id = %s AND client_id = %s
+                     AND status IN ('queued', 'running')""",
+                (max(10, lease_seconds), run_id, client_id),
+            )
+            return cursor.rowcount == 1
+
+    def client_lease_health(self) -> dict[str, Any]:
+        """Return database-clock lease age and backlog gauges."""
+
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute("""SELECT
+                     COUNT(*) FILTER (
+                       WHERE status IN ('queued', 'running')
+                     ) AS active_foreground_runs,
+                     COUNT(*) FILTER (
+                       WHERE status IN ('queued', 'running')
+                         AND client_lease_expires_at < NOW()
+                     ) AS expired_foreground_runs,
+                     COALESCE(
+                       MAX(
+                         EXTRACT(
+                           EPOCH FROM NOW() - client_lease_renewed_at
+                         )
+                       ) FILTER (
+                         WHERE status IN ('queued', 'running')
+                       ),
+                       0
+                     ) AS maximum_renewal_age_seconds
+                   FROM agent_runs
+                   WHERE client_id IS NOT NULL""")
+            return dict(cursor.fetchone() or {})
+
+    def cancel_expired_client_runs(
+        self,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Claim and expire one bounded batch of abandoned foreground runs.
+
+        ``SKIP LOCKED`` lets several API replicas sweep safely without
+        blocking or publishing duplicate disconnect events.
+        """
+
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """WITH expired AS (
+                     SELECT id, client_lease_expires_at
+                     FROM agent_runs
+                     WHERE client_id IS NOT NULL
+                       AND client_lease_expires_at < NOW()
+                       AND status IN ('queued', 'running')
+                     ORDER BY client_lease_expires_at, id
+                     LIMIT %s
+                     FOR UPDATE SKIP LOCKED
+                   )
+                   UPDATE agent_runs AS runs
+                   SET status = CASE
+                         WHEN runs.status = 'queued' THEN 'cancelled'
+                         ELSE 'cancelling'
+                       END,
+                       completed_at = CASE
+                         WHEN runs.status = 'queued' THEN NOW()
+                         ELSE runs.completed_at
+                       END,
+                       worker_id = CASE
+                         WHEN runs.status = 'queued' THEN NULL
+                         ELSE runs.worker_id
+                       END,
+                       lease_expires_at = CASE
+                         WHEN runs.status = 'queued' THEN NULL
+                         ELSE runs.lease_expires_at
+                       END,
+                       updated_at = NOW()
+                   FROM expired
+                   WHERE runs.id = expired.id
+                   RETURNING runs.id, runs.status,
+                     EXTRACT(
+                       EPOCH FROM NOW() - expired.client_lease_expires_at
+                     ) AS overdue_seconds""",
+                (min(max(limit, 1), 1000),),
+            )
+            return list(cursor.fetchall())
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self.connection() as connection, connection.cursor() as cursor:
@@ -223,6 +334,14 @@ class RunStore:
     def is_cancel_requested(self, run_id: str) -> bool:
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
+                """UPDATE agent_runs
+                   SET status = 'cancelling', updated_at = NOW()
+                   WHERE id = %s AND status = 'running'
+                     AND client_id IS NOT NULL
+                     AND client_lease_expires_at < NOW()""",
+                (run_id,),
+            )
+            cursor.execute(
                 "SELECT status = 'cancelling' AS cancelling FROM agent_runs WHERE id = %s",
                 (run_id,),
             )
@@ -271,6 +390,25 @@ class RunStore:
                 str(run["id"]), "run_interrupted", {"reason": "service_restart"}
             )
         return queued, interrupted
+
+    def sandboxes_needing_cleanup(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Find terminal sandboxes left behind by a crash or failed cleanup."""
+
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT id, repository_path, sandbox_path
+                   FROM agent_runs
+                   WHERE status IN ('failed', 'cancelled', 'discarded', 'completed')
+                     AND repository_path IS NOT NULL
+                     AND sandbox_path IS NOT NULL
+                   ORDER BY updated_at
+                   LIMIT %s""",
+                (min(max(limit, 1), 1000),),
+            )
+            return list(cursor.fetchall())
+
+    def mark_sandbox_cleaned(self, run_id: str) -> None:
+        self.update_run(run_id, sandbox_path=None)
 
 
 @lru_cache(maxsize=1)

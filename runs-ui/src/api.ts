@@ -1,3 +1,9 @@
+import {
+  PROTOCOL_HEADER,
+  PROTOCOL_VERSION,
+  validateEventVersion,
+} from "./protocol";
+
 export type Run = {
   id: string;
   status: string;
@@ -14,6 +20,8 @@ export type Run = {
   completed_at?: string;
 };
 export type RunEvent = {
+  protocol_version?: number;
+  schema_version?: number;
   id?: number;
   event_type: string;
   payload: Record<string, unknown>;
@@ -25,6 +33,7 @@ const base = "/api";
 const headers = (key: string) => ({
   "Content-Type": "application/json",
   Authorization: `Bearer ${key}`,
+  [PROTOCOL_HEADER]: String(PROTOCOL_VERSION),
 });
 export async function api<T>(
   key: string,
@@ -49,7 +58,10 @@ export async function uploadDocuments(
   files.forEach((file) => body.append("files", file));
   const response = await fetch(`${base}/documents/ingest`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
+    headers: {
+      Authorization: `Bearer ${key}`,
+      [PROTOCOL_HEADER]: String(PROTOCOL_VERSION),
+    },
     body,
   });
   if (!response.ok) throw new Error(await response.text());
@@ -83,6 +95,7 @@ export async function streamEvents(
         .join("\n");
       if (!raw) continue;
       const event = JSON.parse(raw) as RunEvent;
+      validateEventVersion(event);
       if (event.id) cursor = Math.max(cursor, event.id);
       onEvent(event);
     }

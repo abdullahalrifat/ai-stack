@@ -6,6 +6,10 @@ import time
 import requests
 from openai import OpenAI
 
+from ..core.cancellation import (
+    has_cancellation_context,
+    raise_if_cancelled,
+)
 from ..core.config import (
     AGENT_MODEL_ID,
     DEFAULT_MODEL,
@@ -14,6 +18,7 @@ from ..core.config import (
     MAX_CONCURRENT_LLM_CALLS,
     MODEL_LIST_CACHE_SECONDS,
 )
+from ..core.exceptions import RunCancelled
 
 logger = logging.getLogger(__name__)
 
@@ -121,10 +126,32 @@ def chat(
     )
     if response_format is not None:
         kwargs["response_format"] = response_format
-    with _llm_slots:
-        response = client.chat.completions.create(**kwargs)
+    if not has_cancellation_context():
+        with _llm_slots:
+            response = client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content
 
-    return response.choices[0].message.content
+    # A streaming request gives cooperative cancellation a transport handle.
+    # This is used for durable planning/routing calls; direct API callers keep
+    # the simpler non-streaming request above.
+    parts: list[str] = []
+    stream = None
+    with _llm_slots:
+        try:
+            stream = client.chat.completions.create(**kwargs, stream=True)
+            for chunk in stream:
+                raise_if_cancelled()
+                choices = getattr(chunk, "choices", None) or []
+                if choices:
+                    content = getattr(choices[0].delta, "content", None)
+                    if content:
+                        parts.append(content)
+            raise_if_cancelled()
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                close()
+    return "".join(parts)
 
 
 def chat_with_tools(
@@ -166,6 +193,7 @@ def chat_with_tools_stream(
     tool_choice="auto",
     max_tokens: int | None = None,
     timeout_seconds: int | None = None,
+    should_cancel=None,
 ):
     """Return an OpenAI-compatible streaming tool-call response iterator.
 
@@ -178,16 +206,34 @@ def chat_with_tools_stream(
     client = get_client()
 
     def stream():
+        response = None
         with _llm_slots:
-            yield from client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tools,
-                tool_choice=tool_choice,
-                temperature=0,
-                max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
-                timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
-                stream=True,
-            )
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    temperature=0,
+                    max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
+                    timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
+                    stream=True,
+                )
+                for chunk in response:
+                    if should_cancel is not None:
+                        if should_cancel():
+                            raise RunCancelled()
+                    else:
+                        raise_if_cancelled()
+                    yield chunk
+                if should_cancel is not None:
+                    if should_cancel():
+                        raise RunCancelled()
+                else:
+                    raise_if_cancelled()
+            finally:
+                close = getattr(response, "close", None)
+                if close is not None:
+                    close()
 
     return stream()

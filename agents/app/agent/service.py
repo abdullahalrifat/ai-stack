@@ -1,4 +1,5 @@
 import logging
+import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -6,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..api.profiles import resolve_profile
+from ..core.cancellation import cancellation_context, raise_if_cancelled
 from ..core.config import (
     DEFAULT_MODEL,
     DEFAULT_WORKSPACE,
@@ -18,22 +21,18 @@ from ..core.config import (
     RUN_EVENT_BATCH_CHARS,
     RUN_EVENT_BATCH_SECONDS,
 )
-from .executor import execute_plan, requires_external_search
-from ..runs.events import get_event_publisher
-from ..core.exceptions import RunCancelled
 from ..core.evidence import build_document_evidence, build_inline_document_evidence
+from ..core.exceptions import ProcessKillFailed, RunCancelled
 from ..memory import (
     get_conversation,
+    memory_context,
     save_conversation,
     save_long_term_memory,
     save_memory,
-    memory_context,
     search_memory,
 )
 from ..memory.embeddings import create_embedding
-from .planner import create_plan, deterministic_plan
-from .router import route_request
-from ..runs.store import get_run_store
+from ..runs.events import get_event_publisher
 from ..runs.sandbox import (
     Sandbox,
     create_sandbox,
@@ -41,9 +40,12 @@ from ..runs.sandbox import (
     remove_sandbox,
     sandbox_diff,
 )
-from .state import AgentState
+from ..runs.store import get_run_store
 from ..tools.filesystem import workspace_context
-from ..api.profiles import resolve_profile
+from .executor import execute_plan, requires_external_search
+from .planner import create_plan, deterministic_plan
+from .router import route_request
+from .state import AgentState
 
 logger = logging.getLogger(__name__)
 _run_executor = ThreadPoolExecutor(
@@ -387,8 +389,19 @@ def execute_run(run_id: str) -> None:
     def on_event(event_type: str, payload: dict[str, Any]):
         events.emit(event_type, payload)
 
+    last_cancel_check = 0.0
+    cancel_cached = False
+
     def cancelled() -> bool:
-        return store.is_cancel_requested(run_id)
+        nonlocal last_cancel_check, cancel_cached
+        if cancel_cached:
+            return True
+        now = time.monotonic()
+        if now - last_cancel_check < 0.25:
+            return False
+        last_cancel_check = now
+        cancel_cached = store.is_cancel_requested(run_id)
+        return cancel_cached
 
     if cancelled():
         store.update_run(
@@ -429,7 +442,8 @@ def execute_run(run_id: str) -> None:
     try:
         if allow_write:
             on_event("sandbox_creating", {"workspace": requested_workspace})
-            sandbox = create_sandbox(requested_workspace, run_id)
+            with cancellation_context(cancelled):
+                sandbox = create_sandbox(requested_workspace, run_id)
             active_workspace = str(sandbox.path)
             store.update_run(
                 run_id,
@@ -468,7 +482,8 @@ def execute_run(run_id: str) -> None:
             )
         store.update_run(run_id, active_workspace=active_workspace)
 
-        with workspace_context(active_workspace):
+        with workspace_context(active_workspace), cancellation_context(cancelled):
+            raise_if_cancelled()
             state.history = get_conversation(conversation_id, limit=4)
             state.memory_scope = run.get("document_scope") or str(requested_workspace)
             state.memories = (
@@ -482,14 +497,17 @@ def execute_run(run_id: str) -> None:
                 task, state.memories
             ) or build_inline_document_evidence(task)
 
+            raise_if_cancelled()
             on_event("planning", {})
             _apply_auto_route(state, on_event)
+            raise_if_cancelled()
             research_mode = (
                 force_research
                 or state.requires_external_evidence
                 or requires_external_search(task)
             )
             state.plan = _execution_plan(state, research_mode)
+            raise_if_cancelled()
             on_event("plan_ready", {"plan": state.plan})
 
             answer = execute_plan(
@@ -503,7 +521,8 @@ def execute_run(run_id: str) -> None:
                 ),
             )
 
-        diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
+        with cancellation_context(cancelled):
+            diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
         has_pending_diff = bool(diff and diff.strip())
         if has_pending_diff:
             on_event("diff_ready", {"diff": diff})
@@ -534,12 +553,19 @@ def execute_run(run_id: str) -> None:
 
     except RunCancelled:
         logger.info("Run %s cancelled", run_id)
+        sandbox_removed = sandbox is None
         if sandbox is not None:
-            remove_sandbox(str(sandbox.repository), str(sandbox.path))
+            try:
+                remove_sandbox(str(sandbox.repository), str(sandbox.path))
+                sandbox_removed = True
+            except Exception:
+                # Keep the durable sandbox_path so startup reconciliation can
+                # retry after a transient Git/filesystem failure.
+                logger.exception("Failed to clean cancelled sandbox for run %s", run_id)
         store.update_run(
             run_id,
             status="cancelled",
-            sandbox_path=None,
+            sandbox_path=None if sandbox_removed else str(sandbox.path),
             worker_id=None,
             lease_expires_at=None,
             completed_at=datetime.now(timezone.utc),
@@ -560,7 +586,12 @@ def execute_run(run_id: str) -> None:
             lease_expires_at=None,
             completed_at=datetime.now(timezone.utc),
         )
-        on_event("run_failed", {"error": str(e)})
+        event_type = "run_failed"
+        if isinstance(e, ProcessKillFailed):
+            event_type = "run_kill_failed"
+        elif isinstance(e, subprocess.TimeoutExpired):
+            event_type = "run_timed_out"
+        on_event(event_type, {"error": str(e)})
     finally:
         events.flush()
 

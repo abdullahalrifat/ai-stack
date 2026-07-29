@@ -30,7 +30,7 @@ def test_git_can_use_an_explicit_safe_directory(tmp_path, monkeypatch):
         calls.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(sandbox.subprocess, "run", run)
+    monkeypatch.setattr(sandbox, "run_cancellable", run)
 
     sandbox._git(tmp_path, "status", safe_directory=tmp_path)
 

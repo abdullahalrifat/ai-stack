@@ -312,6 +312,7 @@ services:
       FINANCE_MAX_COMPLETION_TOKENS: ${FINANCE_MAX_COMPLETION_TOKENS:-1024}
       FINANCE_LLM_TIMEOUT_SECONDS: ${FINANCE_LLM_TIMEOUT_SECONDS:-300}
       COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-120}
+      RUNNER_JOB_LEASE_SECONDS: ${RUNNER_JOB_LEASE_SECONDS:-10}
 
       # Executables the run_command tool may invoke (no shell metacharacters
       # are permitted regardless of this list).

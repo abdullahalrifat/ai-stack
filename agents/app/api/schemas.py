@@ -1,8 +1,8 @@
 """Pydantic contracts for the HTTP and OpenAI-compatible APIs."""
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import DEFAULT_WORKSPACE
 
@@ -30,8 +30,12 @@ class ExecuteRequest(BaseModel):
 
 
 class RunRequest(ExecuteRequest):
+    model_config = ConfigDict(extra="ignore")
+
+    protocol_version: Literal[1] | None = None
     document_scope: str | None = None
     project_id: str | None = None
+    client_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class ProjectRequest(BaseModel):

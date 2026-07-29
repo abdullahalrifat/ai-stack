@@ -22,10 +22,94 @@ the Python standard library and communicates with the agent service through
 the authenticated Runs HTTP API and Server-Sent Events. It does not import
 server code from `agents/`, and the agent container does not install the CLI.
 
-Keeping both packages in this repository currently makes changes to the
-unversioned Runs protocol atomic. The CLI can move to a separate repository
-after that protocol has explicit versioning, capability discovery, and a
-documented compatibility policy.
+Keeping both packages in this repository makes protocol changes atomic, but
+they no longer require lockstep deployment. Protocol v1 has a checked-in
+OpenAPI 3.1 contract at
+[`contracts/aistack-protocol-v1.json`](../contracts/aistack-protocol-v1.json);
+the CLI, server, and Runs UI verify its constants in contract tests.
+First-party requests advertise `X-AIStack-Protocol-Version`, `/capabilities`
+publishes compatible ranges and feature flags, and incompatible versions fail
+with an upgrade instruction.
+
+The canonical contract intentionally lives at the repository root, not under
+`cli/`: it defines a boundary jointly owned by the agent server, CLI, and Runs
+UI. If the CLI later moves to a separate repository, release automation should
+publish or copy this versioned artifact rather than creating a second source of
+truth.
+
+See [ROADMAP.md](ROADMAP.md) for the remaining gaps between this focused
+client and mature coding-agent terminals.
+
+## Current capabilities
+
+### Interactive terminal experience
+
+- Running `aistack` with no arguments opens a conversational shell.
+- Prompts in one shell share a conversation until `/new` or `/clear`.
+- Command history persists under the XDG state directory.
+- Arrow-key history, Tab completion for slash commands, and backslash-based
+  multiline prompts work without third-party runtime dependencies.
+- `/status` shows the active workspace, permission mode, lifecycle mode, and
+  conversation ID.
+
+### Repository work and safety
+
+- Read-only mode is the default.
+- Write mode executes in a disposable Git worktree and presents the resulting
+  diff for explicit approval or discard.
+- The terminal never applies a pending diff automatically in non-interactive
+  use.
+- Workspace selection is validated by the server and can map a host checkout
+  to its in-container path without hardcoding a particular project.
+- Saved Runs UI projects can be selected by name or ID prefix.
+
+### Process lifecycle and recovery
+
+- Runs are foreground-owned by default. `Ctrl-C`, `SIGHUP`, and `SIGTERM`
+  request cancellation through the normal API path.
+- A PostgreSQL-backed client lease cancels an abandoned run after the
+  disconnect grace period even when the TCP stream does not close cleanly.
+- `--detach` and `/detach` explicitly opt into work that should survive the
+  terminal.
+- Server-Sent Event heartbeats prevent quiet model calls from looking dead.
+- Interrupted streams reconnect from the last durable event ID, avoiding
+  repeated output.
+- A protocol handshake rejects servers that do not support foreground leases.
+- Cancellation follows the run into planning, model streams, tool calls, and
+  Git sandbox operations.
+- Isolated commands have stable job IDs, an authenticated cancel endpoint, and
+  an owner lease. Commands run in process groups and receive `SIGTERM` followed
+  by bounded `SIGKILL` escalation.
+- API or network loss cannot leave a hidden runner job until its full command
+  timeout; the runner's owner lease terminates it.
+
+### Sessions and run management
+
+- `list`, `show`, and `resume` expose durable server-side history.
+- Pending write runs can be approved or discarded later.
+- Queued and running work can be cancelled explicitly.
+- Resuming a run restores its conversation, workspace, and project context in
+  the interactive shell.
+
+### Automation
+
+- One-shot tasks accept command-line text or standard input.
+- Text, final JSON, and newline-delimited streaming JSON output are supported.
+- Machine output never opens an approval prompt; diagnostics remain on stderr.
+- Text output sanitizes terminal controls, oversized SSE events have a hard
+  bound, and broken pipes exit without a traceback.
+- Exit codes distinguish success, failure, cancellation, and interruption.
+- API endpoint, API key, workspace, project, conversation, write mode, and
+  lifecycle mode can be selected without modifying source code.
+
+### Packaging and compatibility
+
+- The CLI is a standard-library-only runtime package with its own
+  `pyproject.toml`, tests, coverage floor, wheel build, launcher, and installer.
+- `aistack doctor` validates authentication, workspace mapping, server protocol
+  version, and advertised features.
+- The package builds as `aistack-cli` and exposes both the `aistack` console
+  entry point and `python -m aistack_cli`.
 
 ## Prerequisites
 
@@ -68,6 +152,9 @@ aistack --version
 aistack doctor
 ```
 
+`doctor` reports the server protocol version and advertised features as well
+as authentication and workspace mapping.
+
 Remove only the managed symlink with:
 
 ```bash
@@ -95,9 +182,11 @@ Enter an ordinary task at the prompt:
 aistack [read]> review the test configuration and explain any gaps
 ```
 
-The client creates a durable run and displays planning, tool calls, compact
-tool results, model output, and completion status. Prompts in one shell reuse a
-conversation ID until `/new` is entered.
+The client creates a foreground-owned run and displays planning, tool calls,
+compact tool results, model output, and completion status. Prompts in one
+shell reuse a conversation ID until `/new` or `/clear` is entered. Arrow-key
+history persists in `${XDG_STATE_HOME:-~/.local/state}/aistack/history`, and
+Tab completes slash commands.
 
 ### Shell commands
 
@@ -110,10 +199,14 @@ conversation ID until `/new` is entered.
 | `/workspace PATH` | Change to another allowed workspace |
 | `/write` | Enable reviewed sandbox writes for subsequent prompts |
 | `/read-only` | Return to read-only mode |
+| `/detach` | Let subsequent runs survive terminal exit |
+| `/foreground` | Cancel subsequent runs when this client exits |
+| `/status` | Show workspace, permissions, lifecycle, and conversation ID |
 | `/approve RUN_ID` | Apply a pending sandbox diff |
 | `/discard RUN_ID` | Delete a pending sandbox diff |
 | `/cancel RUN_ID` | Request cancellation of a queued or running task |
 | `/new` | Start a new conversation |
+| `/clear` | Alias for `/new` |
 | `/exit` | Leave the shell |
 
 The prompt always shows the current permission mode:
@@ -123,9 +216,35 @@ aistack [read]>
 aistack [write]>
 ```
 
-Pressing `Ctrl-C` while a run is active sends a cooperative cancellation
+Pressing `Ctrl-C` while a run is active sends an in-flight cancellation
 request. Pressing `Ctrl-C` at an idle prompt clears that prompt without exiting.
-`Ctrl-D` exits the shell.
+`Ctrl-D` exits the shell. `SIGHUP` and `SIGTERM` use the same cancellation
+path. End an input line with `\` to continue the task on another line.
+
+## Foreground and detached runs
+
+CLI runs are foreground-owned by default. The client sends a unique lease ID
+when it creates a run, and the event stream renews that lease while attached.
+A clean interrupt requests cancellation immediately. If the terminal or CLI
+process disappears without cleanup, the server requests cancellation after a
+30-second grace period.
+
+Use detached mode only when the run should intentionally continue without the
+terminal:
+
+```bash
+aistack run --detach "perform the long repository audit"
+```
+
+In the interactive shell, `/detach` changes subsequent tasks and
+`/foreground` restores the default. A detached run is still stored and can be
+followed with `aistack resume RUN_ID`.
+
+Cancellation closes active OpenAI-compatible streams when the provider exposes
+a closeable stream. Isolated commands and Git sandbox commands terminate their
+complete process groups, escalating from `SIGTERM` to `SIGKILL` after a bounded
+grace period. A provider that blocks before returning stream headers remains
+bounded by its configured HTTP timeout.
 
 ## Read-only and write workflows
 
@@ -175,6 +294,7 @@ The explicit form exposes run options:
 ```bash
 aistack run "run the tests and summarize failures"
 aistack run --write "repair the failing tests"
+aistack run --detach "perform a long repository audit"
 aistack run --no-review --write "prepare a reviewable patch"
 ```
 
@@ -198,7 +318,7 @@ aistack --project ai-stack run --write "update the documentation"
 aistack --url http://127.0.0.1:8000 doctor
 ```
 
-`--write` is accepted either before or after `run`.
+`--write` and `--detach` are accepted either before or after `run`.
 
 ## Run management
 
@@ -222,11 +342,12 @@ aistack resume RUN_ID
 ```
 
 The client records the last event ID and reconnects an interrupted event stream
-without repeating already displayed events. The run itself continues on the
-server if the terminal closes. The server emits an SSE heartbeat every ten
-seconds while a model call is otherwise quiet; the client also converts socket
-timeouts into bounded reconnect attempts instead of terminating with a Python
-traceback.
+without repeating already displayed events. A brief connection interruption
+does not cancel a foreground run because its client lease has a grace period.
+If the client does not reconnect, cancellation follows; detached runs continue
+on the server. The server emits an SSE heartbeat every ten seconds while a
+model call is otherwise quiet, and the client converts socket timeouts into
+bounded reconnect attempts instead of terminating with a Python traceback.
 
 Run states include:
 
@@ -234,7 +355,7 @@ Run states include:
 | --- | --- |
 | `queued` | Waiting for an agent worker |
 | `running` | Planning or executing tools |
-| `cancelling` | Cooperative cancellation requested |
+| `cancelling` | In-flight cancellation requested |
 | `awaiting_approval` | A sandbox diff is ready for review |
 | `completed` | Finished, or an approved diff was applied |
 | `discarded` | A pending sandbox was discarded |
@@ -268,6 +389,13 @@ Exit codes are suitable for scripts:
 | `0` | Completed, discarded, or awaiting explicit approval |
 | `1` | API/configuration error or failed run |
 | `130` | Cancelled or interrupted |
+
+`AISTACK_MAX_SSE_EVENT_BYTES` defaults to 1 MiB and bounds one decoded SSE
+event. `AISTACK_MAX_TEXT_EVENT_CHARS` defaults to 200,000 characters and bounds
+one human-rendered event. `AISTACK_MAX_HTTP_RESPONSE_BYTES` defaults to 4 MiB
+for non-streaming API responses. Increase these only for a trusted server. JSON
+modes retain complete valid objects or fail; they never emit a truncated JSON
+line.
 
 ## Authentication and endpoint configuration
 
@@ -385,13 +513,32 @@ workspace mount.
 
 ### A run is still active after closing the terminal
 
-Runs are server-owned and durable. Reconnect or cancel explicitly:
+Foreground cancellation has a 30-second disconnect grace period. After expiry,
+the worker closes active model streams and cancels active runner/Git process
+groups. Inspect or cancel explicitly:
 
 ```bash
 aistack list
 aistack resume RUN_ID
 aistack cancel RUN_ID
 ```
+
+If the run was started with `--detach` or `/detach`, remaining active is
+expected. If an ordinary foreground run never moves to `cancelling`, rebuild
+and restart the agent service so migrations `002_client_leases.sql` and
+`003_client_lease_sweeping.sql` are applied.
+
+Lease sweeping uses bounded `FOR UPDATE SKIP LOCKED` batches, so multiple API
+replicas do not publish duplicate disconnect events. `GET /metrics/runs`
+reports database-clock renewal age, expired foreground runs, renewal failures,
+sweep failures, and maximum observed cancellation delay.
+
+During a PostgreSQL outage lease handling is fail-open at the database
+boundary: the monitor logs and counts the failed sweep instead of guessing
+that a client disconnected. When PostgreSQL returns, the next sweep uses
+database time and expires overdue leases. Terminal sandbox paths remain
+recorded until startup reconciliation removes them successfully, so cleanup is
+retried after repeated crashes.
 
 ### The terminal reports an event-stream timeout
 
@@ -405,8 +552,8 @@ docker compose up -d --force-recreate agents
 aistack resume RUN_ID
 ```
 
-The run is durable and normally remains active even if an older client exits
-with a socket `TimeoutError`.
+Older clients do not send a foreground lease ID, so their runs remain durable
+after a socket `TimeoutError`.
 
 ### A write run made no changes
 
@@ -432,6 +579,8 @@ start a new write task against the current repository state.
 - Workspace access remains limited by server configuration.
 - Write runs use disposable Git worktrees.
 - Applying a diff requires an explicit approval request.
+- Foreground CLI runs expire when their matching client lease is abandoned.
+- Detached mode must be selected explicitly when work should survive exit.
 - The installer refuses to overwrite another `aistack` command.
 - Uninstall removes only the symlink created for this checkout.
 

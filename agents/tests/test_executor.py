@@ -338,6 +338,38 @@ def test_execute_plan_executes_tool(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_runner_timeout_gets_its_own_durable_event(
+    mock_chat_with_tools,
+    mock_registry,
+):
+    state = DummyState()
+    state.allow_write = True
+    mock_registry.list_tools.return_value = ["run_tests"]
+    mock_registry.execute.return_value = {
+        "job_id": "job-1",
+        "status": "timed_out",
+        "exit_code": 124,
+    }
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[make_tool_call("call-1", "run_tests", {"kind": "pytest"})]
+        ),
+        make_message(content="Tests timed out."),
+    ]
+    events = []
+
+    assert execute_plan(
+        state, on_event=lambda kind, payload: events.append((kind, payload))
+    )
+
+    assert (
+        "tool_timed_out",
+        {"tool": "run_tests", "job_id": "job-1", "exit_code": 124},
+    ) in events
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_registry):
     state = DummyState()
     mock_registry.list_tools.return_value = ["list_files"]

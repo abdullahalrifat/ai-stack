@@ -3,6 +3,7 @@ import logging
 import re
 from types import SimpleNamespace
 
+from ..core.cancellation import cancellation_context
 from ..core.config import (
     CONTEXT_COMPACT_KEEP_RECENT,
     CONTEXT_COMPACT_THRESHOLD_TOKENS,
@@ -19,7 +20,11 @@ from ..tools.registry import registry
 from ..tools.schemas import schemas_for
 from .completion import (
     answer_audit as _answer_audit,
+)
+from .completion import (
     record_tool_progress as _record_tool_progress,
+)
+from .completion import (
     tool_result_failed,
 )
 from .context_budget import estimate_tokens, fit_user_context
@@ -469,6 +474,7 @@ def _stream_message(
     model: str,
     max_tokens: int | None = None,
     timeout_seconds: int | None = None,
+    should_cancel=None,
 ) -> SimpleNamespace:
     """Collect one streamed model turn without publishing unaudited answer text.
 
@@ -487,6 +493,7 @@ def _stream_message(
         model=model,
         max_tokens=max_tokens,
         timeout_seconds=timeout_seconds,
+        should_cancel=should_cancel,
     ):
         choices = getattr(chunk, "choices", None) or []
         if not choices:
@@ -674,6 +681,7 @@ Plan:
                 state.model,
                 getattr(state, "max_completion_tokens", None),
                 getattr(state, "timeout_seconds", None),
+                should_cancel,
             )
             if on_token is not None
             else chat_with_tools(
@@ -725,7 +733,10 @@ Plan:
                     }
                 else:
                     try:
-                        result = registry.execute(tool_name, args)
+                        with cancellation_context(should_cancel):
+                            result = registry.execute(tool_name, args)
+                    except RunCancelled:
+                        raise
                     except Exception as e:
                         logger.exception("Tool %s raised unexpectedly", tool_name)
                         result = {"error": str(e)}
@@ -733,6 +744,18 @@ Plan:
                 state.add_tool(tool_name, result)
                 _record_tool_progress(state, tool_name, args, result)
                 on_event("tool_result", {"tool": tool_name, "result": result})
+                if isinstance(result, dict) and result.get("status") in {
+                    "timed_out",
+                    "kill_failed",
+                }:
+                    on_event(
+                        f"tool_{result['status']}",
+                        {
+                            "tool": tool_name,
+                            "job_id": result.get("job_id"),
+                            "exit_code": result.get("exit_code"),
+                        },
+                    )
                 if on_checkpoint is not None:
                     on_checkpoint(
                         {

@@ -1,0 +1,242 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ai-stack terminal protocol",
+    "version": "1.0.0",
+    "description": "Versioned contract for resources shared by the CLI, Runs UI, and agent server."
+  },
+  "x-aistack-protocol": {
+    "current": 1,
+    "minimum_cli": 1,
+    "maximum_cli": 1,
+    "event_schema": 1,
+    "deprecation_window": "At least one protocol release before removal",
+    "unknown_request_fields": "ignored",
+    "unknown_response_fields": "ignored",
+    "unknown_event_fields": "ignored",
+    "unknown_event_schema": "rejected"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "responses": {
+          "200": {
+            "description": "Protocol compatibility and feature flags"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service health"
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "responses": {
+          "200": {
+            "description": "Saved projects"
+          }
+        }
+      }
+    },
+    "/runs": {
+      "get": {
+        "operationId": "listRuns",
+        "responses": {
+          "200": {
+            "description": "Durable runs"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRun",
+        "responses": {
+          "200": {
+            "description": "Created run"
+          },
+          "426": {
+            "$ref": "#/components/responses/IncompatibleProtocol"
+          }
+        }
+      }
+    },
+    "/runs/{run_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/RunId"
+        }
+      ],
+      "get": {
+        "operationId": "getRun",
+        "responses": {
+          "200": {
+            "description": "Durable run"
+          },
+          "404": {
+            "description": "Run not found"
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/events": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/RunId"
+        }
+      ],
+      "get": {
+        "operationId": "streamRunEvents",
+        "responses": {
+          "200": {
+            "description": "Versioned Server-Sent Events",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/approve": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/RunId"
+        }
+      ],
+      "post": {
+        "operationId": "approveRun",
+        "responses": {
+          "200": {
+            "description": "Approved run"
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/cancel": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/RunId"
+        }
+      ],
+      "post": {
+        "operationId": "cancelRun",
+        "responses": {
+          "200": {
+            "description": "Cancellation requested"
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/discard": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/RunId"
+        }
+      ],
+      "post": {
+        "operationId": "discardRun",
+        "responses": {
+          "200": {
+            "description": "Discarded run"
+          }
+        }
+      }
+    },
+    "/workspace/choices": {
+      "get": {
+        "operationId": "listWorkspaces",
+        "responses": {
+          "200": {
+            "description": "Allowed workspaces"
+          }
+        }
+      }
+    },
+    "/workspace/default": {
+      "get": {
+        "operationId": "getDefaultWorkspace",
+        "responses": {
+          "200": {
+            "description": "Server default workspace"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "parameters": {
+      "RunId": {
+        "name": "run_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "schemas": {
+      "RunEvent": {
+        "type": "object",
+        "required": [
+          "protocol_version",
+          "schema_version",
+          "event_type"
+        ],
+        "properties": {
+          "protocol_version": {
+            "const": 1
+          },
+          "schema_version": {
+            "const": 1
+          },
+          "id": {
+            "type": "integer"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "responses": {
+      "IncompatibleProtocol": {
+        "description": "Client and server protocol ranges do not overlap"
+      }
+    }
+  }
+}

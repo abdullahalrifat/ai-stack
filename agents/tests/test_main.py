@@ -192,8 +192,55 @@ def test_cancel_reports_immediate_terminal_status_for_queued_run():
         get_publisher.return_value = publisher
         result = asyncio.run(routes.cancel("run-1"))
 
-    assert result == {"run_id": "run-1", "status": "cancelled"}
+    assert result == {
+        "protocol_version": 1,
+        "run_id": "run-1",
+        "status": "cancelled",
+    }
     publisher.publish.assert_called_once()
+
+
+def test_create_run_records_foreground_client_lease(monkeypatch, tmp_path):
+    class Store:
+        def create_run(self, **fields):
+            assert fields["client_id"] == "terminal-1"
+            assert fields["client_lease_seconds"] == routes.RUN_CLIENT_LEASE_SECONDS
+            return "run-1"
+
+    monkeypatch.setattr(routes, "get_run_store", lambda: Store())
+    monkeypatch.setattr(routes, "submit_run", lambda _run_id: None)
+    result = asyncio.run(
+        routes.create_run(
+            schemas.RunRequest(
+                task="inspect the repository",
+                workspace=str(tmp_path),
+                client_id="terminal-1",
+            )
+        )
+    )
+
+    assert result == {
+        "run_id": "run-1",
+        "status": "queued",
+        "client_id": "terminal-1",
+        "protocol_version": 1,
+    }
+
+
+def test_capabilities_advertise_foreground_client_leases():
+    result = routes.capabilities()
+
+    assert result["api_version"] == "1"
+    assert result["protocol"]["event_schema"] == 1
+    assert "client_leases" in result["features"]
+
+
+def test_run_event_route_is_registered_to_stream_handler():
+    route = next(
+        item for item in routes.router.routes if item.path == "/runs/{run_id}/events"
+    )
+
+    assert route.endpoint is routes.run_events
 
 
 def test_run_event_stream_sends_heartbeat_while_run_is_quiet(monkeypatch):
@@ -220,6 +267,71 @@ def test_run_event_stream_sends_heartbeat_while_run_is_quiet(monkeypatch):
     monkeypatch.setattr(routes, "RUN_STREAM_HEARTBEAT_SECONDS", 0)
 
     assert asyncio.run(first_chunk()) == ": heartbeat\n\n"
+
+
+def test_run_event_stream_versions_terminal_envelope(monkeypatch):
+    class Store:
+        def get_run(self, _run_id):
+            return {"status": "completed"}
+
+        def events_after(self, _run_id, _last_id):
+            return []
+
+    class Publisher:
+        def subscribe(self, _run_id):
+            raise RuntimeError("Redis unavailable in unit test")
+
+    async def first_chunk():
+        response = await routes.run_events("run-1")
+        iterator = response.body_iterator
+        chunk = await anext(iterator)
+        await iterator.aclose()
+        return chunk
+
+    monkeypatch.setattr(routes, "get_run_store", lambda: Store())
+    monkeypatch.setattr(routes, "get_event_publisher", lambda: Publisher())
+
+    raw = asyncio.run(first_chunk())
+    event = json.loads(raw.removeprefix("data: ").strip())
+    assert event == {
+        "protocol_version": 1,
+        "schema_version": 1,
+        "event_type": "stream_closed",
+        "status": "completed",
+    }
+
+
+def test_run_event_stream_renews_and_releases_foreground_lease(monkeypatch):
+    renewals = []
+
+    class Store:
+        def get_run(self, _run_id):
+            return {"status": "running", "client_id": "terminal-1"}
+
+        def events_after(self, _run_id, _last_id):
+            return []
+
+        def renew_client_lease(self, run_id, client_id, lease_seconds):
+            renewals.append((run_id, client_id, lease_seconds))
+            return True
+
+    class Publisher:
+        def subscribe(self, _run_id):
+            raise RuntimeError("Redis unavailable in unit test")
+
+    async def first_chunk():
+        response = await routes.run_events("run-1", client_id="terminal-1")
+        iterator = response.body_iterator
+        chunk = await anext(iterator)
+        await iterator.aclose()
+        return chunk
+
+    monkeypatch.setattr(routes, "get_run_store", lambda: Store())
+    monkeypatch.setattr(routes, "get_event_publisher", lambda: Publisher())
+    monkeypatch.setattr(routes, "RUN_STREAM_HEARTBEAT_SECONDS", 0)
+
+    assert asyncio.run(first_chunk()) == ": heartbeat\n\n"
+    assert renewals == [("run-1", "terminal-1", routes.RUN_CLIENT_LEASE_SECONDS)]
 
 
 def test_auto_profile_uses_fast_model_while_code_uses_default_model():

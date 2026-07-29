@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.config import COMMAND_TIMEOUT_SECONDS, SANDBOX_ROOT
+from ..core.processes import run_cancellable
 from ..tools.filesystem import validate_workspace
 
 
@@ -23,12 +24,9 @@ def _git(
     if safe_directory is not None:
         command.extend(["-c", f"safe.directory={safe_directory}"])
     command.extend(["-C", str(directory), *args])
-    return subprocess.run(
+    return run_cancellable(
         command,
-        text=True,
-        capture_output=True,
         timeout=COMMAND_TIMEOUT_SECONDS,
-        check=False,
     )
 
 
@@ -129,7 +127,7 @@ def merge_sandbox(sandbox: Sandbox) -> None:
             "Repository has uncommitted changes; commit or stash them before approving this run."
         )
 
-    check = subprocess.run(
+    check = run_cancellable(
         [
             "git",
             "-C",
@@ -140,23 +138,17 @@ def merge_sandbox(sandbox: Sandbox) -> None:
             "-",
         ],
         input=diff,
-        text=True,
-        capture_output=True,
         timeout=COMMAND_TIMEOUT_SECONDS,
-        check=False,
     )
     if check.returncode != 0:
         raise RuntimeError(
             f"Sandbox diff conflicts with the repository: {check.stderr.strip()}"
         )
 
-    result = subprocess.run(
+    result = run_cancellable(
         ["git", "-C", str(sandbox.repository), "apply", "--whitespace=nowarn", "-"],
         input=diff,
-        text=True,
-        capture_output=True,
         timeout=COMMAND_TIMEOUT_SECONDS,
-        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Could not apply sandbox diff: {result.stderr.strip()}")

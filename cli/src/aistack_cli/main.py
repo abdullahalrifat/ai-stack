@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import shlex
+import signal
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +26,24 @@ TERMINAL_STATUSES = {
     "discarded",
     "failed",
 }
+SHELL_COMMANDS = (
+    "/approve",
+    "/cancel",
+    "/clear",
+    "/detach",
+    "/discard",
+    "/exit",
+    "/foreground",
+    "/help",
+    "/new",
+    "/quit",
+    "/read-only",
+    "/resume",
+    "/runs",
+    "/status",
+    "/workspace",
+    "/write",
+)
 
 
 def _env_value(path: Path, name: str) -> str | None:
@@ -53,6 +74,85 @@ def resolve_api_key(explicit: str | None = None) -> str:
             if value:
                 return value
     raise APIError("No API key configured. Set AISTACK_API_KEY or AGENT_API_KEY.")
+
+
+def _history_path() -> Path:
+    configured = os.getenv("AISTACK_HISTORY_FILE")
+    if configured:
+        return Path(configured).expanduser()
+    state_home = os.getenv("XDG_STATE_HOME")
+    base = Path(state_home).expanduser() if state_home else Path.home() / ".local/state"
+    return base / "aistack/history"
+
+
+def configure_shell_history() -> None:
+    """Enable persistent history and slash-command completion when available."""
+
+    try:
+        import readline
+    except ImportError:  # pragma: no cover - platform dependent
+        return
+
+    history_file = _history_path()
+    try:
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+        readline.read_history_file(history_file)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return
+
+    readline.set_history_length(1_000)
+
+    def complete(text: str, state: int) -> str | None:
+        matches = [command for command in SHELL_COMMANDS if command.startswith(text)]
+        return matches[state] if state < len(matches) else None
+
+    readline.set_completer(complete)
+    readline.parse_and_bind("tab: complete")
+
+    def save_history() -> None:
+        try:
+            readline.write_history_file(history_file)
+        except OSError:
+            pass
+
+    atexit.register(save_history)
+
+
+def read_shell_input(prompt: str) -> str:
+    """Read one task, joining lines ending in a backslash."""
+
+    lines = [input(prompt)]
+    while lines[-1].endswith("\\"):
+        lines[-1] = lines[-1][:-1]
+        lines.append(input("... "))
+    return "\n".join(lines)
+
+
+@contextmanager
+def cancellation_signals():
+    """Convert terminal shutdown signals into the normal cancellation path."""
+
+    previous = {}
+
+    def interrupt(_signum, _frame):
+        raise KeyboardInterrupt
+
+    try:
+        for name in ("SIGTERM", "SIGHUP"):
+            signum = getattr(signal, name, None)
+            if signum is None:
+                continue
+            previous[signum] = signal.getsignal(signum)
+            signal.signal(signum, interrupt)
+    except ValueError:
+        previous.clear()
+    try:
+        yield
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
 
 
 def _common_suffix(left: Path, right: Path) -> int:
@@ -127,13 +227,18 @@ def follow_run(
     client: AgentClient,
     run_id: str,
     renderer: EventRenderer,
+    *,
+    client_id: str | None = None,
 ) -> dict[str, Any]:
     cursor = 0
     retries = 0
     try:
         while True:
             try:
-                for event in client.stream_events(run_id, after=cursor):
+                stream_options: dict[str, Any] = {"after": cursor}
+                if client_id:
+                    stream_options["client_id"] = client_id
+                for event in client.stream_events(run_id, **stream_options):
                     if event.get("id"):
                         cursor = max(cursor, int(event["id"]))
                     renderer.render(event)
@@ -149,11 +254,12 @@ def follow_run(
                 if retries > 5:
                     raise
             time.sleep(min(2 ** (retries - 1), 5))
-    except KeyboardInterrupt:
-        try:
-            client.action(run_id, "cancel")
-        except APIError:
-            pass
+    except BaseException:
+        if client_id:
+            try:
+                client.action(run_id, "cancel")
+            except APIError:
+                pass
         raise
 
 
@@ -198,22 +304,52 @@ def run_task(
     project_id: str | None,
     conversation_id: str,
     allow_write: bool,
+    detached: bool,
     output: str,
     review: bool,
 ) -> dict[str, Any]:
+    ensure_compatible = getattr(client, "ensure_compatible", None)
+    if ensure_compatible is not None:
+        required = (
+            ("durable_events",)
+            if detached
+            else (
+                "durable_events",
+                "client_leases",
+            )
+        )
+        ensure_compatible(*required)
+    client_id = None if detached else str(uuid.uuid4())
     created = client.create_run(
         task,
         workspace=workspace,
         conversation_id=conversation_id,
         allow_write=allow_write,
         project_id=project_id,
+        client_id=client_id,
     )
     run_id = str(created["run_id"])
+    if client_id and created.get("client_id") != client_id:
+        try:
+            client.action(run_id, "cancel")
+        except APIError:
+            pass
+        raise APIError(
+            "The agent server does not support foreground client leases. "
+            "Update the server, or use --detach intentionally."
+        )
     if output == "text":
-        print(f"Run {run_id}")
+        # The run id is a lifecycle handle. Make it observable immediately
+        # even when stdout is redirected to a pipe or log collector.
+        print(f"Run {run_id}", flush=True)
     renderer = EventRenderer(output=output)
-    run = follow_run(client, run_id, renderer)
-    return review_run(client, run, interactive=review and sys.stdin.isatty())
+    with cancellation_signals():
+        run = follow_run(client, run_id, renderer, client_id=client_id)
+    return review_run(
+        client,
+        run,
+        interactive=review and output == "text" and sys.stdin.isatty(),
+    )
 
 
 def _print_runs(runs: list[dict[str, Any]]) -> None:
@@ -238,13 +374,18 @@ def _shell_help() -> None:
   /workspace [PATH]     Show or change the active workspace
   /write                 Enable reviewed sandbox writes
   /read-only             Disable writes
+  /detach                Let runs survive terminal exit
+  /foreground            Cancel runs when this terminal exits
+  /status                Show session settings
   /approve RUN_ID       Apply a pending diff
   /discard RUN_ID       Discard a pending diff
   /cancel RUN_ID        Cancel a queued/running task
   /new                   Start a new conversation
+  /clear                 Alias for /new
   /exit                  Exit the shell
 
-Any other input starts a durable agent run.""")
+Any other input starts a foreground agent run.
+End a line with \\ to continue a task on the next line.""")
 
 
 def interactive_shell(
@@ -253,6 +394,7 @@ def interactive_shell(
     workspace: str,
     project_id: str | None,
     allow_write: bool,
+    detached: bool = False,
 ) -> int:
     conversation_id = str(uuid.uuid4())
     active_run: dict[str, Any] | None = None
@@ -263,7 +405,7 @@ def interactive_shell(
     while True:
         mode = "write" if allow_write else "read"
         try:
-            line = input(f"aistack [{mode}]> ").strip()
+            line = read_shell_input(f"aistack [{mode}]> ").strip()
         except EOFError:
             print()
             return 0
@@ -281,6 +423,7 @@ def interactive_shell(
                     project_id=project_id,
                     conversation_id=conversation_id,
                     allow_write=allow_write,
+                    detached=detached,
                     output="text",
                     review=True,
                 )
@@ -310,7 +453,18 @@ def interactive_shell(
             elif command in {"/read", "/read-only"}:
                 allow_write = False
                 print("Read-only mode enabled.")
-            elif command == "/new":
+            elif command == "/detach":
+                detached = True
+                print("Detached mode enabled; runs survive terminal exit.")
+            elif command == "/foreground":
+                detached = False
+                print("Foreground mode enabled; terminal exit cancels active runs.")
+            elif command == "/status":
+                print(f"workspace: {workspace}")
+                print(f"permissions: {'write' if allow_write else 'read-only'}")
+                print(f"lifecycle: {'detached' if detached else 'foreground'}")
+                print(f"conversation: {conversation_id}")
+            elif command in {"/new", "/clear"}:
                 conversation_id = str(uuid.uuid4())
                 active_run = None
                 print("Started a new conversation.")
@@ -322,11 +476,13 @@ def interactive_shell(
                 if not argument:
                     raise APIError("Usage: /resume RUN_ID")
                 run = client.get_run(argument)
-                active_run = follow_run(
-                    client,
-                    str(run["id"]),
-                    EventRenderer(),
-                )
+                with cancellation_signals():
+                    active_run = follow_run(
+                        client,
+                        str(run["id"]),
+                        EventRenderer(),
+                        client_id=run.get("client_id"),
+                    )
                 conversation_id = str(
                     active_run.get("conversation_id") or conversation_id
                 )
@@ -367,6 +523,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--write", action="store_true", help="Use a reviewable write sandbox"
     )
+    parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Let active runs continue after this client exits",
+    )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command")
 
@@ -388,6 +549,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=argparse.SUPPRESS,
         help="Use a reviewable write sandbox",
+    )
+    run.add_argument(
+        "--detach",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Let the run continue after this client exits",
     )
 
     listing = subparsers.add_parser("list", help="List recent runs")
@@ -433,7 +600,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "resume":
             run = client.get_run(args.run_id)
-            run = follow_run(client, str(run["id"]), EventRenderer())
+            with cancellation_signals():
+                run = follow_run(
+                    client,
+                    str(run["id"]),
+                    EventRenderer(),
+                    client_id=run.get("client_id"),
+                )
             review_run(client, run, interactive=sys.stdin.isatty())
             return run_exit_code(run)
         if args.command in {"approve", "discard", "cancel"}:
@@ -459,7 +632,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.command == "doctor":
             health = client.health()
+            capabilities = client.capabilities()
             print(f"API: {health.get('status', 'unknown')} ({args.url})")
+            print(f"Protocol: {capabilities.get('api_version', 'unknown')}")
+            print(
+                "Features: "
+                + ", ".join(str(item) for item in capabilities.get("features", []))
+            )
             print(f"Workspace: {workspace}")
             print("Authentication: ok")
             return 0
@@ -478,19 +657,33 @@ def main(argv: list[str] | None = None) -> int:
                 project_id=project_id,
                 conversation_id=args.conversation or str(uuid.uuid4()),
                 allow_write=args.write,
+                detached=args.detach,
                 output=args.output,
                 review=not args.no_review,
             )
             return run_exit_code(run)
+        configure_shell_history()
         return interactive_shell(
             client,
             workspace=workspace,
             project_id=project_id,
             allow_write=args.write,
+            detached=args.detach,
         )
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130
+    except BrokenPipeError:
+        # Avoid both a traceback and Python's second broken-pipe warning while
+        # flushing stdout during interpreter shutdown.
+        try:
+            descriptor = sys.stdout.fileno()
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, descriptor)
+            os.close(devnull)
+        except (AttributeError, OSError):
+            pass
+        return 0
     except APIError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

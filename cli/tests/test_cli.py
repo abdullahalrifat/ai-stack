@@ -1,22 +1,27 @@
 import io
 import json
+import sys
 from pathlib import Path
 from urllib.error import HTTPError
 
 import pytest
-
 from aistack_cli.client import AgentClient, APIError
 from aistack_cli.main import (
     build_parser,
+    cancellation_signals,
+    configure_shell_history,
     follow_run,
     interactive_shell,
     main,
     match_workspace,
+    read_shell_input,
     resolve_api_key,
     resolve_project,
     review_run,
     run_exit_code,
+    run_task,
 )
+from aistack_cli.protocol import PROTOCOL_HEADER, validate_capabilities
 from aistack_cli.render import EventRenderer
 
 
@@ -35,8 +40,8 @@ class FakeResponse:
     def __iter__(self):
         return iter(self.lines)
 
-    def read(self):
-        return self.body
+    def read(self, limit=-1):
+        return self.body if limit < 0 else self.body[:limit]
 
     def close(self):
         self.closed = True
@@ -57,6 +62,7 @@ def test_client_posts_authenticated_run_request():
         conversation_id="conversation",
         allow_write=True,
         project_id="project",
+        client_id="terminal-1",
     )
 
     request = captured["request"]
@@ -64,13 +70,23 @@ def test_client_posts_authenticated_run_request():
     assert request.full_url == "http://agent.test/runs"
     assert request.method == "POST"
     assert request.get_header("Authorization") == "Bearer secret"
+    assert (
+        next(
+            value
+            for key, value in request.header_items()
+            if key.casefold() == PROTOCOL_HEADER.casefold()
+        )
+        == "1"
+    )
     assert json.loads(request.data) == {
+        "protocol_version": 1,
         "task": "Fix the tests",
         "workspace": "/workspace/repo",
         "model": "orchestrator",
         "conversation_id": "conversation",
         "project_id": "project",
         "allow_write": True,
+        "client_id": "terminal-1",
     }
 
 
@@ -102,19 +118,24 @@ def test_client_parses_sse_and_ignores_comments():
             b"\n",
         ]
     )
-    client = AgentClient(
-        "http://agent.test",
-        "secret",
-        opener=lambda request, timeout: response,
-    )
+    captured = {}
 
-    events = list(client.stream_events("run id"))
+    def opener(request, timeout):
+        captured["url"] = request.full_url
+        return response
+
+    client = AgentClient("http://agent.test", "secret", opener=opener)
+
+    events = list(client.stream_events("run id", client_id="terminal-1"))
 
     assert events == [
         {"id": 1, "event_type": "planning", "payload": {}},
         {"event_type": "stream_closed", "status": "completed"},
     ]
     assert response.closed
+    assert captured["url"].endswith(
+        "/runs/run%20id/events?after=0&client_id=terminal-1"
+    )
 
 
 def test_client_converts_stream_socket_timeout_to_reconnectable_error():
@@ -144,6 +165,35 @@ def test_client_converts_stream_socket_timeout_to_reconnectable_error():
         next(events)
     assert captured["timeout"] == 75
     assert response.closed
+
+
+def test_client_rejects_oversized_sse_event(monkeypatch):
+    response = FakeResponse(
+        lines=[b'data: {"event_type":"output_delta","payload":{"content":"large"}}\n']
+    )
+    monkeypatch.setattr("aistack_cli.client.MAX_SSE_EVENT_BYTES", 16)
+    client = AgentClient(
+        "http://agent.test",
+        "secret",
+        opener=lambda _request, timeout: response,
+    )
+
+    with pytest.raises(APIError, match="safety limit"):
+        list(client.stream_events("run-1"))
+
+    assert response.closed is True
+
+
+def test_client_rejects_oversized_json_response(monkeypatch):
+    monkeypatch.setattr("aistack_cli.client.MAX_HTTP_RESPONSE_BYTES", 64)
+    client = AgentClient(
+        "http://agent.test",
+        "secret",
+        opener=lambda _request, timeout: FakeResponse(b"x" * 65),
+    )
+
+    with pytest.raises(APIError, match="exceeded.*safety limit"):
+        client.request("GET", "/runs")
 
 
 def test_match_workspace_maps_host_checkout_to_container_path():
@@ -181,6 +231,50 @@ def test_api_key_can_be_read_from_non_executable_env_file(
     assert resolve_api_key() == "local-secret"
 
 
+def test_shell_input_supports_explicit_multiline_tasks(monkeypatch):
+    lines = iter(["review these files\\", "and run the tests"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(lines))
+
+    assert read_shell_input("prompt> ") == "review these files\nand run the tests"
+
+
+def test_shell_history_is_persistent_and_completes_commands(monkeypatch, tmp_path):
+    calls = {}
+
+    class FakeReadline:
+        def read_history_file(self, path):
+            calls["read"] = Path(path)
+            raise FileNotFoundError
+
+        def set_history_length(self, length):
+            calls["length"] = length
+
+        def set_completer(self, completer):
+            calls["completer"] = completer
+
+        def parse_and_bind(self, binding):
+            calls["binding"] = binding
+
+        def write_history_file(self, path):
+            calls["write"] = Path(path)
+
+    callbacks = []
+    history_file = tmp_path / "state" / "history"
+    monkeypatch.setenv("AISTACK_HISTORY_FILE", str(history_file))
+    monkeypatch.setitem(sys.modules, "readline", FakeReadline())
+    monkeypatch.setattr("aistack_cli.main.atexit.register", callbacks.append)
+
+    configure_shell_history()
+
+    assert calls["read"] == history_file
+    assert calls["length"] == 1_000
+    assert calls["binding"] == "tab: complete"
+    assert calls["completer"]("/fore", 0) == "/foreground"
+    assert calls["completer"]("/fore", 1) is None
+    callbacks[0]()
+    assert calls["write"] == history_file
+
+
 def test_renderer_does_not_repeat_final_answer():
     output = io.StringIO()
     renderer = EventRenderer(stream=output, color=False)
@@ -194,6 +288,144 @@ def test_renderer_does_not_repeat_final_answer():
     renderer.render_run({"status": "completed", "answer": "Finished."})
 
     assert output.getvalue() == "Finished.\n"
+
+
+def test_renderer_sanitizes_untrusted_terminal_control_sequences():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, color=False)
+
+    renderer.render(
+        {
+            "event_type": "output_delta",
+            "payload": {"content": "safe\x1b[2Jstill-safe\x00"},
+        }
+    )
+
+    assert output.getvalue() == "safe\\x1b[2Jstill-safe\\x00"
+
+
+def test_renderer_keeps_stream_json_as_one_valid_object_per_line():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, output="stream-json", color=False)
+    event = {
+        "event_type": "output_delta",
+        "payload": {"content": "line one\nline two\x1b"},
+    }
+
+    renderer.render(event)
+
+    assert json.loads(output.getvalue()) == event
+    assert output.getvalue().count("\n") == 1
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    [
+        "answer_audit_failed",
+        "client_disconnected",
+        "context_budgeted",
+        "diff_ready",
+        "final_answer",
+        "max_steps_reached",
+        "output_delta",
+        "plan_ready",
+        "planning",
+        "queued",
+        "run_cancelled",
+        "run_cancelling",
+        "run_completed",
+        "run_discarded",
+        "run_failed",
+        "run_merged",
+        "run_started",
+        "sandbox_creating",
+        "sandbox_ready",
+        "step_started",
+        "tool_call",
+        "tool_kill_failed",
+        "tool_result",
+        "tool_timed_out",
+        "unproductive_tool_loop",
+    ],
+)
+def test_stream_json_golden_contract_covers_every_durable_event(event_type):
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, output="stream-json", color=False)
+    event = {
+        "protocol_version": 1,
+        "schema_version": 1,
+        "id": 7,
+        "event_type": event_type,
+        "payload": {"content": "αβ", "future": True},
+    }
+
+    renderer.render(event)
+
+    assert json.loads(output.getvalue()) == event
+    assert output.getvalue().endswith("\n")
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ({"event_type": "queued", "payload": {}}, "• queued\n"),
+        ({"event_type": "run_started", "payload": {}}, "• run started\n"),
+        ({"event_type": "planning", "payload": {}}, "• planning\n"),
+        (
+            {"event_type": "plan_ready", "payload": {"plan": ["inspect"]}},
+            "• plan\n  - inspect\n",
+        ),
+        (
+            {"event_type": "step_started", "payload": {"step": 2}},
+            "• step 2\n",
+        ),
+        (
+            {
+                "event_type": "tool_call",
+                "payload": {"tool": "tree", "args": {"depth": 2}},
+            },
+            '→ tree {"depth": 2}\n',
+        ),
+        (
+            {
+                "event_type": "tool_result",
+                "payload": {"tool": "tree", "result": "README.md"},
+            },
+            "← tree README.md\n",
+        ),
+        (
+            {"event_type": "run_failed", "payload": {"error": "boom"}},
+            "Run failed: boom\n",
+        ),
+        (
+            {"event_type": "run_cancelled", "payload": {}},
+            "Run cancelled.\n",
+        ),
+    ],
+)
+def test_text_event_goldens(event, expected):
+    output = io.StringIO()
+    EventRenderer(stream=output, color=False).render(event)
+
+    assert output.getvalue() == expected
+
+
+def test_sse_invalid_utf8_is_replaced_without_breaking_json():
+    response = FakeResponse(
+        lines=[
+            b'data: {"event_type":"output_delta","payload":{"content":"\xff"}}\n',
+            b"\n",
+        ]
+    )
+    client = AgentClient(
+        "http://agent.test",
+        "secret",
+        opener=lambda _request, timeout: response,
+    )
+
+    event = list(client.stream_events("run-1"))[0]
+
+    assert event["payload"]["content"] == "\ufffd"
 
 
 def test_follow_run_reconnects_from_last_durable_event(monkeypatch):
@@ -283,6 +515,67 @@ def test_follow_run_reconnects_after_stream_timeout(monkeypatch):
     assert output.getvalue().count("Recovered.") == 1
 
 
+def test_follow_run_cancels_foreground_run_after_unrecovered_error(monkeypatch):
+    actions = []
+
+    class FakeClient:
+        def stream_events(self, run_id, **options):
+            assert options["client_id"] == "terminal-1"
+            raise APIError("connection lost")
+
+        def action(self, run_id, action):
+            actions.append((run_id, action))
+            return {"status": "cancelling"}
+
+    monkeypatch.setattr("aistack_cli.main.time.sleep", lambda seconds: None)
+
+    with pytest.raises(APIError, match="connection lost"):
+        follow_run(
+            FakeClient(),
+            "run-1",
+            EventRenderer(stream=io.StringIO(), color=False),
+            client_id="terminal-1",
+        )
+
+    assert actions == [("run-1", "cancel")]
+
+
+def test_follow_run_cancels_immediately_on_keyboard_interrupt():
+    actions = []
+
+    class FakeClient:
+        def stream_events(self, run_id, **options):
+            raise KeyboardInterrupt
+
+        def action(self, run_id, action):
+            actions.append((run_id, action))
+            return {"status": "cancelling"}
+
+    with pytest.raises(KeyboardInterrupt):
+        follow_run(
+            FakeClient(),
+            "run-1",
+            EventRenderer(stream=io.StringIO(), color=False),
+            client_id="terminal-1",
+        )
+
+    assert actions == [("run-1", "cancel")]
+
+
+@pytest.mark.parametrize("signal_name", ["SIGTERM", "SIGHUP"])
+def test_shutdown_signals_enter_normal_keyboard_cancellation_path(signal_name):
+    import signal
+
+    signum = getattr(signal, signal_name)
+    previous = signal.getsignal(signum)
+    with cancellation_signals():
+        handler = signal.getsignal(signum)
+        with pytest.raises(KeyboardInterrupt):
+            handler(signum, None)
+
+    assert signal.getsignal(signum) == previous
+
+
 def test_review_requires_explicit_approval(monkeypatch):
     calls = []
 
@@ -300,11 +593,103 @@ def test_review_requires_explicit_approval(monkeypatch):
     assert calls == [("run-1", "approve")]
 
 
+def test_foreground_run_rejects_server_without_client_lease_support():
+    actions = []
+
+    class FakeClient:
+        def create_run(self, *args, **kwargs):
+            assert kwargs["client_id"]
+            return {"run_id": "run-1", "status": "queued"}
+
+        def action(self, run_id, action):
+            actions.append((run_id, action))
+            return {"status": "cancelled"}
+
+    with pytest.raises(APIError, match="does not support foreground client leases"):
+        run_task(
+            FakeClient(),
+            "review the repository",
+            workspace="/workspace/example",
+            project_id=None,
+            conversation_id="conversation",
+            allow_write=False,
+            detached=False,
+            output="text",
+            review=False,
+        )
+
+    assert actions == [("run-1", "cancel")]
+
+
+def test_protocol_range_mismatch_has_actionable_upgrade_error():
+    with pytest.raises(Exception, match="Upgrade the CLI or server"):
+        validate_capabilities(
+            {
+                "api_version": "2",
+                "protocol": {"current": 2, "min_cli": 2, "max_cli": 3},
+                "features": [],
+            }
+        )
+
+
+def test_machine_output_never_opens_review_prompt(monkeypatch, capsys):
+    class FakeClient:
+        def ensure_compatible(self, *features):
+            assert features == ("durable_events", "client_leases")
+
+        def create_run(self, *args, **kwargs):
+            return {
+                "run_id": "run-1",
+                "status": "queued",
+                "client_id": kwargs["client_id"],
+            }
+
+        def stream_events(self, run_id, **options):
+            yield {"event_type": "stream_closed", "status": "awaiting_approval"}
+
+        def get_run(self, run_id):
+            return {
+                "id": run_id,
+                "status": "awaiting_approval",
+                "answer": "review me",
+            }
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: (_ for _ in ()).throw(
+            AssertionError("machine output must not prompt")
+        ),
+    )
+
+    run = run_task(
+        FakeClient(),
+        "change code",
+        workspace="/workspace/example",
+        project_id=None,
+        conversation_id="conversation",
+        allow_write=True,
+        detached=False,
+        output="json",
+        review=True,
+    )
+
+    assert run["status"] == "awaiting_approval"
+    assert json.loads(capsys.readouterr().out)["status"] == "awaiting_approval"
+
+
 def test_write_flag_works_before_or_after_run_subcommand():
     parser = build_parser()
 
     assert parser.parse_args(["--write", "run", "task"]).write is True
     assert parser.parse_args(["run", "--write", "task"]).write is True
+
+
+def test_detach_flag_works_before_or_after_run_subcommand():
+    parser = build_parser()
+
+    assert parser.parse_args(["--detach", "run", "task"]).detach is True
+    assert parser.parse_args(["run", "--detach", "task"]).detach is True
 
 
 @pytest.mark.parametrize(
@@ -335,12 +720,19 @@ def test_main_doctor_checks_api_and_resolves_server_default(monkeypatch, capsys)
         def health(self):
             return {"status": "ok"}
 
+        def capabilities(self):
+            return {"api_version": "1", "features": ["client_leases"]}
+
     monkeypatch.setenv("AISTACK_API_KEY", "secret")
     monkeypatch.setattr("aistack_cli.main.AgentClient", FakeClient)
 
     assert main(["--url", "http://agent.test", "doctor"]) == 0
     assert capsys.readouterr().out == (
-        "API: ok (http://agent.test)\nWorkspace: /workspace\nAuthentication: ok\n"
+        "API: ok (http://agent.test)\n"
+        "Protocol: 1\n"
+        "Features: client_leases\n"
+        "Workspace: /workspace\n"
+        "Authentication: ok\n"
     )
 
 
@@ -385,6 +777,31 @@ def test_main_reports_configuration_errors_without_traceback(monkeypatch, capsys
     assert "No API key configured" in capsys.readouterr().err
 
 
+def test_main_handles_broken_pipe_without_traceback(monkeypatch):
+    class BrokenOutput:
+        def write(self, _value):
+            raise BrokenPipeError
+
+        def flush(self):
+            pass
+
+        def fileno(self):
+            raise OSError("not a real descriptor")
+
+    class FakeClient:
+        def __init__(self, _base_url, _api_key):
+            pass
+
+        def list_runs(self, _limit):
+            return [{"id": "run-1", "status": "completed", "task": "done"}]
+
+    monkeypatch.setenv("AISTACK_API_KEY", "secret")
+    monkeypatch.setattr("aistack_cli.main.AgentClient", FakeClient)
+    monkeypatch.setattr(sys, "stdout", BrokenOutput())
+
+    assert main(["list"]) == 0
+
+
 def test_interactive_shell_changes_modes_and_runs_tasks(monkeypatch, capsys):
     tasks = []
     commands = iter(
@@ -392,6 +809,9 @@ def test_interactive_shell_changes_modes_and_runs_tasks(monkeypatch, capsys):
             "/write",
             "fix the tests",
             "/read-only",
+            "/detach",
+            "/status",
+            "/foreground",
             "/new",
             "/runs",
             "/exit",
@@ -434,6 +854,8 @@ def test_interactive_shell_changes_modes_and_runs_tasks(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Reviewed sandbox writes enabled." in output
     assert "Read-only mode enabled." in output
+    assert "lifecycle: detached" in output
+    assert "Foreground mode enabled" in output
     assert "run-123" in output
 
 

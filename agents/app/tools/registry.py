@@ -1,6 +1,8 @@
 import logging
 from typing import Any
 
+from app.core.exceptions import RunCancelled
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,12 +29,16 @@ class ToolRegistry:
         if hasattr(tool, "invoke"):
             try:
                 return tool.invoke(args)
+            except RunCancelled:
+                raise
             except Exception as e:
                 logger.exception("Tool %s raised an exception", name)
                 return {"tool_error": str(e), "tool": name, "args": args}
 
         try:
             return tool(**args)
+        except RunCancelled:
+            raise
         except Exception as e:
             logger.exception("Tool %s raised an exception", name)
             return {"tool_error": str(e), "tool": name, "args": args}

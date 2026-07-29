@@ -440,6 +440,27 @@ cancel actions. See the complete
 [terminal-agent guide](cli/README.md) for command reference,
 automation formats, workspace mapping, troubleshooting, and security details.
 
+Current terminal capabilities include:
+
+- an interactive shell plus one-shot commands and stdin-driven automation;
+- persistent history, Tab completion, multiline prompts, and session status;
+- read-only analysis and disposable, explicitly approved write sandboxes;
+- foreground cancellation with a PostgreSQL-backed client lease, plus
+  explicit detached runs;
+- in-flight cancellation through planning, model streams, tool execution, and
+  Git sandbox commands;
+- stable private-runner job IDs, authenticated cancellation, owner leases, and
+  process-group TERM/KILL escalation;
+- durable event replay and bounded SSE reconnection without repeated output;
+- run listing, inspection, resume, approve, discard, and cancellation;
+- automatic host-to-container workspace mapping without a project-specific
+  default directory;
+- human-readable, JSON, and streaming JSON output with stable exit codes;
+- a versioned OpenAPI protocol contract shared by the server, CLI, and Runs UI;
+- replica-safe bounded lease sweeping with authenticated lifecycle metrics; and
+- terminal-safe output with control-character sanitization, broken-pipe
+  handling, and bounded SSE event buffers.
+
 From the repository:
 
 ```bash
@@ -458,7 +479,10 @@ aistack
 
 The no-argument form opens an interactive shell. Use `/help` to see its
 commands, `/write` to enable sandboxed edits, `/read-only` to disable them,
-and `/resume RUN_ID` to replay or continue monitoring a durable run. A
+and `/resume RUN_ID` to replay or continue monitoring a run. CLI runs are
+foreground-owned by default: interrupting or closing the client requests
+cancellation, with a server-side lease covering abrupt client death. Use
+`--detach` or `/detach` only when a run should survive terminal exit. A
 write-enabled run never applies its diff automatically: an interactive
 terminal asks whether to approve, discard, or leave it pending. The same
 actions are available non-interactively:
@@ -713,9 +737,14 @@ amount of retrieved text sent to the local model.
   Redis Pub/Sub publication. PostgreSQL remains the replay source after a
   browser reconnects; Redis only provides low-latency delivery to connected
   clients.
-- `POST /runs/{run_id}/cancel` requests cooperative cancellation. It is checked
-  between model/tool operations; an already-running subprocess stops when its
-  configured timeout or resource limit is reached.
+- `POST /runs/{run_id}/cancel` propagates through planning, closeable model
+  streams, tool execution, and sandbox Git operations. Runner and Git commands
+  execute in dedicated process groups with graceful TERM and bounded KILL
+  escalation. Private-runner owner leases also stop commands after an API
+  restart or network partition.
+- Foreground lease expiry uses PostgreSQL-clock, bounded
+  `FOR UPDATE SKIP LOCKED` batches. `/metrics/runs` exposes renewal/sweep
+  failures, lease age, expired-run backlog, and observed cancellation delay.
 - A run records the repository HEAD at sandbox creation. Approval refuses a
   stale diff if HEAD changed, avoiding an accidental apply onto a different
   revision.
@@ -757,6 +786,7 @@ agents/app/
   runs/            PostgreSQL run store, live events, Git sandboxes
   tools/           registry, schemas, filesystem, constrained commands, web search
   memory/          Redis conversations and Qdrant vector memory
+contracts/         canonical OpenAPI contracts shared by server, CLI, and Runs UI
 cli/               independently packaged terminal client, tests, launchers, and guide
 scripts/aistack    compatibility shim for the former launcher location
 runs-ui/           main React/TypeScript coding-task application
@@ -767,6 +797,11 @@ frontends separate. The CLI communicates with the service only through the
 Runs HTTP/SSE API and must not import `agents/app`. New capabilities should be
 added to the matching package rather than extending `main.py` with business
 logic.
+
+Shared wire contracts stay under root-level `contracts/` because no one client
+owns them. Server, CLI, and Runs UI tests must all validate the same versioned
+artifact. A future repository split should distribute that artifact through a
+release pipeline instead of moving the canonical schema into either consumer.
 
 ## Model selection
 
