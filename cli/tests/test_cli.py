@@ -290,6 +290,21 @@ def test_renderer_does_not_repeat_final_answer():
     assert output.getvalue() == "Finished.\n"
 
 
+def test_renderer_does_not_repeat_terminal_failure():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, color=False)
+
+    renderer.render(
+        {
+            "event_type": "run_failed",
+            "payload": {"error": "Request timed out."},
+        }
+    )
+    renderer.render_run({"status": "failed", "error": "Request timed out."})
+
+    assert output.getvalue() == "Run failed: Request timed out.\n"
+
+
 def test_renderer_sanitizes_untrusted_terminal_control_sequences():
     output = io.StringIO()
     renderer = EventRenderer(stream=output, color=False)
@@ -302,6 +317,28 @@ def test_renderer_sanitizes_untrusted_terminal_control_sequences():
     )
 
     assert output.getvalue() == "safe\\x1b[2Jstill-safe\\x00"
+
+
+def test_renderer_preserves_only_its_own_color_sequences():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, color=True)
+
+    renderer.render({"event_type": "queued", "payload": {}})
+    renderer.render(
+        {
+            "event_type": "tool_call",
+            "payload": {
+                "tool": "tree\x1b[2J",
+                "args": {"directory": ".\x1b[31m"},
+            },
+        }
+    )
+
+    assert output.getvalue() == (
+        "\x1b[2m• queued\x1b[0m\n"
+        "\x1b[33m→ tree\\x1b[2J\x1b[0m"
+        ' {"directory": ".\\u001b[31m"}\n'
+    )
 
 
 def test_renderer_keeps_stream_json_as_one_valid_object_per_line():

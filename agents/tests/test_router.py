@@ -23,6 +23,7 @@ from app.agent.router import (
             "finance",
         ),
         ("Review the authentication module", "", "research", "code"),
+        ("Review this repo and compare its CLI", "", "research", "code"),
         (
             "Compare current release support using primary sources",
             "",
@@ -225,6 +226,37 @@ def test_route_request_ignores_unnecessary_external_evidence_request(
     assert route.workflow == "code"
     assert route.tasks[0].workflow == "code"
     assert route.requires_external_evidence is False
+
+
+@patch("app.agent.router.extract_json")
+@patch("app.agent.router.chat")
+def test_route_request_keeps_hybrid_repo_comparison_tasks(mock_chat, mock_extract_json):
+    mock_chat.return_value = "{}"
+    mock_extract_json.return_value = {
+        "workflow": "research",
+        "translated_task": "Compare the mounted repository with Claude CLI.",
+        "requires_external_evidence": True,
+        "tasks": [
+            {
+                "id": "inspect_repo",
+                "objective": "Inspect the mounted repository capabilities",
+                "workflow": "code",
+                "depends_on": [],
+            },
+            {
+                "id": "compare_cli",
+                "objective": "Compare those capabilities with Claude CLI",
+                "workflow": "research",
+                "depends_on": ["inspect_repo"],
+            },
+        ],
+    }
+
+    route = route_request("Review this repo and compare it with Claude CLI")
+
+    assert route.workflow == "code"
+    assert [task.workflow for task in route.tasks] == ["code", "research"]
+    assert route.requires_external_evidence is True
 
 
 @patch("app.agent.router.extract_json")

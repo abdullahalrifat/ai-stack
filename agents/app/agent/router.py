@@ -166,7 +166,7 @@ def _policy_workflow(message: str, attachment_text: str, proposed: str) -> str:
     if re.search(r"\b(image|screenshot|photo|diagram)\b", text):
         return "vision"
     if re.search(
-        r"\b(repository|codebase|source code|module|function|class|api|"
+        r"\b(repo(?:sitory)?|codebase|source code|module|function|class|api|"
         r"authentication|bug|test|refactor|implement|compile|lint|pull request)\b",
         text,
     ):
@@ -256,7 +256,12 @@ def _bounded_router_message(message: str, limit: int = 5_000) -> str:
     )
 
 
-def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
+def _validated_tasks(
+    value,
+    default_workflow: str,
+    *,
+    allow_external_subtasks: bool = False,
+) -> list[PlannedTask]:
     if not isinstance(value, list) or not 1 <= len(value) <= 4:
         return []
 
@@ -271,7 +276,15 @@ def _validated_tasks(value, default_workflow: str) -> list[PlannedTask]:
         workflow = str(item.get("workflow", default_workflow)).strip().lower()
         allowed = {
             "finance": {"finance", "deep"},
-            "code": {"code", "deep"},
+            # Repository work can legitimately need a bounded external
+            # comparison (for example, comparing this CLI with another
+            # current CLI) without turning the entire run into web-only
+            # research.
+            "code": (
+                {"code", "research", "deep"}
+                if allow_external_subtasks
+                else {"code", "deep"}
+            ),
             "research": {"research", "deep"},
             "vision": {"vision", "deep"},
             "quick": {"quick", "deep"},
@@ -435,7 +448,25 @@ def route_request(
         validation_warnings.append(
             f"Discarded {len(rejected_records)} ungrounded extracted record(s)"
         )
-    tasks = _validated_tasks(data.get("tasks"), workflow)
+    explicit_external = bool(
+        re.search(
+            r"\b(current|latest|today|news|search the web|look up|"
+            r"primary sources|as of|cve|security advisory)\b",
+            message,
+            re.IGNORECASE,
+        )
+        or re.search(
+            r"\bcompare\b.{0,160}\b(?:with|against|to)\b.{0,160}"
+            r"\b(?:cli|tool|sdk|product|service)\b",
+            message,
+            re.IGNORECASE,
+        )
+    )
+    tasks = _validated_tasks(
+        data.get("tasks"),
+        workflow,
+        allow_external_subtasks=explicit_external,
+    )
     if not tasks:
         # Accept the earlier compact plan shape during rolling upgrades, but
         # convert it into a proper validated graph.
@@ -456,16 +487,13 @@ def route_request(
     # accept the model's request only when the original user wording also
     # contains an explicit freshness/source signal, avoiding needless searches
     # caused by an over-eager small planner.
-    explicit_external = bool(
-        re.search(
-            r"\b(current|latest|today|news|search the web|look up|"
-            r"primary sources|as of|cve|security advisory)\b",
-            message,
-            re.IGNORECASE,
-        )
+    task_requires_external = any(
+        task.workflow in {"finance", "research"} for task in tasks
     )
-    external = workflow in {"finance", "research"} or (
-        data.get("requires_external_evidence") is True and explicit_external
+    external = (
+        workflow in {"finance", "research"}
+        or task_requires_external
+        or (data.get("requires_external_evidence") is True and explicit_external)
     )
     return RouteDecision(
         workflow=workflow,

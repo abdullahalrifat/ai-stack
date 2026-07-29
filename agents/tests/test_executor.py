@@ -12,6 +12,7 @@ from app.agent.executor import (
     financial_price_query,
     financial_research_queries,
     normalize_tool_args,
+    requires_workspace_inspection,
     report_pdf_link,
     tool_result_failed,
 )
@@ -61,6 +62,16 @@ def make_message(content=None, tool_calls=None):
         ({"error": "bad arguments"}, True),
         ({"tool_error": "dependency missing"}, True),
         ({"exit_code": 4, "output": "unrecognized arguments: --cov"}, True),
+        ({"items": [{"path": "missing", "error": "Not found"}]}, True),
+        (
+            {
+                "items": [
+                    {"path": "README.md", "content": "ok"},
+                    {"path": "missing", "error": "Not found"},
+                ]
+            },
+            False,
+        ),
         ({"exit_code": 0, "output": "passed"}, False),
         ({"status": "edited"}, False),
     ],
@@ -425,6 +436,168 @@ def test_execute_plan_prefetches_current_external_information(
     )
     tools = mock_chat_with_tools.call_args.kwargs["tools"]
     assert [tool["function"]["name"] for tool in tools] == ["web_search"]
+
+
+def test_requires_workspace_inspection_recognizes_repo_shorthand():
+    assert requires_workspace_inspection("Review this repo") is True
+    assert requires_workspace_inspection("Find today's market price") is False
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_hybrid_repo_research_prefetches_workspace_and_bounded_search(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.user_message = (
+        "Review this repo and compare it with Cluade CLI for missing features"
+    )
+    state.prompt_mode = "code"
+    state.requires_external_evidence = True
+    state.execution_brief = "Translated objective:\n" + ("long objective " * 100)
+    state.route_tasks = [
+        {
+            "objective": "Compare repository features with Cluade CLI " * 20,
+            "workflow": "research",
+        }
+    ]
+    mock_registry.list_tools.return_value = [
+        "list_files",
+        "project_summary",
+        "read_file",
+        "web_search",
+        "web_fetch",
+    ]
+    mock_registry.execute.side_effect = [
+        [{"name": "README.md", "type": "file"}],
+        {
+            "query": "Claude CLI",
+            "results": [
+                {
+                    "title": "Claude Code CLI",
+                    "url": "https://docs.example.test/claude",
+                }
+            ],
+        },
+        {"url": "https://docs.example.test/claude", "text": "Official CLI options"},
+    ]
+    mock_chat_with_tools.return_value = make_message(content="Compared.")
+
+    assert execute_plan(state) == "Compared."
+
+    calls = mock_registry.execute.call_args_list
+    assert [call.args[0] for call in calls[:3]] == [
+        "list_files",
+        "web_search",
+        "web_fetch",
+    ]
+    query = calls[1].args[1]["query"]
+    assert "Claude CLI" in query
+    assert "official documentation" in query
+    assert len(query) <= 500
+    tool_names = [
+        tool["function"]["name"]
+        for tool in mock_chat_with_tools.call_args.kwargs["tools"]
+    ]
+    assert "read_file" in tool_names
+    assert "web_search" in tool_names
+    assert "inspect_test_environment" not in tool_names
+    system_prompt = mock_chat_with_tools.call_args.args[0][0]["content"]
+    assert "autonomous software engineering agent" in system_prompt
+    task_context = mock_chat_with_tools.call_args.args[0][1]["content"]
+    assert "Verified workspace discovery" in task_context
+    assert "Official CLI options" in task_context
+
+
+@patch("app.agent.executor.chat", return_value="Synthesized from cached evidence.")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_repeated_read_only_tool_calls_use_cache_and_force_synthesis(
+    mock_chat_with_tools,
+    mock_registry,
+    mock_chat,
+):
+    state = DummyState()
+    repeated_call = make_message(
+        tool_calls=[make_tool_call("read", "read_file", {"file_path": "README.md"})]
+    )
+    mock_chat_with_tools.side_effect = [repeated_call, repeated_call, repeated_call]
+    mock_registry.list_tools.return_value = ["read_file"]
+    mock_registry.execute.return_value = "repository evidence"
+    events = []
+
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Synthesized from cached evidence."
+    )
+
+    mock_registry.execute.assert_called_once_with(
+        "read_file", {"file_path": "README.md"}
+    )
+    assert [kind for kind, _ in events].count("duplicate_tool_call") == 2
+    assert any(kind == "repeated_tool_loop" for kind, _ in events)
+    mock_chat.assert_called_once()
+
+
+@patch("app.agent.executor.chat", return_value="Complete comparison report.")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_hybrid_analysis_synthesizes_after_sufficient_evidence(
+    mock_chat_with_tools,
+    mock_registry,
+    mock_chat,
+):
+    state = DummyState()
+    state.user_message = "Review this repo and compare with Claude CLI"
+    state.prompt_mode = "code"
+    state.requires_external_evidence = True
+    state.route_tasks = [
+        {"objective": "Compare with Claude CLI", "workflow": "research"}
+    ]
+    mock_registry.list_tools.return_value = [
+        "list_files",
+        "inspect_files",
+        "tree",
+        "read_file",
+        "web_search",
+        "web_fetch",
+    ]
+    mock_registry.execute.side_effect = [
+        [{"name": "README.md"}],
+        {"items": [{"path": "cli/ROADMAP.md", "content": "current and future work"}]},
+        {
+            "results": [
+                {
+                    "url": "https://docs.example.test/claude",
+                    "title": "Claude CLI",
+                }
+            ]
+        },
+        {"text": "official external evidence"},
+    ]
+    events = []
+
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Complete comparison report."
+    )
+
+    mock_chat_with_tools.assert_not_called()
+    synthesis = next(
+        payload for kind, payload in events if kind == "evidence_synthesis"
+    )
+    assert synthesis["prefetched"] is True
+    assert [call.args[0] for call in mock_registry.execute.call_args_list] == [
+        "list_files",
+        "inspect_files",
+        "web_search",
+        "web_fetch",
+    ]
+    mock_chat.assert_called_once()
 
 
 @patch("app.agent.executor.chat_with_tools")

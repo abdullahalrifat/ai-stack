@@ -5,6 +5,9 @@ from types import SimpleNamespace
 
 from ..core.cancellation import cancellation_context
 from ..core.config import (
+    ANALYSIS_SYNTHESIS_MAX_TOKENS,
+    ANALYSIS_SYNTHESIS_MODEL,
+    ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS,
     CONTEXT_COMPACT_KEEP_RECENT,
     CONTEXT_COMPACT_THRESHOLD_TOKENS,
     MAX_AGENT_STEPS,
@@ -51,6 +54,19 @@ QUICK_WORKSPACE_TOOLS = {
     "project_summary",
     "inspect_files",
 }
+
+WORKSPACE_PREFETCH_TOOLS = (("list_files", {"directory": "."}),)
+HYBRID_RESEARCH_TOOLS = QUICK_WORKSPACE_TOOLS | {"web_search", "web_fetch"}
+CACHEABLE_READ_TOOLS = HYBRID_RESEARCH_TOOLS | {
+    "inspect_test_environment",
+    "workspace_root",
+}
+
+_WORKSPACE_REQUEST = re.compile(
+    r"\b(?:repo(?:sitory)?|codebase|source code|working tree|project files?|"
+    r"module|package|implementation)\b",
+    re.IGNORECASE,
+)
 
 
 def _noop_event(event_type: str, payload: dict) -> None:
@@ -112,6 +128,12 @@ _PREMATURE_RECOVERY_HANDOFF = re.compile(
 
 def requires_external_search(message: str) -> bool:
     return bool(_CURRENT_EXTERNAL_INFO.search(message))
+
+
+def requires_workspace_inspection(message: str) -> bool:
+    """Identify requests whose answer must be grounded in mounted source."""
+
+    return bool(_WORKSPACE_REQUEST.search(message))
 
 
 def is_financial_query(message: str) -> bool:
@@ -230,7 +252,7 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
     ):
         return None
 
-    search_task = getattr(state, "execution_brief", "") or state.user_message
+    search_task = _external_search_query(state)
     queries = (
         financial_research_queries(search_task, getattr(state, "routing_entities", []))
         if getattr(state, "prompt_mode", "") == "finance"
@@ -253,6 +275,38 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
         searches.append(result)
 
     if len(searches) == 1:
+        if (
+            "web_fetch" in available_tools
+            and requires_workspace_inspection(state.user_message)
+            and isinstance(searches[0], dict)
+        ):
+            results = searches[0].get("results")
+            first_url = (
+                results[0].get("url")
+                if isinstance(results, list)
+                and results
+                and isinstance(results[0], dict)
+                else None
+            )
+            if isinstance(first_url, str) and first_url.startswith(
+                ("https://", "http://")
+            ):
+                args = {"url": first_url}
+                on_event(
+                    "tool_call",
+                    {"tool": "web_fetch", "args": args, "prefetch": True},
+                )
+                try:
+                    document = registry.execute("web_fetch", args)
+                except Exception as exc:
+                    logger.exception("Comparison source prefetch failed")
+                    document = {"error": str(exc)}
+                state.add_tool("web_fetch", document)
+                on_event(
+                    "tool_result",
+                    {"tool": "web_fetch", "result": document, "prefetch": True},
+                )
+                return {"search": searches[0], "documents": [document]}
         return searches[0]
 
     documents = []
@@ -309,6 +363,93 @@ def _prefetch_external_search(state, available_tools: list[str], on_event):
         "documents": documents,
         "other_research": searches[1:],
     }
+
+
+def _external_search_query(state, limit: int = 500) -> str:
+    """Build a focused query that always satisfies the search-tool contract."""
+
+    original = str(state.user_message)
+    comparison = re.search(
+        r"\bcompare\b.{0,80}?\b(?:with|against|to)\s+"
+        r"(.{2,80}?)(?=\s+(?:to|for)\b|[,.;]|$)",
+        original,
+        re.IGNORECASE,
+    )
+    if comparison:
+        source = f"{comparison.group(1)} official documentation features capabilities"
+    else:
+        tasks = getattr(state, "route_tasks", []) or []
+        research_objectives = [
+            str(task.get("objective", ""))
+            for task in tasks
+            if task.get("workflow") in {"research", "finance"}
+            and str(task.get("objective", "")).strip()
+        ]
+        if research_objectives:
+            source = research_objectives[0]
+        else:
+            brief = str(getattr(state, "execution_brief", "") or "")
+            translated = brief.split("\n\n", 1)[0]
+            source = translated.removeprefix("Translated objective:").strip()
+            if not source:
+                source = original
+
+    query = " ".join(source.split())
+    # Correct the recurring product-name transposition before sending it to a
+    # search engine; the original request remains untouched everywhere else.
+    query = re.sub(r"\bcluade\b", "Claude", query, flags=re.IGNORECASE)
+    query = re.sub(r"\bcli\b", "CLI", query, flags=re.IGNORECASE)
+    if len(query) <= limit:
+        return query
+    bounded = query[:limit].rsplit(" ", 1)[0].strip()
+    return bounded or query[:limit]
+
+
+def _prefetch_workspace(state, available_tools: list[str], on_event):
+    """Ground explicit repository analysis before the model may answer."""
+
+    if not (
+        requires_workspace_inspection(state.user_message)
+        and getattr(state, "requires_external_evidence", False)
+    ):
+        return None
+
+    evidence = {}
+    prefetch_tools = list(WORKSPACE_PREFETCH_TOOLS)
+    if "inspect_files" in available_tools and re.search(
+        r"\b(?:cli|terminal agent)\b", state.user_message, re.IGNORECASE
+    ):
+        prefetch_tools.append(
+            (
+                "inspect_files",
+                {
+                    "paths": [
+                        "cli/ROADMAP.md",
+                        "cli/README.md",
+                        "contracts/aistack-protocol-v1.json",
+                        "README.md",
+                        "cli/pyproject.toml",
+                    ]
+                },
+            )
+        )
+    for tool_name, args in prefetch_tools:
+        if tool_name not in available_tools:
+            continue
+        on_event("tool_call", {"tool": tool_name, "args": args, "prefetch": True})
+        try:
+            result = registry.execute(tool_name, args)
+        except Exception as exc:
+            logger.exception("Workspace prefetch failed for %s", tool_name)
+            result = {"error": str(exc)}
+        state.add_tool(tool_name, result)
+        _record_tool_progress(state, tool_name, args, result)
+        on_event(
+            "tool_result",
+            {"tool": tool_name, "result": result, "prefetch": True},
+        )
+        evidence[tool_name] = result
+    return evidence or None
 
 
 def _leaked_tool_call(text: str) -> bool:
@@ -421,7 +562,13 @@ def _needs_compaction(messages: list, system_prompt: str, tools: list[dict]) -> 
     )
 
 
-def _synthesize_partial_answer(state) -> str:
+def _synthesize_partial_answer(
+    state,
+    *,
+    model: str | None = None,
+    max_tokens: int | None = None,
+    timeout_seconds: int | None = None,
+) -> str:
     """Return a useful answer from evidence when the tool loop loses progress."""
 
     def useful(observation: dict) -> bool:
@@ -438,26 +585,40 @@ def _synthesize_partial_answer(state) -> str:
     for item in observations[-4:]:
         if item not in selected:
             selected.append(item)
-    evidence = _bounded_context(selected, 8_000)
+    per_observation = max(600, 11_000 // max(1, len(selected)))
+    balanced = []
+    for observation in selected:
+        result = json.dumps(observation.get("result"), default=str)
+        if len(result) > per_observation:
+            result = f"{result[:per_observation]}\n...[observation truncated]"
+        balanced.append({"tool": observation.get("tool"), "result": result})
+    evidence = json.dumps(balanced, ensure_ascii=False)
     prompt = f"""Task:
 {state.user_message}
 
 Collected tool evidence:
 {evidence}
 """
-    try:
-        answer = chat(
-            [
-                {"role": "system", "content": PARTIAL_SYNTHESIS_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            model=state.model,
-            max_tokens=getattr(state, "max_completion_tokens", None),
-        ).strip()
-        if answer:
-            return answer
-    except Exception:
-        logger.exception("Partial-answer synthesis failed")
+    candidates = [candidate for candidate in (model, state.model) if candidate]
+    for candidate in dict.fromkeys(candidates):
+        try:
+            answer = chat(
+                [
+                    {"role": "system", "content": PARTIAL_SYNTHESIS_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                model=candidate,
+                max_tokens=(
+                    max_tokens
+                    if max_tokens is not None
+                    else getattr(state, "max_completion_tokens", None)
+                ),
+                timeout_seconds=timeout_seconds,
+            ).strip()
+            if answer:
+                return answer
+        except Exception:
+            logger.exception("Evidence synthesis failed with model %s", candidate)
 
     if state.observations:
         tools = ", ".join(item["tool"] for item in state.observations)
@@ -578,22 +739,70 @@ def execute_plan(
     if not state.allow_write:
         available_tools = [t for t in available_tools if t not in WRITE_TOOLS]
 
-    research_mode = force_research or requires_external_search(state.user_message)
+    research_mode = (
+        force_research
+        or getattr(state, "requires_external_evidence", False)
+        or requires_external_search(state.user_message)
+    )
+    workspace_mode = requires_workspace_inspection(state.user_message)
     if getattr(state, "prompt_mode", "code") == "quick" and not research_mode:
         available_tools = [
             tool for tool in available_tools if tool in QUICK_WORKSPACE_TOOLS
         ]
 
-    if research_mode and "web_search" in available_tools:
+    if research_mode and not workspace_mode and "web_search" in available_tools:
         # Prevent a coding-oriented model from wandering through the mounted
         # repository when the user asked for current external information.
         available_tools = [
             tool for tool in ("web_search", "web_fetch") if tool in available_tools
         ]
+    elif research_mode and workspace_mode:
+        # Hybrid comparisons need both evidence domains, but advertising every
+        # read-only utility makes the local model process a much larger schema
+        # before its first token. Keep the focused inspection and web tools.
+        available_tools = [
+            tool for tool in available_tools if tool in HYBRID_RESEARCH_TOOLS
+        ]
 
     tools = schemas_for(available_tools)
+    workspace_evidence = _prefetch_workspace(state, available_tools, on_event)
     external_search = _prefetch_external_search(state, available_tools, on_event)
 
+    useful_prefetch_tools = {
+        observation.get("tool")
+        for observation in state.observations
+        if not tool_result_failed(observation.get("result"))
+    }
+    if (
+        research_mode
+        and workspace_mode
+        and not state.allow_write
+        and {"inspect_files", "web_search", "web_fetch"}.issubset(useful_prefetch_tools)
+    ):
+        answer = _synthesize_partial_answer(
+            state,
+            model=ANALYSIS_SYNTHESIS_MODEL,
+            max_tokens=ANALYSIS_SYNTHESIS_MAX_TOKENS,
+            timeout_seconds=ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS,
+        )
+        on_event(
+            "evidence_synthesis",
+            {
+                "steps": state.steps,
+                "observations": len(state.observations),
+                "complete_evidence": True,
+                "prefetched": True,
+            },
+        )
+        return finalize(answer)
+
+    workspace_context = ""
+    if workspace_evidence is not None:
+        workspace_context = f"""
+
+Verified workspace discovery (continue with focused file inspection):
+{_truncate(json.dumps(workspace_evidence, default=str))}
+"""
     external_context = ""
     if external_search is not None:
         external_context = f"""
@@ -627,6 +836,7 @@ Relevant memory:
 
 Plan:
 {_bounded_context(state.plan, 800)}
+{workspace_context}
 {external_context}
 {document_context}
 """
@@ -655,6 +865,8 @@ Plan:
     empty_turn_count = 0
     empty_search_count = 0
     unproductive_calls: dict[str, int] = {}
+    tool_call_counts: dict[str, int] = {}
+    tool_result_cache: dict[str, object] = {}
     recovery_required = False
     recovery_handoff_count = 0
 
@@ -698,6 +910,7 @@ Plan:
         if tool_calls:
             empty_turn_count = 0
             failed_tools: list[str] = []
+            duplicate_tools: list[str] = []
             messages.append(
                 {
                     "role": "assistant",
@@ -723,6 +936,14 @@ Plan:
                 tool_name = call.function.name
                 raw_args = parse_tool_arguments(call.function.arguments)
                 args = normalize_tool_args(tool_name, raw_args)
+                fingerprint = (
+                    f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
+                )
+                tool_call_counts[fingerprint] = tool_call_counts.get(fingerprint, 0) + 1
+                duplicate = (
+                    tool_name in CACHEABLE_READ_TOOLS
+                    and fingerprint in tool_result_cache
+                )
 
                 on_event("tool_call", {"tool": tool_name, "args": args})
                 logger.info("Executing tool %s with args=%s", tool_name, args)
@@ -731,6 +952,13 @@ Plan:
                     result = {
                         "error": f"Tool '{tool_name}' is unavailable for this request."
                     }
+                elif duplicate:
+                    result = tool_result_cache[fingerprint]
+                    duplicate_tools.append(tool_name)
+                    on_event(
+                        "duplicate_tool_call",
+                        {"tool": tool_name, "args": args, "cached": True},
+                    )
                 else:
                     try:
                         with cancellation_context(should_cancel):
@@ -777,15 +1005,14 @@ Plan:
                     )
 
                 failed = tool_result_failed(result)
+                if not failed and not duplicate and tool_name in CACHEABLE_READ_TOOLS:
+                    tool_result_cache[fingerprint] = result
                 if tool_name == "search_text" and not result:
                     empty_search_count += 1
                 elif not failed:
                     empty_search_count = 0
 
                 unproductive = failed
-                fingerprint = (
-                    f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
-                )
                 if unproductive:
                     unproductive_calls[fingerprint] = (
                         unproductive_calls.get(fingerprint, 0) + 1
@@ -818,6 +1045,47 @@ Plan:
                 on_event("unproductive_tool_loop", {"repeated_calls": repeated})
                 return finalize(answer, partial=True)
 
+            duplicate_repeats = max(
+                (
+                    count - 1
+                    for fingerprint, count in tool_call_counts.items()
+                    if fingerprint in tool_result_cache
+                ),
+                default=0,
+            )
+            if duplicate_repeats >= 2:
+                answer = _synthesize_partial_answer(state)
+                on_event(
+                    "repeated_tool_loop",
+                    {"duplicate_repeats": duplicate_repeats},
+                )
+                return finalize(answer, partial=True)
+
+            if research_mode and workspace_mode and not state.allow_write:
+                useful_evidence = [
+                    observation
+                    for observation in state.observations
+                    if not tool_result_failed(observation.get("result"))
+                ]
+                evidence_ready = state.steps >= 3 and len(useful_evidence) >= 6
+                evidence_limit_reached = state.steps >= 6 and len(useful_evidence) >= 4
+                if evidence_ready or evidence_limit_reached:
+                    answer = _synthesize_partial_answer(
+                        state,
+                        model=ANALYSIS_SYNTHESIS_MODEL,
+                        max_tokens=ANALYSIS_SYNTHESIS_MAX_TOKENS,
+                        timeout_seconds=ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS,
+                    )
+                    on_event(
+                        "evidence_synthesis",
+                        {
+                            "steps": state.steps,
+                            "observations": len(useful_evidence),
+                            "complete_evidence": evidence_ready,
+                        },
+                    )
+                    return finalize(answer, partial=not evidence_ready)
+
             if failed_tools:
                 recovery_required = True
                 messages.append(
@@ -829,6 +1097,20 @@ Plan:
                             "stop at a future-tense proposal such as 'next I will install or run it'. "
                             "Only report a blocker after available recovery paths have been exhausted. "
                             f"Failed tool(s): {', '.join(failed_tools)}."
+                        ),
+                    }
+                )
+            elif duplicate_tools:
+                recovery_required = False
+                recovery_handoff_count = 0
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "That exact read-only tool result was already collected and was returned "
+                            "from cache. Do not request it again. Use the existing evidence to answer "
+                            "now, or inspect a materially different file/source only if one is still "
+                            "required by the task."
                         ),
                     }
                 )

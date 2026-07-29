@@ -75,8 +75,18 @@ MAX_UNPRODUCTIVE_TOOL_CALLS = int(os.getenv("MAX_UNPRODUCTIVE_TOOL_CALLS", "3"))
 # A local 8B model has a finite context window.  Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
-LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "90"))
-LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "384"))
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
+LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "768"))
+# Evidence-rich cross-domain comparisons use a stronger model for the one
+# synthesis turn only. If it is unavailable, the executor falls back to the
+# active workflow model without losing the collected evidence.
+ANALYSIS_SYNTHESIS_MODEL = os.getenv("ANALYSIS_SYNTHESIS_MODEL", "qwen3-14b")
+ANALYSIS_SYNTHESIS_MAX_TOKENS = int(
+    os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "1200")
+)
+ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
+    os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "360")
+)
 # Planning is advisory; a small bounded response avoids wasting the local
 # context window on a plan the executor does not need to execute literally.
 PLANNER_MAX_COMPLETION_TOKENS = int(os.getenv("PLANNER_MAX_COMPLETION_TOKENS", "192"))

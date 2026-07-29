@@ -201,7 +201,15 @@ def executor_prompt(prompt_mode: str, research_mode: bool) -> str:
 
     if prompt_mode == "finance":
         return FINANCE_RESEARCH_PROMPT
-    if research_mode or prompt_mode == "research":
+    if prompt_mode == "research":
+        return WEB_RESEARCH_PROMPT
+    # A code workflow may also require current external evidence. Keep the
+    # repository-first prompt in that hybrid case; it already tells the model
+    # how and when to use web_search and prevents it from ignoring the mounted
+    # source tree.
+    if prompt_mode in {"code", "custom"}:
+        return EXECUTOR_PROMPT + SHARED_RELIABILITY_PROMPT
+    if research_mode:
         return WEB_RESEARCH_PROMPT
     if prompt_mode == "quick":
         return QUICK_PROMPT
@@ -296,6 +304,17 @@ Give the best useful answer to the user's task from the collected tool
 evidence. Do not call tools, do not describe this instruction, and do not
 claim to have inspected anything that is absent from the evidence. Clearly
 label limitations where the evidence is incomplete. Return only the answer.
+For a feature comparison, call something missing only when the external source
+shows the feature and the repository evidence does not show an equivalent.
+Treat capabilities listed under a completed/current baseline as present and
+items explicitly listed as future/required work as gaps. Cite the relevant
+repository paths and external URLs. Never claim repository detail was absent
+when file evidence was supplied.
+Compare user-visible outcomes, not implementation location: a server-owned
+tool, sandbox, session, checkpoint, authentication control, or model invoked
+from the CLI counts as a CLI capability. Do not label it missing merely because
+the thin client delegates it to the server. Keep the result concise enough to
+finish, prioritizing verified gaps and concrete accuracy/performance actions.
 """
 
 # ============================================================

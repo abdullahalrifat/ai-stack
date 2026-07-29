@@ -15,6 +15,7 @@ from app.core.cancellation import cancellation_requested
 from app.core.config import (
     ALLOWED_COMMANDS,
     COMMAND_TIMEOUT_SECONDS,
+    MAX_TOOL_OUTPUT_CHARS,
     RUNNER_API_KEY,
     RUNNER_URL,
     SANDBOX_ROOT,
@@ -46,6 +47,7 @@ IGNORE_DIRS = {
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",
+    ".ruff_cache",
     "node_modules",
     "venv",
     ".venv",
@@ -60,6 +62,14 @@ IGNORE_DIRS = {
     "qdrant",
     "redis",
     "cache",
+}
+
+SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
+SENSITIVE_FILE_NAMES = {
+    "credentials.json",
+    "id_dsa",
+    "id_ed25519",
+    "id_rsa",
 }
 
 
@@ -271,12 +281,50 @@ def resolve_path(path: str) -> Path:
     return p
 
 
+def sensitive(path: Path) -> bool:
+    name = path.name.lower()
+    return bool(
+        (name == ".env" or (name.startswith(".env.") and name not in SAFE_ENV_FILES))
+        or name in SENSITIVE_FILE_NAMES
+        or path.suffix.lower() in {".key", ".pem", ".p12", ".pfx"}
+    )
+
+
 def ignored(path: Path) -> bool:
-    return any(part in IGNORE_DIRS for part in path.parts)
+    if any(
+        part in IGNORE_DIRS or part.endswith(".egg-info") for part in path.parts
+    ) or sensitive(path):
+        return True
+    # The Compose-managed Open WebUI directory is persistent runtime data,
+    # not this repository's frontend source (that lives in runs-ui). Detect
+    # its upload-only shape instead of globally ignoring every checkout named
+    # "open-webui".
+    for candidate in (path, *path.parents):
+        if candidate == current_workspace():
+            break
+        if (
+            candidate.name == "open-webui"
+            and (candidate / "uploads").is_dir()
+            and not (candidate / "package.json").is_file()
+        ):
+            return True
+    return False
 
 
 def relative(path: Path):
     return str(path.relative_to(current_workspace()))
+
+
+def _read_utf8_text(path: Path) -> str:
+    """Read source text without leaking binary control bytes into events."""
+
+    raw = path.read_bytes()
+    if b"\x00" in raw:
+        raise ValueError("File is binary, not UTF-8 text.")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("File is not valid UTF-8 text.") from exc
 
 
 # ============================================================
@@ -405,13 +453,13 @@ def read_file(
         if not path.exists():
             return {"error": "File not found"}
 
+        if sensitive(path):
+            return {"error": "Reading sensitive files is not allowed."}
+
         if path.stat().st_size > MAX_FILE_SIZE:
             return {"error": "File exceeds maximum size."}
 
-        return path.read_text(
-            encoding="utf-8",
-            errors="ignore",
-        )
+        return _read_utf8_text(path)
 
     except Exception as e:
         return {"error": str(e)}
@@ -616,11 +664,28 @@ def inspect_files(
     results = []
 
     try:
-        for item in paths[:MAX_INSPECT_PATHS]:
+        requested_paths = paths[:MAX_INSPECT_PATHS]
+        # Divide the model-facing budget across requested files so the first
+        # large README cannot erase every later manifest or roadmap entry when
+        # AgentState applies its final aggregate bound.
+        content_budget = max(
+            512,
+            min(
+                MAX_FILE_SIZE,
+                (MAX_TOOL_OUTPUT_CHARS - 1_500) // max(1, len(requested_paths)),
+            ),
+        )
+        for item in requested_paths:
             path = resolve_path(item)
 
             if not path.exists():
                 results.append({"path": item, "error": "Not found"})
+                continue
+
+            if sensitive(path):
+                results.append(
+                    {"path": item, "error": "Reading sensitive files is not allowed."}
+                )
                 continue
 
             if path.is_dir():
@@ -643,15 +708,12 @@ def inspect_files(
                     results.append({"path": item, "error": "File too large"})
                     continue
 
-                results.append(
-                    {
-                        "path": item,
-                        "type": "file",
-                        "content": path.read_text(encoding="utf-8", errors="ignore")[
-                            :MAX_FILE_SIZE
-                        ],
-                    }
-                )
+                try:
+                    content = _read_utf8_text(path)[:content_budget]
+                except ValueError as exc:
+                    results.append({"path": item, "error": str(exc)})
+                    continue
+                results.append({"path": item, "type": "file", "content": content})
 
         return {"items": results, "truncated": len(paths) > MAX_INSPECT_PATHS}
 

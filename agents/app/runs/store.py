@@ -16,6 +16,30 @@ from ..core.config import POSTGRES_URL
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
 
 
+def _postgres_safe_json(value):
+    """Remove text sequences PostgreSQL JSONB cannot represent.
+
+    Tool and model output is untrusted and may contain NUL bytes or lone
+    Unicode surrogates. Preserve them visibly as escaped text instead of
+    allowing one event to fail the entire run.
+    """
+
+    if isinstance(value, str):
+        return (
+            value.replace("\x00", "\\x00")
+            .encode("utf-8", errors="backslashreplace")
+            .decode("utf-8")
+        )
+    if isinstance(value, dict):
+        return {
+            _postgres_safe_json(str(key)): _postgres_safe_json(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_postgres_safe_json(item) for item in value]
+    return value
+
+
 class RunStore:
     def __init__(self, dsn: str):
         self.dsn = dsn
@@ -101,18 +125,19 @@ class RunStore:
     def append_event(
         self, run_id: str, event_type: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
+        safe_payload = _postgres_safe_json(payload)
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO agent_run_events (run_id, event_type, payload)
                    VALUES (%s, %s, %s) RETURNING id, created_at""",
-                (run_id, event_type, Jsonb(payload)),
+                (run_id, event_type, Jsonb(safe_payload)),
             )
             row = cursor.fetchone()
         return {
             "id": row["id"],
             "run_id": run_id,
             "event_type": event_type,
-            "payload": payload,
+            "payload": safe_payload,
             "created_at": row["created_at"],
         }
 

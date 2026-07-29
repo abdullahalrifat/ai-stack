@@ -68,6 +68,7 @@ def test_resolve_path_accepts_absolute_workspace_without_leading_slash(workspace
 
 def test_tree_skips_runtime_state_directories(workspace):
     (workspace / "postgres").mkdir()
+    (workspace / "open-webui" / "uploads").mkdir(parents=True)
     (workspace / "src").mkdir()
     (workspace / "src" / "main.py").write_text("print('ok')")
 
@@ -75,7 +76,42 @@ def test_tree_skips_runtime_state_directories(workspace):
         result = filesystem.tree.invoke({"directory": ".", "depth": 2})
 
     assert "postgres" not in result
+    assert "open-webui" not in result
     assert "src" in result
+
+
+def test_read_tools_reject_binary_files(workspace):
+    binary = workspace / "upload.pdf"
+    binary.write_bytes(b"%PDF-1.7\x00binary")
+
+    with filesystem.workspace_context(str(workspace)):
+        single = filesystem.read_file.invoke({"file_path": "upload.pdf"})
+        batch = filesystem.inspect_files.invoke({"paths": ["upload.pdf"]})
+
+    assert single == {"error": "File is binary, not UTF-8 text."}
+    assert batch["items"] == [
+        {"path": "upload.pdf", "error": "File is binary, not UTF-8 text."}
+    ]
+
+
+def test_repository_tools_hide_secrets_but_allow_env_templates(workspace):
+    (workspace / ".env").write_text("SECRET=do-not-read")
+    (workspace / ".env.local").write_text("SECRET=also-hidden")
+    (workspace / ".env.example").write_text("SECRET=placeholder")
+    (workspace / "private.pem").write_text("key")
+
+    with filesystem.workspace_context(str(workspace)):
+        listing = filesystem.list_files.invoke({"directory": "."})
+        denied = filesystem.read_file.invoke({"file_path": ".env"})
+        template = filesystem.read_file.invoke({"file_path": ".env.example"})
+
+    names = {item["name"] for item in listing}
+    assert ".env" not in names
+    assert ".env.local" not in names
+    assert "private.pem" not in names
+    assert ".env.example" in names
+    assert denied == {"error": "Reading sensitive files is not allowed."}
+    assert template == "SECRET=placeholder"
 
 
 def test_inspect_files_bounds_requested_paths(workspace, monkeypatch):
@@ -90,6 +126,19 @@ def test_inspect_files_bounds_requested_paths(workspace, monkeypatch):
 
     assert result["truncated"] is True
     assert [item["path"] for item in result["items"]] == ["file-0.txt", "file-1.txt"]
+
+
+def test_inspect_files_balances_content_across_large_files(workspace, monkeypatch):
+    monkeypatch.setattr(filesystem, "MAX_TOOL_OUTPUT_CHARS", 2_600)
+    (workspace / "first.md").write_text("A" * 4_000)
+    (workspace / "second.md").write_text("B" * 4_000)
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.inspect_files.invoke({"paths": ["first.md", "second.md"]})
+
+    assert len(result["items"][0]["content"]) == 550
+    assert len(result["items"][1]["content"]) == 550
+    assert result["items"][1]["content"].startswith("B")
 
 
 def test_write_edit_and_read_stay_inside_workspace(workspace):

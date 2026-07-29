@@ -31,6 +31,16 @@ def tool_result_failed(result) -> bool:
         return False
     if result.get("error") or result.get("tool_error"):
         return True
+    items = result.get("items")
+    if (
+        isinstance(items, list)
+        and items
+        and all(
+            isinstance(item, dict) and (item.get("error") or item.get("tool_error"))
+            for item in items
+        )
+    ):
+        return True
     exit_code = result.get("exit_code")
     return (
         isinstance(exit_code, int)

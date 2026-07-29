@@ -55,13 +55,37 @@ class EventRenderer:
         self.color = self.stream.isatty() if color is None else color
         self.width = shutil.get_terminal_size((100, 24)).columns if self.color else 100
         self.emitted_output = False
+        self.terminal_status_rendered = False
         self.diff: str | None = None
 
     def _style(self, text: str, code: str) -> str:
         return f"\033[{code}m{text}\033[0m" if self.color else text
 
-    def _line(self, text: str = "") -> None:
-        print(_bounded_text(text), file=self.stream, flush=True)
+    def _line(self, text: str = "", *, style: str | None = None) -> None:
+        """Write one safe line, applying only renderer-owned terminal styling.
+
+        Sanitizing after ``_style`` escaped our own ANSI sequences and printed
+        strings such as ``\x1b[2m`` literally.  Keep untrusted content inert
+        first, then add the small SGR sequence selected by the renderer.
+        """
+
+        safe = _bounded_text(text)
+        print(
+            self._style(safe, style) if style else safe,
+            file=self.stream,
+            flush=True,
+        )
+
+    def _prefixed_line(self, prefix: str, style: str, suffix: str) -> None:
+        """Render a trusted styled prefix followed by sanitized event data."""
+
+        safe_prefix = _bounded_text(prefix)
+        safe_suffix = _bounded_text(suffix)
+        print(
+            self._style(safe_prefix, style) + safe_suffix,
+            file=self.stream,
+            flush=True,
+        )
 
     def render(self, event: dict[str, Any]) -> None:
         if self.output == "stream-json":
@@ -79,28 +103,30 @@ class EventRenderer:
                 self.emitted_output = True
             return
         if kind == "step_started":
-            self._line(self._style(f"• step {payload.get('step', '?')}", "2"))
+            self._line(f"• step {payload.get('step', '?')}", style="2")
         elif kind == "planning":
-            self._line(self._style("• planning", "36"))
+            self._line("• planning", style="36")
         elif kind == "plan_ready":
             plan = payload.get("plan") or []
-            self._line(self._style("• plan", "36"))
+            self._line("• plan", style="36")
             for item in plan:
                 self._line(f"  - {item}")
         elif kind == "tool_call":
-            self._line(
-                self._style(f"→ {payload.get('tool', 'tool')}", "33")
-                + f" {_compact(payload.get('args', {}))}"
+            self._prefixed_line(
+                f"→ {payload.get('tool', 'tool')}",
+                "33",
+                f" {_compact(payload.get('args', {}))}",
             )
         elif kind == "tool_result":
-            self._line(
-                self._style(f"← {payload.get('tool', 'tool')}", "32")
-                + f" {_compact(payload.get('result', ''))}"
+            self._prefixed_line(
+                f"← {payload.get('tool', 'tool')}",
+                "32",
+                f" {_compact(payload.get('result', ''))}",
             )
         elif kind == "diff_ready":
             self.diff = _bounded_text(str(payload.get("diff", "")))
             self._line()
-            self._line(self._style("Pending diff", "35;1"))
+            self._line("Pending diff", style="35;1")
             self._line(self.diff.rstrip())
         elif kind == "run_completed":
             answer = _bounded_text(str(payload.get("answer", "")))
@@ -110,14 +136,16 @@ class EventRenderer:
                 self._line(answer)
                 self.emitted_output = True
             if payload.get("has_pending_diff"):
-                self._line(self._style("Run is awaiting diff approval.", "35"))
+                self._line("Run is awaiting diff approval.", style="35")
         elif kind == "run_failed":
-            self._line(self._style(f"Run failed: {payload.get('error', '')}", "31"))
+            self._line(f"Run failed: {payload.get('error', '')}", style="31")
+            self.terminal_status_rendered = True
         elif kind == "run_cancelled":
-            self._line(self._style("Run cancelled.", "31"))
+            self._line("Run cancelled.", style="31")
+            self.terminal_status_rendered = True
         elif kind in {"queued", "run_started", "sandbox_creating", "sandbox_ready"}:
             label = kind.replace("_", " ")
-            self._line(self._style(f"• {label}", "2"))
+            self._line(f"• {label}", style="2")
 
     def render_run(self, run: dict[str, Any]) -> None:
         if self.output == "json":
@@ -125,7 +153,11 @@ class EventRenderer:
             return
         if self.output != "text":
             return
-        if run.get("status") == "failed" and run.get("error"):
-            self._line(self._style(f"Run failed: {run['error']}", "31"))
+        if (
+            run.get("status") == "failed"
+            and run.get("error")
+            and not self.terminal_status_rendered
+        ):
+            self._line(f"Run failed: {run['error']}", style="31")
         elif not self.emitted_output and run.get("answer"):
             self._line(_bounded_text(str(run["answer"])))

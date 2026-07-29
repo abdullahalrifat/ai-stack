@@ -31,6 +31,25 @@ def test_claim_run_is_atomic_and_enforces_minimum_lease():
     assert params == ("worker-1", 30, "run-1")
 
 
+def test_append_event_escapes_postgres_incompatible_text():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"id": 7, "created_at": "now"}
+    store = store_with_cursor(cursor)
+
+    event = store.append_event(
+        "run-1",
+        "tool_result",
+        {"content": "binary\x00data", "nested": ["bad\ud800text"]},
+    )
+
+    stored = cursor.execute.call_args.args[1][2].obj
+    assert stored == {
+        "content": "binary\\x00data",
+        "nested": ["bad\\ud800text"],
+    }
+    assert event["payload"] == stored
+
+
 def test_initialize_applies_versioned_migrations_once():
     cursor = MagicMock()
     cursor.fetchall.return_value = []
