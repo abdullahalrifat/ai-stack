@@ -328,7 +328,11 @@ def latest_conversation_id(client: AgentClient, workspace: str) -> str:
 
     for run in client.list_runs(limit=100):
         conversation_id = run.get("conversation_id")
-        if run.get("requested_workspace") == workspace and conversation_id and run.get("status") in TERMINAL_STATUSES:
+        if (
+            run.get("requested_workspace") == workspace
+            and conversation_id
+            and run.get("status") in TERMINAL_STATUSES
+        ):
             return str(conversation_id)
     raise APIError(f"No previous conversation found for workspace: {workspace}")
 
