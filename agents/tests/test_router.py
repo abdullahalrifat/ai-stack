@@ -80,6 +80,25 @@ def test_router_timeout_uses_concise_deterministic_fallback(mock_chat, caplog):
     assert "timed out; using deterministic fallback" in caplog.text
 
 
+@patch("app.agent.router.chat")
+def test_route_request_skips_model_for_focused_file_question(mock_chat):
+    route = route_request("Inspect only README.md and summarize it")
+
+    assert route.workflow == "quick"
+    assert route.source == "deterministic_fast_path"
+    mock_chat.assert_not_called()
+
+
+@patch("app.agent.router.extract_json", side_effect=ParserError("bad JSON"))
+@patch("app.agent.router.chat", return_value="not json")
+def test_file_change_request_keeps_code_workflow(mock_chat, mock_extract_json):
+    route = route_request("Review README.md and update it")
+
+    assert route.workflow == "code"
+    assert route.source == "fallback"
+    mock_chat.assert_called_once()
+
+
 @patch("app.agent.router.extract_json")
 @patch("app.agent.router.chat")
 def test_route_request_builds_validated_finance_contract(mock_chat, mock_extract_json):

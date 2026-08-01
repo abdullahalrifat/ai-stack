@@ -5,7 +5,7 @@ small, validated execution contract. Workflow policy remains deterministic:
 the model may choose a workflow, but it cannot invent tools or model ids.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import logging
 import re
@@ -26,6 +26,29 @@ logger = logging.getLogger(__name__)
 
 WORKFLOWS = {"quick", "code", "research", "finance", "deep", "vision"}
 COMPLEXITIES = {"simple", "moderate", "complex"}
+_SIMPLE_FILE_TASK = re.compile(
+    r"\b(?:explain|inspect|read|review|summarize)\b.*?"
+    r"(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\."
+    r"(?:c|cc|cpp|css|go|h|hpp|html|ini|java|js|json|jsx|md|mjs|php|py|rb|rs|"
+    r"sh|sql|toml|ts|tsx|txt|yaml|yml)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_FILE_REFERENCE = re.compile(
+    r"(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\."
+    r"(?:c|cc|cpp|css|go|h|hpp|html|ini|java|js|json|jsx|md|mjs|php|py|rb|rs|"
+    r"sh|sql|toml|ts|tsx|txt|yaml|yml)\b",
+    re.IGNORECASE,
+)
+_CHANGE_INTENT = re.compile(
+    r"\b(?:add|build|change|create|edit|fix|implement|improve|modify|refactor|"
+    r"remove|rename|replace|update|write)\b",
+    re.IGNORECASE,
+)
+_EXTERNAL_INTENT = re.compile(
+    r"\b(?:current|latest|today|news|search the web|look up|primary sources|"
+    r"security advisory|cve|as of)\b",
+    re.IGNORECASE,
+)
 
 ROUTER_PROMPT = """
 You are a specialist request translator and router for a multi-model assistant.
@@ -170,6 +193,8 @@ def _policy_workflow(message: str, attachment_text: str, proposed: str) -> str:
         r"authentication|bug|test|refactor|implement|compile|lint|pull request)\b",
         text,
     ):
+        return "code"
+    if _CHANGE_INTENT.search(message) and _FILE_REFERENCE.search(message):
         return "code"
     if re.search(
         r"\b(current|latest|today|news|search the web|look up|primary sources|"
@@ -356,6 +381,17 @@ def route_request(
     message: str, attachment_context: list | None = None
 ) -> RouteDecision:
     excerpts = attachment_context or []
+    # Focused local-file questions already contain an unambiguous workflow,
+    # target, and deliverable. Avoid spending a full model turn translating
+    # them before the executor reads the named file.
+    if (
+        not excerpts
+        and len(message) <= 500
+        and _SIMPLE_FILE_TASK.search(message)
+        and not _CHANGE_INTENT.search(message)
+        and not _EXTERNAL_INTENT.search(message)
+    ):
+        return replace(_fallback_route(message), source="deterministic_fast_path")
     context = json.dumps(excerpts[:8], ensure_ascii=False, default=str)[:6_000]
     router_message = _bounded_router_message(message)
     try:

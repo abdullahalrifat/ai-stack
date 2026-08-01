@@ -7,6 +7,7 @@ from app.agent.executor import (
     _answer_audit,
     _synthesize_partial_answer,
     execute_plan,
+    explicit_workspace_paths,
     financial_document_excerpt,
     financial_document_urls,
     financial_price_query,
@@ -440,7 +441,14 @@ def test_execute_plan_prefetches_current_external_information(
 
 def test_requires_workspace_inspection_recognizes_repo_shorthand():
     assert requires_workspace_inspection("Review this repo") is True
+    assert requires_workspace_inspection("Inspect only README.md") is True
     assert requires_workspace_inspection("Find today's market price") is False
+
+
+def test_explicit_workspace_paths_are_bounded_and_deduplicated():
+    assert explicit_workspace_paths(
+        "Compare ./README.md with cli/README.md and README.md"
+    ) == ["README.md", "cli/README.md"]
 
 
 @patch("app.agent.executor.registry")

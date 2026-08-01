@@ -453,6 +453,7 @@ Current terminal capabilities include:
   process-group TERM/KILL escalation;
 - durable event replay and bounded SSE reconnection without repeated output;
 - run listing, inspection, resume, approve, discard, and cancellation;
+- workspace-scoped continuation of the latest conversation;
 - automatic host-to-container workspace mapping without a project-specific
   default directory;
 - human-readable, JSON, and streaming JSON output with stable exit codes;
@@ -478,11 +479,13 @@ aistack
 ```
 
 The no-argument form opens an interactive shell. Use `/help` to see its
-commands. Each interactive task asks whether it may make sandboxed edits;
-`/resume RUN_ID` replays or continues monitoring a run. CLI runs are
+commands. Interactive change requests ask whether they may make sandboxed
+edits, while read-only reviews start immediately;
+`/resume RUN_ID` replays or continues monitoring a run, and `--continue`
+reuses the latest conversation for the current workspace. CLI runs are
 foreground-owned by default: interrupting or closing the client requests
 cancellation, with a server-side lease covering abrupt client death. Use
-`--detach` or `/detach` only when a run should survive terminal exit. A
+`--detach` or `/detach` only when a run should survive terminal exit. An
 edit-enabled run never applies its diff automatically: an interactive
 terminal asks whether to approve, discard, or leave it pending. The same
 actions are available non-interactively:

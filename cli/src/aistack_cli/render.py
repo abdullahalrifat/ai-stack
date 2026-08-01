@@ -97,6 +97,8 @@ class EventRenderer:
 
         kind = str(event.get("event_type", "event"))
         payload = event.get("payload") or {}
+        if payload.get("prefetch") and kind in {"tool_call", "tool_result"}:
+            return
         if kind == "output_delta":
             content = _bounded_text(str(payload.get("content", "")))
             if content:

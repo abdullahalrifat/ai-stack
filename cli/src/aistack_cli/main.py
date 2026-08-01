@@ -6,6 +6,7 @@ import argparse
 import atexit
 import json
 import os
+import re
 import shlex
 import signal
 import sys
@@ -41,6 +42,11 @@ SHELL_COMMANDS = (
     "/runs",
     "/status",
     "/workspace",
+)
+_EDIT_INTENT = re.compile(
+    r"\b(?:add|build|change|create|edit|fix|implement|improve|modify|refactor|"
+    r"remove|rename|replace|update|write)\b",
+    re.IGNORECASE,
 )
 
 
@@ -133,9 +139,11 @@ def request_edit_permission() -> bool:
 
     while True:
         try:
-            choice = input(
-                "Allow this task to edit files in a reviewable sandbox? [y/N]: "
-            ).strip().lower()
+            choice = (
+                input("Allow this task to edit files in a reviewable sandbox? [y/N]: ")
+                .strip()
+                .lower()
+            )
         except EOFError:
             print()
             return False
@@ -144,6 +152,12 @@ def request_edit_permission() -> bool:
         if choice in {"y", "yes"}:
             return True
         print("Please answer yes or no.")
+
+
+def task_requests_edits(task: str) -> bool:
+    """Return whether a task clearly asks to change the workspace."""
+
+    return bool(_EDIT_INTENT.search(task))
 
 
 @contextmanager
@@ -237,6 +251,16 @@ def resolve_workspace(
 
     matched = match_workspace(Path.cwd(), choices)
     return (matched or client.default_workspace()), None
+
+
+def latest_conversation_id(client: AgentClient, workspace: str) -> str:
+    """Return the newest resumable conversation for one workspace."""
+
+    for run in client.list_runs(limit=100):
+        conversation_id = run.get("conversation_id")
+        if run.get("requested_workspace") == workspace and conversation_id:
+            return str(conversation_id)
+    raise APIError(f"No previous conversation found for workspace: {workspace}")
 
 
 def follow_run(
@@ -414,8 +438,9 @@ def interactive_shell(
     project_id: str | None,
     allow_write: bool,
     detached: bool = False,
+    conversation_id: str | None = None,
 ) -> int:
-    conversation_id = str(uuid.uuid4())
+    conversation_id = conversation_id or str(uuid.uuid4())
     active_run: dict[str, Any] | None = None
     print(f"ai-stack agent {__version__}")
     print(f"workspace: {workspace}")
@@ -434,7 +459,9 @@ def interactive_shell(
             continue
         if not line.startswith("/"):
             try:
-                task_allow_write = allow_write or request_edit_permission()
+                task_allow_write = allow_write or (
+                    task_requests_edits(line) and request_edit_permission()
+                )
                 active_run = run_task(
                     client,
                     line,
@@ -550,6 +577,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Let active runs continue after this client exits",
     )
+    parser.add_argument(
+        "--continue",
+        dest="continue_session",
+        action="store_true",
+        help="Continue the latest conversation in the selected workspace",
+    )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command")
 
@@ -561,6 +594,13 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
     run.add_argument("--conversation", help="Conversation ID for a follow-up")
+    run.add_argument(
+        "--continue",
+        dest="continue_session",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Continue the latest conversation in the selected workspace",
+    )
     run.add_argument(
         "--no-review",
         action="store_true",
@@ -674,9 +714,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             if not task:
                 raise APIError("Task cannot be empty")
+            if args.conversation and args.continue_session:
+                raise APIError("Use either --conversation or --continue, not both")
+            conversation_id = (
+                latest_conversation_id(client, workspace)
+                if args.continue_session
+                else args.conversation or str(uuid.uuid4())
+            )
             allow_write = args.write
             if (
                 not allow_write
+                and task_requests_edits(task)
                 and args.output == "text"
                 and args.task != ["-"]
                 and sys.stdin.isatty()
@@ -687,7 +735,7 @@ def main(argv: list[str] | None = None) -> int:
                 task,
                 workspace=workspace,
                 project_id=project_id,
-                conversation_id=args.conversation or str(uuid.uuid4()),
+                conversation_id=conversation_id,
                 allow_write=allow_write,
                 detached=args.detach,
                 output=args.output,
@@ -695,12 +743,16 @@ def main(argv: list[str] | None = None) -> int:
             )
             return run_exit_code(run)
         configure_shell_history()
+        conversation_id = (
+            latest_conversation_id(client, workspace) if args.continue_session else None
+        )
         return interactive_shell(
             client,
             workspace=workspace,
             project_id=project_id,
             allow_write=args.write,
             detached=args.detach,
+            conversation_id=conversation_id,
         )
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)

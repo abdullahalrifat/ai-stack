@@ -67,6 +67,12 @@ _WORKSPACE_REQUEST = re.compile(
     r"module|package|implementation)\b",
     re.IGNORECASE,
 )
+_WORKSPACE_FILE_REFERENCE = re.compile(
+    r"(?<![\w/])(?:\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\."
+    r"(?:c|cc|cpp|css|go|h|hpp|html|ini|java|js|json|jsx|md|mjs|php|py|rb|rs|"
+    r"sh|sql|toml|ts|tsx|txt|yaml|yml)(?![\w/])",
+    re.IGNORECASE,
+)
 
 
 def _noop_event(event_type: str, payload: dict) -> None:
@@ -88,6 +94,10 @@ def normalize_tool_args(tool_name: str, args: dict) -> dict:
                 args[new] = args.pop(old)
 
     return args
+
+
+def _tool_fingerprint(tool_name: str, args: dict) -> str:
+    return f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
 
 
 _LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
@@ -133,7 +143,23 @@ def requires_external_search(message: str) -> bool:
 def requires_workspace_inspection(message: str) -> bool:
     """Identify requests whose answer must be grounded in mounted source."""
 
-    return bool(_WORKSPACE_REQUEST.search(message))
+    return bool(
+        _WORKSPACE_REQUEST.search(message)
+        or _WORKSPACE_FILE_REFERENCE.search(message)
+    )
+
+
+def explicit_workspace_paths(message: str, limit: int = 8) -> list[str]:
+    """Extract conservative relative file references for read-only prefetch."""
+
+    paths = []
+    for match in _WORKSPACE_FILE_REFERENCE.finditer(message):
+        path = match.group(0).removeprefix("./")
+        if path not in paths:
+            paths.append(path)
+        if len(paths) >= limit:
+            break
+    return paths
 
 
 def is_financial_query(message: str) -> bool:
@@ -408,14 +434,19 @@ def _external_search_query(state, limit: int = 500) -> str:
 def _prefetch_workspace(state, available_tools: list[str], on_event):
     """Ground explicit repository analysis before the model may answer."""
 
-    if not (
-        requires_workspace_inspection(state.user_message)
-        and getattr(state, "requires_external_evidence", False)
-    ):
+    if not requires_workspace_inspection(state.user_message):
         return None
 
     evidence = {}
     prefetch_tools = list(WORKSPACE_PREFETCH_TOOLS)
+    explicit_paths = explicit_workspace_paths(state.user_message)
+    if explicit_paths and "inspect_files" in available_tools:
+        prefetch_tools.append(("inspect_files", {"paths": explicit_paths}))
+    if (
+        "inspect_test_environment" in available_tools
+        and re.search(r"\b(?:coverage|test|tests|pytest|lint)\b", state.user_message, re.I)
+    ):
+        prefetch_tools.append(("inspect_test_environment", {"directory": "."}))
     if "inspect_files" in available_tools and re.search(
         r"\b(?:cli|terminal agent)\b", state.user_message, re.IGNORECASE
     ):
@@ -444,6 +475,12 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
             result = {"error": str(exc)}
         state.add_tool(tool_name, result)
         _record_tool_progress(state, tool_name, args, result)
+        if not tool_result_failed(result):
+            cache = getattr(state, "prefetched_tool_results", None)
+            if cache is None:
+                cache = {}
+                state.prefetched_tool_results = cache
+            cache[_tool_fingerprint(tool_name, args)] = result
         on_event(
             "tool_result",
             {"tool": tool_name, "result": result, "prefetch": True},
@@ -866,7 +903,9 @@ Plan:
     empty_search_count = 0
     unproductive_calls: dict[str, int] = {}
     tool_call_counts: dict[str, int] = {}
-    tool_result_cache: dict[str, object] = {}
+    tool_result_cache: dict[str, object] = dict(
+        getattr(state, "prefetched_tool_results", {}) or {}
+    )
     recovery_required = False
     recovery_handoff_count = 0
 
@@ -936,9 +975,7 @@ Plan:
                 tool_name = call.function.name
                 raw_args = parse_tool_arguments(call.function.arguments)
                 args = normalize_tool_args(tool_name, raw_args)
-                fingerprint = (
-                    f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
-                )
+                fingerprint = _tool_fingerprint(tool_name, args)
                 tool_call_counts[fingerprint] = tool_call_counts.get(fingerprint, 0) + 1
                 duplicate = (
                     tool_name in CACHEABLE_READ_TOOLS
@@ -969,8 +1006,9 @@ Plan:
                         logger.exception("Tool %s raised unexpectedly", tool_name)
                         result = {"error": str(e)}
 
-                state.add_tool(tool_name, result)
-                _record_tool_progress(state, tool_name, args, result)
+                if not duplicate:
+                    state.add_tool(tool_name, result)
+                    _record_tool_progress(state, tool_name, args, result)
                 on_event("tool_result", {"tool": tool_name, "result": result})
                 if isinstance(result, dict) and result.get("status") in {
                     "timed_out",

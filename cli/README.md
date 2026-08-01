@@ -54,9 +54,9 @@ client and mature coding-agent terminals.
 
 ### Repository work and safety
 
-- Interactive tasks ask whether that task may edit in a disposable Git
-  worktree. Any resulting diff is then presented for explicit approval or
-  discard.
+- Interactive change requests ask whether that task may edit in a disposable
+  Git sandbox. Read-only reviews start immediately. Any resulting diff is then
+  presented for explicit approval or discard.
 - The terminal never applies a pending diff automatically in non-interactive
   use.
 - Workspace selection is validated by the server and can map a host checkout
@@ -86,6 +86,7 @@ client and mature coding-agent terminals.
 ### Sessions and run management
 
 - `list`, `show`, and `resume` expose durable server-side history.
+- `--continue` reuses the latest conversation in the selected workspace.
 - Pending write runs can be approved or discarded later.
 - Queued and running work can be cancelled explicitly.
 - Resuming a run restores its conversation, workspace, and project context in
@@ -208,7 +209,7 @@ Tab completes slash commands.
 | `/clear` | Alias for `/new` |
 | `/exit` | Leave the shell |
 
-Each task asks for edit permission before it starts:
+Tasks that request code changes ask for edit permission before they start:
 
 ```text
 aistack> fix the failing tests
@@ -247,8 +248,9 @@ bounded by its configured HTTP timeout.
 
 ## Edit approval workflow
 
-In an interactive terminal, enter the task normally and approve sandbox edits
-for that task when prompted:
+In an interactive terminal, enter the task normally. Reviews and explanations
+start immediately; change requests ask you to approve sandbox edits for that
+task:
 
 ```text
 aistack> fix the failing tests and verify the result
@@ -308,8 +310,13 @@ printf '%s\n' "review this stack" | aistack run -
 Continue a previous conversation:
 
 ```bash
+aistack --continue
+aistack run --continue "check the remaining issue"
 aistack run --conversation CONVERSATION_ID "check the remaining issue"
 ```
+
+Continuation is workspace-scoped, so a conversation from another repository
+is never selected merely because it was more recent.
 
 Global connection and workspace options go before the subcommand:
 
@@ -319,8 +326,8 @@ aistack --project ai-stack run --allow-edits "update the documentation"
 aistack --url http://127.0.0.1:8000 doctor
 ```
 
-`--allow-edits` (and its `--write` compatibility alias) and `--detach` are
-accepted either before or after `run`.
+`--allow-edits` (and its `--write` compatibility alias), `--detach`, and
+`--continue` are accepted either before or after `run`.
 
 ## Run management
 

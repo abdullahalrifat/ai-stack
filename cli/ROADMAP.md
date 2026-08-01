@@ -26,6 +26,7 @@ The CLI already provides:
 - deterministic abandoned-client cancellation through PostgreSQL;
 - durable event replay, SSE heartbeats, and bounded reconnection;
 - run list/show/resume/approve/discard/cancel commands;
+- workspace-scoped continuation of the latest conversation;
 - workspace and saved-project selection without a hardcoded repository;
 - text, JSON, and streaming JSON automation output;
 - stable script-friendly exit codes;
@@ -115,16 +116,15 @@ P0 was completed with protocol v1 before work on the heavier terminal UI:
 
 ### 5. First-class session discovery
 
-Runs are resumable, but finding the right conversation still requires IDs.
+The latest workspace conversation can be continued directly, but discovering
+or managing older conversations still requires IDs.
 
 Required work:
 
-- `aistack --continue` for the latest conversation in the current workspace;
 - `aistack --resume` with an interactive searchable picker;
 - session names, timestamps, workspace, branch, status, and concise summaries;
 - rename, fork, archive, and guarded delete operations;
 - workspace-scoped recent-session ordering;
-- continue a conversation with an initial one-shot prompt; and
 - recovery of pending approval and detached work from the picker.
 
 ### 6. Rich prompt composition

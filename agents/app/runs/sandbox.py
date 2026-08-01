@@ -52,17 +52,17 @@ def create_sandbox(workspace: str, run_id: str) -> Sandbox:
     bundle_path = (SANDBOX_ROOT / f".{run_id}.bundle").resolve()
     if SANDBOX_ROOT not in bundle_path.parents:
         raise ValueError("Invalid sandbox bundle path")
-    bundled = _git(
-        repository,
-        "bundle",
-        "create",
-        str(bundle_path),
-        "HEAD",
-        safe_directory="*",
-    )
-    if bundled.returncode != 0:
-        raise RuntimeError(f"Could not prepare sandbox: {bundled.stderr.strip()}")
     try:
+        bundled = _git(
+            repository,
+            "bundle",
+            "create",
+            str(bundle_path),
+            "HEAD",
+            safe_directory="*",
+        )
+        if bundled.returncode != 0:
+            raise RuntimeError(f"Could not prepare sandbox: {bundled.stderr.strip()}")
         created = _git(
             SANDBOX_ROOT,
             "clone",
@@ -74,6 +74,7 @@ def create_sandbox(workspace: str, run_id: str) -> Sandbox:
     finally:
         bundle_path.unlink(missing_ok=True)
     if created.returncode != 0:
+        shutil.rmtree(path, ignore_errors=True)
         raise RuntimeError(f"Could not create sandbox clone: {created.stderr.strip()}")
     checkout = _git(path, "checkout", "--detach", head.stdout.strip())
     if checkout.returncode != 0:

@@ -12,6 +12,7 @@ from aistack_cli.main import (
     configure_shell_history,
     follow_run,
     interactive_shell,
+    latest_conversation_id,
     main,
     match_workspace,
     read_shell_input,
@@ -21,6 +22,7 @@ from aistack_cli.main import (
     review_run,
     run_exit_code,
     run_task,
+    task_requests_edits,
 )
 from aistack_cli.protocol import PROTOCOL_HEADER, validate_capabilities
 from aistack_cli.render import EventRenderer
@@ -221,6 +223,37 @@ def test_match_workspace_maps_host_checkout_to_container_path():
     assert match_workspace(Path("/tmp/unrelated"), choices) is None
 
 
+def test_latest_conversation_is_scoped_to_workspace():
+    class FakeClient:
+        def list_runs(self, limit):
+            assert limit == 100
+            return [
+                {
+                    "requested_workspace": "/workspace/other",
+                    "conversation_id": "other",
+                },
+                {
+                    "requested_workspace": "/workspace/repo",
+                    "conversation_id": "latest-local",
+                },
+                {
+                    "requested_workspace": "/workspace/repo",
+                    "conversation_id": "older-local",
+                },
+            ]
+
+    assert latest_conversation_id(FakeClient(), "/workspace/repo") == "latest-local"
+
+
+def test_latest_conversation_reports_empty_workspace_history():
+    class FakeClient:
+        def list_runs(self, limit):
+            return []
+
+    with pytest.raises(APIError, match="No previous conversation"):
+        latest_conversation_id(FakeClient(), "/workspace/repo")
+
+
 def test_project_selector_accepts_name_or_unique_id_prefix():
     projects = [
         {"id": "abc-123", "name": "ai-stack", "workspace": "/workspace/ai-stack"},
@@ -374,6 +407,27 @@ def test_renderer_collapses_routine_lifecycle_events_to_one_update():
         renderer.render({"event_type": event_type, "payload": {}})
 
     assert output.getvalue() == "• Working…\n"
+
+
+def test_renderer_hides_automatic_prefetch_details():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, color=False)
+
+    renderer.render(
+        {
+            "event_type": "tool_call",
+            "payload": {"tool": "list_files", "args": {}, "prefetch": True},
+        }
+    )
+    renderer.render(
+        {
+            "event_type": "tool_result",
+            "payload": {"tool": "list_files", "result": [], "prefetch": True},
+        }
+    )
+
+    assert output.getvalue() == ""
+
 
 def test_renderer_keeps_stream_json_as_one_valid_object_per_line():
     output = io.StringIO()
@@ -799,11 +853,31 @@ def test_interactive_edit_permission_is_scoped_to_one_task(monkeypatch, capsys):
     assert "Please answer yes or no." in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("task", "expected"),
+    [
+        ("review this repository", False),
+        ("summarize README.md", False),
+        ("fix the failing tests", True),
+        ("improve test coverage", True),
+    ],
+)
+def test_edit_prompt_is_limited_to_change_requests(task, expected):
+    assert task_requests_edits(task) is expected
+
+
 def test_detach_flag_works_before_or_after_run_subcommand():
     parser = build_parser()
 
     assert parser.parse_args(["--detach", "run", "task"]).detach is True
     assert parser.parse_args(["run", "--detach", "task"]).detach is True
+
+
+def test_continue_flag_works_before_or_after_run_subcommand():
+    parser = build_parser()
+
+    assert parser.parse_args(["--continue", "run", "task"]).continue_session is True
+    assert parser.parse_args(["run", "--continue", "task"]).continue_session is True
 
 
 @pytest.mark.parametrize(
