@@ -37,12 +37,10 @@ SHELL_COMMANDS = (
     "/help",
     "/new",
     "/quit",
-    "/read-only",
     "/resume",
     "/runs",
     "/status",
     "/workspace",
-    "/write",
 )
 
 
@@ -128,6 +126,24 @@ def read_shell_input(prompt: str) -> str:
         lines[-1] = lines[-1][:-1]
         lines.append(input("... "))
     return "\n".join(lines)
+
+
+def request_edit_permission() -> bool:
+    """Ask whether one interactive task may use the write sandbox."""
+
+    while True:
+        try:
+            choice = input(
+                "Allow this task to edit files in a reviewable sandbox? [y/N]: "
+            ).strip().lower()
+        except EOFError:
+            print()
+            return False
+        if choice in {"", "n", "no"}:
+            return False
+        if choice in {"y", "yes"}:
+            return True
+        print("Please answer yes or no.")
 
 
 @contextmanager
@@ -234,6 +250,7 @@ def follow_run(
     retries = 0
     try:
         while True:
+            starting_cursor = cursor
             try:
                 stream_options: dict[str, Any] = {"after": cursor}
                 if client_id:
@@ -246,10 +263,14 @@ def follow_run(
                 if run.get("status") in TERMINAL_STATUSES:
                     renderer.render_run(run)
                     return run
+                if cursor > starting_cursor:
+                    retries = 0
                 retries += 1
                 if retries > 5:
                     raise APIError("Run event stream ended before the run completed")
             except APIError:
+                if cursor > starting_cursor:
+                    retries = 0
                 retries += 1
                 if retries > 5:
                     raise
@@ -372,8 +393,6 @@ def _shell_help() -> None:
   /runs                 List recent runs
   /resume RUN_ID        Replay or follow a run and adopt its conversation
   /workspace [PATH]     Show or change the active workspace
-  /write                 Enable reviewed sandbox writes
-  /read-only             Disable writes
   /detach                Let runs survive terminal exit
   /foreground            Cancel runs when this terminal exits
   /status                Show session settings
@@ -403,9 +422,8 @@ def interactive_shell(
     print("type /help for commands")
 
     while True:
-        mode = "write" if allow_write else "read"
         try:
-            line = read_shell_input(f"aistack [{mode}]> ").strip()
+            line = read_shell_input("aistack> ").strip()
         except EOFError:
             print()
             return 0
@@ -416,13 +434,14 @@ def interactive_shell(
             continue
         if not line.startswith("/"):
             try:
+                task_allow_write = allow_write or request_edit_permission()
                 active_run = run_task(
                     client,
                     line,
                     workspace=workspace,
                     project_id=project_id,
                     conversation_id=conversation_id,
-                    allow_write=allow_write,
+                    allow_write=task_allow_write,
                     detached=detached,
                     output="text",
                     review=True,
@@ -447,12 +466,6 @@ def interactive_shell(
                 _shell_help()
             elif command == "/runs":
                 _print_runs(client.list_runs())
-            elif command == "/write":
-                allow_write = True
-                print("Reviewed sandbox writes enabled.")
-            elif command in {"/read", "/read-only"}:
-                allow_write = False
-                print("Read-only mode enabled.")
             elif command == "/detach":
                 detached = True
                 print("Detached mode enabled; runs survive terminal exit.")
@@ -461,7 +474,12 @@ def interactive_shell(
                 print("Foreground mode enabled; terminal exit cancels active runs.")
             elif command == "/status":
                 print(f"workspace: {workspace}")
-                print(f"permissions: {'write' if allow_write else 'read-only'}")
+                permission = (
+                    "pre-approved for each task"
+                    if allow_write
+                    else "ask before each task"
+                )
+                print(f"edit permission: {permission}")
                 print(f"lifecycle: {'detached' if detached else 'foreground'}")
                 print(f"conversation: {conversation_id}")
             elif command in {"/new", "/clear"}:
@@ -521,7 +539,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--project", help="Project name or ID prefix")
     parser.add_argument(
-        "--write", action="store_true", help="Use a reviewable write sandbox"
+        "--allow-edits",
+        "--write",
+        dest="write",
+        action="store_true",
+        help="Pre-authorize reviewable sandbox edits (required for headless use)",
     )
     parser.add_argument(
         "--detach",
@@ -545,10 +567,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Leave pending changes for later instead of prompting",
     )
     run.add_argument(
+        "--allow-edits",
         "--write",
+        dest="write",
         action="store_true",
         default=argparse.SUPPRESS,
-        help="Use a reviewable write sandbox",
+        help="Pre-authorize reviewable sandbox edits (required for headless use)",
     )
     run.add_argument(
         "--detach",
@@ -650,13 +674,21 @@ def main(argv: list[str] | None = None) -> int:
             )
             if not task:
                 raise APIError("Task cannot be empty")
+            allow_write = args.write
+            if (
+                not allow_write
+                and args.output == "text"
+                and args.task != ["-"]
+                and sys.stdin.isatty()
+            ):
+                allow_write = request_edit_permission()
             run = run_task(
                 client,
                 task,
                 workspace=workspace,
                 project_id=project_id,
                 conversation_id=args.conversation or str(uuid.uuid4()),
-                allow_write=args.write,
+                allow_write=allow_write,
                 detached=args.detach,
                 output=args.output,
                 review=not args.no_review,

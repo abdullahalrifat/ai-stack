@@ -91,6 +91,10 @@ class AgentClient:
             raise APIError(f"{exc.code} {detail}") from exc
         except URLError as exc:
             raise APIError(f"Could not reach {self.base_url}: {exc.reason}") from exc
+        except (HTTPException, OSError, TimeoutError) as exc:
+            raise APIError(
+                f"Request to {self.base_url} was interrupted: {exc}"
+            ) from exc
 
     def request(
         self,

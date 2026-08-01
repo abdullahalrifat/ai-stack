@@ -1,4 +1,4 @@
-"""Disposable Git worktrees used for write-enabled agent runs."""
+"""Disposable Git clones used for reviewable agent runs."""
 
 import shutil
 import subprocess
@@ -49,17 +49,36 @@ def create_sandbox(workspace: str, run_id: str) -> Sandbox:
     path = (SANDBOX_ROOT / run_id).resolve()
     if SANDBOX_ROOT not in path.parents:
         raise ValueError("Invalid sandbox path")
-    created = _git(
+    bundle_path = (SANDBOX_ROOT / f".{run_id}.bundle").resolve()
+    if SANDBOX_ROOT not in bundle_path.parents:
+        raise ValueError("Invalid sandbox bundle path")
+    bundled = _git(
         repository,
-        "worktree",
-        "add",
-        "--detach",
-        str(path),
+        "bundle",
+        "create",
+        str(bundle_path),
         "HEAD",
-        safe_directory=repository,
+        safe_directory="*",
     )
+    if bundled.returncode != 0:
+        raise RuntimeError(f"Could not prepare sandbox: {bundled.stderr.strip()}")
+    try:
+        created = _git(
+            SANDBOX_ROOT,
+            "clone",
+            "--no-checkout",
+            "--",
+            str(bundle_path),
+            str(path),
+        )
+    finally:
+        bundle_path.unlink(missing_ok=True)
     if created.returncode != 0:
-        raise RuntimeError(f"Could not create Git worktree: {created.stderr.strip()}")
+        raise RuntimeError(f"Could not create sandbox clone: {created.stderr.strip()}")
+    checkout = _git(path, "checkout", "--detach", head.stdout.strip())
+    if checkout.returncode != 0:
+        shutil.rmtree(path, ignore_errors=True)
+        raise RuntimeError(f"Could not initialize sandbox: {checkout.stderr.strip()}")
     return Sandbox(repository=repository, path=path, base_commit=head.stdout.strip())
 
 
@@ -159,10 +178,14 @@ def remove_sandbox(repository: str, path: str) -> None:
     directory = Path(path).resolve()
     if SANDBOX_ROOT not in directory.parents:
         raise PermissionError("Sandbox path is outside the sandbox root")
-    result = _git(
-        repo, "worktree", "remove", "--force", str(directory), safe_directory=repo
-    )
-    if result.returncode != 0 and directory.exists():
-        raise RuntimeError(result.stderr.strip() or "Could not remove sandbox")
+    # Current sandboxes are independent clones, so cleanup never needs to
+    # mutate the source repository's protected .git directory. Retain support
+    # for older pending runs that were created as linked worktrees.
+    if (directory / ".git").is_file():
+        result = _git(
+            repo, "worktree", "remove", "--force", str(directory), safe_directory=repo
+        )
+        if result.returncode != 0 and directory.exists():
+            raise RuntimeError(result.stderr.strip() or "Could not remove sandbox")
     if directory.exists():
         shutil.rmtree(directory)

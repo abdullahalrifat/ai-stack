@@ -15,6 +15,7 @@ from aistack_cli.main import (
     main,
     match_workspace,
     read_shell_input,
+    request_edit_permission,
     resolve_api_key,
     resolve_project,
     review_run,
@@ -104,6 +105,20 @@ def test_client_surfaces_api_error_detail():
 
     with pytest.raises(APIError, match="400 workspace is invalid"):
         client.workspaces()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [TimeoutError("timed out"), ConnectionResetError("connection reset")],
+)
+def test_client_wraps_transport_errors(error):
+    def opener(_request, timeout):
+        raise error
+
+    client = AgentClient("http://agent.test", "secret", opener=opener)
+
+    with pytest.raises(APIError, match="Request to http://agent.test was interrupted"):
+        client.health()
 
 
 def test_client_parses_sse_and_ignores_comments():
@@ -285,6 +300,7 @@ def test_renderer_does_not_repeat_final_answer():
             "payload": {"answer": "Finished.", "has_pending_diff": False},
         }
     )
+
     renderer.render_run({"status": "completed", "answer": "Finished."})
 
     assert output.getvalue() == "Finished.\n"
@@ -300,6 +316,7 @@ def test_renderer_does_not_repeat_terminal_failure():
             "payload": {"error": "Request timed out."},
         }
     )
+
     renderer.render_run({"status": "failed", "error": "Request timed out."})
 
     assert output.getvalue() == "Run failed: Request timed out.\n"
@@ -335,11 +352,28 @@ def test_renderer_preserves_only_its_own_color_sequences():
     )
 
     assert output.getvalue() == (
-        "\x1b[2m• queued\x1b[0m\n"
+        "\x1b[2m• Working…\x1b[0m\n"
         "\x1b[33m→ tree\\x1b[2J\x1b[0m"
         ' {"directory": ".\\u001b[31m"}\n'
     )
 
+
+def test_renderer_collapses_routine_lifecycle_events_to_one_update():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, color=False)
+
+    for event_type in (
+        "queued",
+        "run_started",
+        "sandbox_creating",
+        "sandbox_ready",
+        "planning",
+        "plan_ready",
+        "step_started",
+    ):
+        renderer.render({"event_type": event_type, "payload": {}})
+
+    assert output.getvalue() == "• Working…\n"
 
 def test_renderer_keeps_stream_json_as_one_valid_object_per_line():
     output = io.StringIO()
@@ -405,16 +439,16 @@ def test_stream_json_golden_contract_covers_every_durable_event(event_type):
 @pytest.mark.parametrize(
     ("event", "expected"),
     [
-        ({"event_type": "queued", "payload": {}}, "• queued\n"),
-        ({"event_type": "run_started", "payload": {}}, "• run started\n"),
-        ({"event_type": "planning", "payload": {}}, "• planning\n"),
+        ({"event_type": "queued", "payload": {}}, "• Working…\n"),
+        ({"event_type": "run_started", "payload": {}}, "• Working…\n"),
+        ({"event_type": "planning", "payload": {}}, "• Working…\n"),
         (
             {"event_type": "plan_ready", "payload": {"plan": ["inspect"]}},
-            "• plan\n  - inspect\n",
+            "• Working…\n",
         ),
         (
             {"event_type": "step_started", "payload": {"step": 2}},
-            "• step 2\n",
+            "• Working…\n",
         ),
         (
             {
@@ -550,6 +584,39 @@ def test_follow_run_reconnects_after_stream_timeout(monkeypatch):
     assert run["status"] == "completed"
     assert client.stream_calls == [0, 11]
     assert output.getvalue().count("Recovered.") == 1
+
+
+def test_follow_run_resets_retry_budget_after_progress(monkeypatch):
+    class FakeClient:
+        def __init__(self):
+            self.stream_calls = 0
+
+        def stream_events(self, run_id, after=0):
+            self.stream_calls += 1
+            yield {
+                "id": self.stream_calls,
+                "event_type": "planning",
+                "payload": {},
+            }
+
+        def get_run(self, run_id):
+            status = "completed" if self.stream_calls == 8 else "running"
+            return {"id": run_id, "status": status, "answer": "Done"}
+
+        def action(self, run_id, action):
+            raise AssertionError("cancel should not be called")
+
+    monkeypatch.setattr("aistack_cli.main.time.sleep", lambda seconds: None)
+    client = FakeClient()
+
+    run = follow_run(
+        client,
+        "run-1",
+        EventRenderer(stream=io.StringIO(), color=False),
+    )
+
+    assert run["status"] == "completed"
+    assert client.stream_calls == 8
 
 
 def test_follow_run_cancels_foreground_run_after_unrecovered_error(monkeypatch):
@@ -720,6 +787,16 @@ def test_write_flag_works_before_or_after_run_subcommand():
 
     assert parser.parse_args(["--write", "run", "task"]).write is True
     assert parser.parse_args(["run", "--write", "task"]).write is True
+    assert parser.parse_args(["run", "--allow-edits", "task"]).write is True
+
+
+def test_interactive_edit_permission_is_scoped_to_one_task(monkeypatch, capsys):
+    answers = iter(["maybe", "yes", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    assert request_edit_permission() is True
+    assert request_edit_permission() is False
+    assert "Please answer yes or no." in capsys.readouterr().out
 
 
 def test_detach_flag_works_before_or_after_run_subcommand():
@@ -805,6 +882,33 @@ def test_main_shorthand_starts_run_with_mapped_workspace(
     assert capsys.readouterr().err == ""
 
 
+def test_main_shorthand_asks_for_one_task_edit_permission(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeClient:
+        def __init__(self, _base_url, _api_key):
+            pass
+
+        def workspaces(self):
+            return ["/workspace/example"]
+
+    def fake_run_task(client, task, **options):
+        calls.append(options)
+        return {"status": "completed"}
+
+    checkout = tmp_path / "example"
+    checkout.mkdir()
+    monkeypatch.chdir(checkout)
+    monkeypatch.setenv("AISTACK_API_KEY", "secret")
+    monkeypatch.setattr("aistack_cli.main.AgentClient", FakeClient)
+    monkeypatch.setattr("aistack_cli.main.run_task", fake_run_task)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
+
+    assert main(["fix", "the tests"]) == 0
+    assert calls[0]["allow_write"] is True
+
+
 def test_main_reports_configuration_errors_without_traceback(monkeypatch, capsys):
     monkeypatch.delenv("AISTACK_API_KEY", raising=False)
     monkeypatch.delenv("AGENT_API_KEY", raising=False)
@@ -839,13 +943,12 @@ def test_main_handles_broken_pipe_without_traceback(monkeypatch):
     assert main(["list"]) == 0
 
 
-def test_interactive_shell_changes_modes_and_runs_tasks(monkeypatch, capsys):
+def test_interactive_shell_requests_edit_permission_for_each_task(monkeypatch, capsys):
     tasks = []
     commands = iter(
         [
-            "/write",
             "fix the tests",
-            "/read-only",
+            "yes",
             "/detach",
             "/status",
             "/foreground",
@@ -889,8 +992,7 @@ def test_interactive_shell_changes_modes_and_runs_tasks(monkeypatch, capsys):
     assert tasks[0][1] == "fix the tests"
     assert tasks[0][2]["allow_write"] is True
     output = capsys.readouterr().out
-    assert "Reviewed sandbox writes enabled." in output
-    assert "Read-only mode enabled." in output
+    assert "edit permission: ask before each task" in output
     assert "lifecycle: detached" in output
     assert "Foreground mode enabled" in output
     assert "run-123" in output
@@ -903,7 +1005,7 @@ def test_interactive_shell_changes_modes_and_runs_tasks(monkeypatch, capsys):
         ("tool_result", {"tool": "pytest", "result": "18 passed"}, "18 passed"),
         ("run_failed", {"error": "boom"}, "Run failed: boom"),
         ("run_cancelled", {}, "Run cancelled."),
-        ("sandbox_ready", {}, "sandbox ready"),
+        ("sandbox_ready", {}, "Working"),
     ],
 )
 def test_renderer_covers_status_and_tool_events(event_type, payload, expected):

@@ -56,6 +56,7 @@ class EventRenderer:
         self.width = shutil.get_terminal_size((100, 24)).columns if self.color else 100
         self.emitted_output = False
         self.terminal_status_rendered = False
+        self.working_rendered = False
         self.diff: str | None = None
 
     def _style(self, text: str, code: str) -> str:
@@ -102,15 +103,18 @@ class EventRenderer:
                 print(content, end="", file=self.stream, flush=True)
                 self.emitted_output = True
             return
-        if kind == "step_started":
-            self._line(f"• step {payload.get('step', '?')}", style="2")
-        elif kind == "planning":
-            self._line("• planning", style="36")
-        elif kind == "plan_ready":
-            plan = payload.get("plan") or []
-            self._line("• plan", style="36")
-            for item in plan:
-                self._line(f"  - {item}")
+        if kind in {
+            "queued",
+            "run_started",
+            "sandbox_creating",
+            "sandbox_ready",
+            "planning",
+            "plan_ready",
+            "step_started",
+        }:
+            if not self.working_rendered:
+                self._line("• Working…", style="2")
+                self.working_rendered = True
         elif kind == "tool_call":
             self._prefixed_line(
                 f"→ {payload.get('tool', 'tool')}",
@@ -143,9 +147,6 @@ class EventRenderer:
         elif kind == "run_cancelled":
             self._line("Run cancelled.", style="31")
             self.terminal_status_rendered = True
-        elif kind in {"queued", "run_started", "sandbox_creating", "sandbox_ready"}:
-            label = kind.replace("_", " ")
-            self._line(f"• {label}", style="2")
 
     def render_run(self, run: dict[str, Any]) -> None:
         if self.output == "json":

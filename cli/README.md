@@ -8,7 +8,7 @@ $ aistack
 ai-stack agent 0.1.0
 workspace: /workspace/ai-stack
 type /help for commands
-aistack [read]>
+aistack>
 ```
 
 The terminal is a thin client. It does not run model-selected commands or
@@ -49,14 +49,14 @@ client and mature coding-agent terminals.
 - Command history persists under the XDG state directory.
 - Arrow-key history, Tab completion for slash commands, and backslash-based
   multiline prompts work without third-party runtime dependencies.
-- `/status` shows the active workspace, permission mode, lifecycle mode, and
+- `/status` shows the active workspace, edit-approval behavior, lifecycle, and
   conversation ID.
 
 ### Repository work and safety
 
-- Read-only mode is the default.
-- Write mode executes in a disposable Git worktree and presents the resulting
-  diff for explicit approval or discard.
+- Interactive tasks ask whether that task may edit in a disposable Git
+  worktree. Any resulting diff is then presented for explicit approval or
+  discard.
 - The terminal never applies a pending diff automatically in non-interactive
   use.
 - Workspace selection is validated by the server and can map a host checkout
@@ -99,7 +99,7 @@ client and mature coding-agent terminals.
 - Text output sanitizes terminal controls, oversized SSE events have a hard
   bound, and broken pipes exit without a traceback.
 - Exit codes distinguish success, failure, cancellation, and interruption.
-- API endpoint, API key, workspace, project, conversation, write mode, and
+- API endpoint, API key, workspace, project, conversation, edit permission, and
   lifecycle mode can be selected without modifying source code.
 
 ### Packaging and compatibility
@@ -179,7 +179,8 @@ aistack
 Enter an ordinary task at the prompt:
 
 ```text
-aistack [read]> review the test configuration and explain any gaps
+aistack> review the test configuration and explain any gaps
+Allow this task to edit files in a reviewable sandbox? [y/N]: n
 ```
 
 The client creates a foreground-owned run and displays planning, tool calls,
@@ -197,11 +198,9 @@ Tab completes slash commands.
 | `/resume RUN_ID` | Replay or continue monitoring a run and adopt its conversation |
 | `/workspace` | Display the current agent workspace |
 | `/workspace PATH` | Change to another allowed workspace |
-| `/write` | Enable reviewed sandbox writes for subsequent prompts |
-| `/read-only` | Return to read-only mode |
 | `/detach` | Let subsequent runs survive terminal exit |
 | `/foreground` | Cancel subsequent runs when this client exits |
-| `/status` | Show workspace, permissions, lifecycle, and conversation ID |
+| `/status` | Show workspace, edit approval, lifecycle, and conversation ID |
 | `/approve RUN_ID` | Apply a pending sandbox diff |
 | `/discard RUN_ID` | Delete a pending sandbox diff |
 | `/cancel RUN_ID` | Request cancellation of a queued or running task |
@@ -209,11 +208,11 @@ Tab completes slash commands.
 | `/clear` | Alias for `/new` |
 | `/exit` | Leave the shell |
 
-The prompt always shows the current permission mode:
+Each task asks for edit permission before it starts:
 
 ```text
-aistack [read]>
-aistack [write]>
+aistack> fix the failing tests
+Allow this task to edit files in a reviewable sandbox? [y/N]: y
 ```
 
 Pressing `Ctrl-C` while a run is active sends an in-flight cancellation
@@ -246,23 +245,19 @@ complete process groups, escalating from `SIGTERM` to `SIGKILL` after a bounded
 grace period. A provider that blocks before returning stream headers remains
 bounded by its configured HTTP timeout.
 
-## Read-only and write workflows
+## Edit approval workflow
 
-Read-only is the default:
+In an interactive terminal, enter the task normally and approve sandbox edits
+for that task when prompted:
 
-```bash
-aistack "inspect the authentication code and report risks"
+```text
+aistack> fix the failing tests and verify the result
+Allow this task to edit files in a reviewable sandbox? [y/N]: y
 ```
 
-For edits, enable a reviewable sandbox:
-
-```bash
-aistack run --write "fix the failing tests and verify the result"
-```
-
-The server creates a disposable Git worktree, runs the task there, and returns
-the resulting diff. It does not modify the real checkout automatically. In an
-interactive terminal, choose:
+Declining runs that task without edit or command tools. After an approved task
+creates changes, the CLI shows the diff and separately asks whether to apply it
+to the real checkout:
 
 ```text
 Apply pending changes? [a]pprove/[d]iscard/[l]ater:
@@ -280,6 +275,12 @@ aistack approve RUN_ID
 ```
 
 Non-interactive processes never approve a diff automatically.
+Use `--allow-edits` (or the backward-compatible `--write` alias) when a
+headless task needs sandbox edit tools:
+
+```bash
+aistack run --allow-edits --no-review "prepare a reviewable patch"
+```
 
 ## One-shot commands
 
@@ -293,9 +294,9 @@ The explicit form exposes run options:
 
 ```bash
 aistack run "run the tests and summarize failures"
-aistack run --write "repair the failing tests"
+aistack run --allow-edits "repair the failing tests"
 aistack run --detach "perform a long repository audit"
-aistack run --no-review --write "prepare a reviewable patch"
+aistack run --no-review --allow-edits "prepare a reviewable patch"
 ```
 
 Read a task from standard input:
@@ -314,11 +315,12 @@ Global connection and workspace options go before the subcommand:
 
 ```bash
 aistack --workspace /workspace/ai-stack run "review the repository"
-aistack --project ai-stack run --write "update the documentation"
+aistack --project ai-stack run --allow-edits "update the documentation"
 aistack --url http://127.0.0.1:8000 doctor
 ```
 
-`--write` and `--detach` are accepted either before or after `run`.
+`--allow-edits` (and its `--write` compatibility alias) and `--detach` are
+accepted either before or after `run`.
 
 ## Run management
 

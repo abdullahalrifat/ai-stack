@@ -66,6 +66,8 @@ def test_merge_sandbox_applies_tracked_and_new_files(tmp_path, monkeypatch):
     )
 
     worktree = sandbox.create_sandbox(str(repository), "run-1")
+    assert (worktree.path / ".git").is_dir()
+    assert not (repository / ".git" / "worktrees").exists()
     (worktree.path / "tracked.txt").write_text("after\n", encoding="utf-8")
     (worktree.path / "new.txt").write_text("new file\n", encoding="utf-8")
 

@@ -467,7 +467,7 @@ From the repository:
 ./cli/scripts/aistack doctor
 ./cli/scripts/aistack
 ./cli/scripts/aistack "review this repository and run its tests"
-./cli/scripts/aistack run --write "fix the failing tests"
+./cli/scripts/aistack run --allow-edits "fix the failing tests"
 ```
 
 Install the launcher once to use it like other terminal agents:
@@ -478,12 +478,12 @@ aistack
 ```
 
 The no-argument form opens an interactive shell. Use `/help` to see its
-commands, `/write` to enable sandboxed edits, `/read-only` to disable them,
-and `/resume RUN_ID` to replay or continue monitoring a run. CLI runs are
+commands. Each interactive task asks whether it may make sandboxed edits;
+`/resume RUN_ID` replays or continues monitoring a run. CLI runs are
 foreground-owned by default: interrupting or closing the client requests
 cancellation, with a server-side lease covering abrupt client death. Use
 `--detach` or `/detach` only when a run should survive terminal exit. A
-write-enabled run never applies its diff automatically: an interactive
+edit-enabled run never applies its diff automatically: an interactive
 terminal asks whether to approve, discard, or leave it pending. The same
 actions are available non-interactively:
 

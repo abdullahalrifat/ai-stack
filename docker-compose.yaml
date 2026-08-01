@@ -242,7 +242,7 @@ services:
       # mount them elsewhere (e.g. ./more-code:/extra-workspace) and list
       # the in-container path in WORKSPACE_ROOTS below.
       - ${WORKSPACE_PATH:-/mnt/work/code}:/workspace
-      # Persists disposable Git worktrees used for write-enabled /runs
+      # Persists disposable Git clones used for edit-enabled /runs
       # requests across container restarts, so a run awaiting approval
       # survives a restart of the agent service.
       - ./agent-sandboxes:/sandboxes

@@ -19,7 +19,7 @@ The CLI already provides:
 - an interactive shell and one-shot task execution;
 - persistent history, slash-command completion, multiline input, and
   `/status`;
-- read-only and reviewed-write modes;
+- per-task interactive edit permission and reviewed sandbox writes;
 - disposable Git worktrees with explicit approve/discard;
 - foreground client leases and explicit detached runs;
 - immediate cancellation attempts for `Ctrl-C`, `SIGHUP`, and `SIGTERM`;
@@ -242,7 +242,7 @@ Environment variables must remain supported for containers and CI.
 
 ### 13. Granular permission modes
 
-Move beyond the current read-only/reviewed-write switch:
+Move beyond the current per-task edit approval:
 
 - plan-only, default, accept-edits, and managed modes;
 - allow and deny rules by tool and constrained command pattern;
