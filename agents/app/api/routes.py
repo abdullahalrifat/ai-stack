@@ -16,7 +16,6 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
-import app.tools.register
 from app.agent.planner import create_plan
 from app.agent.service import (
     approve_run,
@@ -46,7 +45,6 @@ from app.runs.store import get_run_store
 from app.tools.filesystem import (
     list_files,
     resolve_request_workspace,
-    validate_workspace,
     workspace_choices,
 )
 from app.tools.registry import registry

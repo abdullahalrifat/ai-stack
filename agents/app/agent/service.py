@@ -335,17 +335,19 @@ def run_agent(
         # only a short server-side tail is needed for direct API callers.
         state.history = get_conversation(conversation_id, limit=4)
         state.memory_scope = str(workspace)
-        state.memories = (
-            memory_context(
-                search_memory(message, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS
-            )
-            if _uses_memory(state.prompt_mode)
-            else []
-        )
-        state.document_evidence = build_document_evidence(
-            message, state.memories
-        ) or build_inline_document_evidence(message)
+        state.document_evidence = build_inline_document_evidence(message)
         _apply_auto_route(state, on_event)
+        if _uses_memory(state.prompt_mode):
+            state.memories = memory_context(
+                search_memory(message, scope=state.memory_scope),
+                MEMORY_CONTEXT_TOKENS,
+            )
+            state.document_evidence = (
+                build_document_evidence(message, state.memories)
+                or state.document_evidence
+            )
+        else:
+            state.memories = []
         research_mode = (
             force_research
             or state.requires_external_evidence
@@ -542,21 +544,24 @@ def execute_run(run_id: str) -> None:
             raise_if_cancelled()
             state.history = get_conversation(conversation_id, limit=4)
             state.memory_scope = run.get("document_scope") or str(requested_workspace)
-            state.memories = (
-                memory_context(
-                    search_memory(task, scope=state.memory_scope), MEMORY_CONTEXT_TOKENS
-                )
-                if _uses_memory(state.prompt_mode, run.get("document_scope"))
-                else []
-            )
-            state.document_evidence = build_document_evidence(
-                task, state.memories
-            ) or build_inline_document_evidence(task)
+            state.document_evidence = build_inline_document_evidence(task)
 
             raise_if_cancelled()
             on_event("planning", {})
             _apply_auto_route(state, on_event)
             raise_if_cancelled()
+
+            if _uses_memory(state.prompt_mode, run.get("document_scope")):
+                state.memories = memory_context(
+                    search_memory(task, scope=state.memory_scope),
+                    MEMORY_CONTEXT_TOKENS,
+                )
+                state.document_evidence = (
+                    build_document_evidence(task, state.memories)
+                    or state.document_evidence
+                )
+            else:
+                state.memories = []
             research_mode = (
                 force_research
                 or state.requires_external_evidence

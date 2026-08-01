@@ -231,14 +231,17 @@ def test_latest_conversation_is_scoped_to_workspace():
                 {
                     "requested_workspace": "/workspace/other",
                     "conversation_id": "other",
+                    "status": "completed",
                 },
                 {
                     "requested_workspace": "/workspace/repo",
                     "conversation_id": "latest-local",
+                    "status": "completed",
                 },
                 {
                     "requested_workspace": "/workspace/repo",
                     "conversation_id": "older-local",
+                    "status": "completed",
                 },
             ]
 
@@ -1034,6 +1037,13 @@ def test_main_shorthand_asks_for_one_task_edit_permission(monkeypatch, tmp_path)
 
     assert main(["fix", "the tests"]) == 0
     assert calls[0]["allow_write"] is True
+
+
+def test_main_local_stream_simulate_mode(capsys):
+    assert main(["stream", "Explain", "quicksort", "briefly.", "--simulate"]) == 0
+    output = capsys.readouterr()
+    assert "Quicksort is a divide-and-conquer sorting algorithm" in output.out
+    assert "[done in" in output.err
 
 
 def test_main_reports_configuration_errors_without_traceback(monkeypatch, capsys):

@@ -1,4 +1,6 @@
 import importlib.util
+import difflib
+import logging
 import os
 import re
 import shlex
@@ -10,6 +12,7 @@ from pathlib import Path
 
 import requests
 from langchain.tools import tool
+import asyncio
 
 from app.core.cancellation import cancellation_requested
 from app.core.config import (
@@ -159,6 +162,10 @@ def _run_in_isolated_runner(command: str, cwd: Path) -> dict:
         return {"error": "Isolated runner is unavailable."}
 
 
+# Module logger
+logger = logging.getLogger(__name__)
+
+
 # ============================================================
 # Helpers
 # ============================================================
@@ -297,9 +304,17 @@ def resolve_path(path: str) -> Path:
         and workspace.parent == SANDBOX_ROOT
         and len(p.parts) >= 3
         and p.parts[1] in {"sandbox", "sandboxes", "agent-sandboxes"}
-        and p.parts[2] == workspace.name
     ):
-        p = workspace.joinpath(*p.parts[3:])
+        if p.parts[2] == workspace.name:
+            p = workspace.joinpath(*p.parts[3:])
+        else:
+            logger.debug(
+                "resolve_path: rejected sandbox alias for different run. requested=%s resolved=%s workspace=%s",
+                path,
+                p,
+                workspace,
+            )
+            raise PermissionError("Access outside workspace denied.")
 
     # Small local models occasionally omit the leading slash when repeating an
     # in-container absolute path (for example ``workspace/ai-stack``). Treat
@@ -314,10 +329,56 @@ def resolve_path(path: str) -> Path:
     if not p.is_absolute():
         p = current_workspace() / p
 
-    p = p.resolve()
+    # If the requested path doesn't exist as written, try a safe workspace-wide
+    # lookup for a unique match with the same basename. This helps small models
+    # that emit a short path like `src` when the repository's nested layout is
+    # `cli/src` or similar. Only accept a single unambiguous candidate. Limit
+    # the search breadth to avoid long-running file system scans.
+    if not p.exists():
+        name = p.name
+        candidates = []
+        try:
+            for i, candidate in enumerate(current_workspace().rglob(name)):
+                if i >= 200:
+                    break
+                if ignored(candidate):
+                    continue
+                candidates.append(candidate)
+        except OSError as exc:
+            logger.debug("resolve_path: error while globbing workspace: %s", exc)
+            candidates = []
+        if len(candidates) == 1:
+            candidate = candidates[0]
+            # Only accept candidate if it's a sensible substitute under the
+            # current workspace and the original request had a short path.
+            if current_workspace() in candidate.parents or candidate == current_workspace():
+                logger.debug(
+                    "resolve_path: mapped short path '%s' to '%s' inside workspace",
+                    path,
+                    candidate,
+                )
+                p = candidate
+            else:
+                logger.debug(
+                    "resolve_path: candidate '%s' outside current workspace, rejecting",
+                    candidate,
+                )
+
+    try:
+        p = p.resolve()
+    except Exception as exc:
+        logger.debug("resolve_path: could not resolve path %s: %s", p, exc)
+        raise
 
     workspace = current_workspace()
     if p != workspace and workspace not in p.parents:
+        logger.debug(
+            "resolve_path: denied access outside workspace. requested=%s resolved=%s workspace=%s source_workspace=%s",
+            path,
+            p,
+            workspace,
+            SOURCE_WORKSPACE.get(),
+        )
         raise PermissionError("Access outside workspace denied.")
 
     return p
@@ -503,7 +564,8 @@ def list_files(
             return [{"name": path.name, "path": relative(path), "type": "file"}]
 
         if not path.exists():
-            return {"error": f"Directory not found: {directory}"}
+            logger.debug("list_files: Directory not found: %s (resolved: %s)", directory, path)
+            return {"error": f"Directory not found: {directory}", "attempted_path": str(path)}
 
         files = []
 
@@ -544,17 +606,21 @@ def read_file(
         path = resolve_path(file_path)
 
         if not path.exists():
-            return {"error": "File not found"}
+            logger.debug("read_file: File not found: %s (resolved: %s)", file_path, path)
+            return {"error": "File not found", "attempted_path": str(path), "workspace": str(current_workspace())}
 
         if sensitive(path):
+            logger.debug("read_file: Attempt to read sensitive file: %s", path)
             return {"error": "Reading sensitive files is not allowed."}
 
         if path.stat().st_size > MAX_FILE_SIZE:
+            logger.debug("read_file: File exceeds max size: %s size=%d", path, path.stat().st_size)
             return {"error": "File exceeds maximum size."}
 
         return _read_utf8_text(path)
 
     except Exception as e:
+        logger.exception("read_file: unexpected error reading %s", file_path)
         return {"error": str(e)}
 
 
@@ -865,7 +931,7 @@ def inspect_files(
 
 
 @tool
-def write_file(file_path: str, content: str, overwrite: bool = False):
+def write_file(file_path: str, content: str, overwrite: bool = False, dry_run: bool = False):
     """Create a UTF-8 text file in the active workspace.
 
     This tool is deliberately small: it cannot access paths outside the
@@ -881,6 +947,17 @@ def write_file(file_path: str, content: str, overwrite: bool = False):
             }
         if len(content.encode("utf-8")) > MAX_FILE_SIZE:
             return {"error": "Content exceeds maximum size."}
+
+        if dry_run:
+            # Do not modify filesystem; return a preview of the intended action.
+            logger.debug("write_file dry_run: would write %s (%d bytes)", path, len(content.encode("utf-8")))
+            return {
+                "status": "dry_run",
+                "action": "write",
+                "path": relative(path),
+                "bytes": len(content.encode("utf-8")),
+            }
+
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return {
@@ -889,6 +966,7 @@ def write_file(file_path: str, content: str, overwrite: bool = False):
             "bytes": path.stat().st_size,
         }
     except Exception as e:
+        logger.exception("write_file: unexpected error writing %s", file_path)
         return {"error": str(e)}
 
 
@@ -898,6 +976,7 @@ def edit_file(
     old_string: str,
     new_string: str,
     replace_all: bool = False,
+    dry_run: bool = False,
 ):
     """Edit an existing file by replacing an exact, unique substring.
 
@@ -937,6 +1016,26 @@ def edit_file(
             else text.replace(old_string, new_string, 1)
         )
 
+        if dry_run:
+            # Produce a unified diff preview instead of modifying the file.
+            diff = "\n".join(
+                difflib.unified_diff(
+                    text.splitlines(),
+                    new_text.splitlines(),
+                    fromfile=str(path),
+                    tofile=str(path) + " (edited)",
+                    lineterm="",
+                )
+            )
+            logger.debug("edit_file dry_run: preview diff for %s", path)
+            return {
+                "status": "dry_run",
+                "action": "edit",
+                "path": relative(path),
+                "occurrences_replaced": count if replace_all else 1,
+                "diff": diff,
+            }
+
         path.write_text(new_text, encoding="utf-8")
 
         return {
@@ -945,6 +1044,7 @@ def edit_file(
             "occurrences_replaced": count if replace_all else 1,
         }
     except Exception as e:
+        logger.exception("edit_file: unexpected error editing %s", file_path)
         return {"error": str(e)}
 
 
@@ -1031,3 +1131,19 @@ def run_tests(
         return {"error": f"Required executable for {kind} is not installed."}
     except Exception as e:
         return {"error": str(e)}
+
+
+# Async helper wrappers for non-blocking callers
+async def read_file_async(file_path: str):
+    """Async wrapper around `read_file` using a thread executor."""
+    return await asyncio.to_thread(read_file, file_path)
+
+
+async def write_file_async(file_path: str, content: str, overwrite: bool = False, dry_run: bool = False):
+    """Async wrapper around `write_file`."""
+    return await asyncio.to_thread(write_file, file_path, content, overwrite, dry_run)
+
+
+async def edit_file_async(file_path: str, old_string: str, new_string: str, replace_all: bool = False, dry_run: bool = False):
+    """Async wrapper around `edit_file`."""
+    return await asyncio.to_thread(edit_file, file_path, old_string, new_string, replace_all, dry_run)

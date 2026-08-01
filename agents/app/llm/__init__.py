@@ -1,5 +1,6 @@
-"""LLM gateway client and model selection."""
+"""LLM helpers package. Submodules provide clients, metrics, and helpers.
 
-from .client import get_available_models
+Avoid importing heavy runtime dependencies at package import time.
+"""
 
-__all__ = ["get_available_models"]
+__all__ = []

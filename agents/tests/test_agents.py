@@ -103,6 +103,51 @@ def test_generated_memory_is_opt_in():
     mock_save_memory.assert_not_called()
 
 
+@patch("app.agent.service.workspace_context", return_value=nullcontext())
+@patch("app.agent.service.route_request")
+@patch("app.agent.service.search_memory", return_value=[])
+@patch("app.agent.service.memory_context", return_value=[])
+@patch("app.agent.service.get_conversation", return_value=[])
+@patch("app.agent.service.save_conversation")
+@patch("app.agent.service.save_memory")
+@patch("app.agent.service.execute_plan", return_value="ok")
+def test_run_agent_auto_route_loads_memory_after_routing(
+    mock_execute_plan,
+    mock_save_memory,
+    mock_save_conversation,
+    mock_get_conversation,
+    mock_memory_context,
+    mock_search_memory,
+    mock_route_request,
+    mock_workspace,
+):
+    mock_route_request.return_value = RouteDecision(
+        workflow="research",
+        translated_task="Inspect and summarize the repository.",
+        requires_external_evidence=True,
+        entities=[],
+        deliverables=[],
+        tasks=[],
+        constraints=[],
+        missing_inputs=[],
+        assumptions=[],
+        selected_document_sections=[],
+        extracted_records=[],
+        validation_warnings=[],
+        source="test",
+    )
+
+    result = agent.run_agent(
+        message="Inspect the repository and summarize findings.",
+        conversation_id="test-conversation",
+        prompt_mode="auto",
+    )
+
+    assert result["answer"] == "ok"
+    assert mock_search_memory.call_count == 1
+    assert mock_memory_context.call_count == 1
+
+
 @patch("app.agent.service.save_long_term_memory")
 @patch("app.agent.service.create_embedding")
 def test_ingest_documents(

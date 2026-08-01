@@ -160,6 +160,76 @@ def task_requests_edits(task: str) -> bool:
     return bool(_EDIT_INTENT.search(task))
 
 
+def _import_chat_stream_text():
+    try:
+        from app.llm.client import chat_stream_text
+
+        return chat_stream_text
+    except Exception:
+        return None
+
+
+def simulated_stream(prompt: str):
+    text = (
+        "Quicksort is a divide-and-conquer sorting algorithm. It picks a pivot, "
+        "partitions the array, and recursively sorts the resulting subarrays. "
+        "This makes it fast on average and easy to understand."
+    )
+    for i in range(0, len(text), 20):
+        yield text[i : i + 20]
+        time.sleep(0.05)
+
+
+def stream_response(prompt: str, simulate: bool = False):
+    chat_stream_text = _import_chat_stream_text()
+    if simulate or chat_stream_text is None:
+        if not simulate:
+            print(
+                "[warning] local stream unavailable; using simulated stream",
+                file=sys.stderr,
+            )
+        yield from simulated_stream(prompt)
+        return
+
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        yield from chat_stream_text(messages)
+    except Exception as exc:
+        print(
+            "[warning] real stream failed, falling back to simulated stream:",
+            exc,
+            file=sys.stderr,
+        )
+        yield from simulated_stream(prompt)
+
+
+def stream_prompt(args: argparse.Namespace) -> int:
+    if args.prompt:
+        prompt = " ".join(args.prompt).strip()
+    elif not sys.stdin.isatty():
+        prompt = sys.stdin.read().strip()
+    else:
+        try:
+            prompt = input("Prompt: ").strip()
+        except EOFError:
+            return 1
+    if not prompt:
+        print("Error: no prompt provided.", file=sys.stderr)
+        return 1
+
+    start = time.time()
+    try:
+        for chunk in stream_response(prompt, simulate=args.simulate):
+            print(chunk, end="", flush=True)
+        print()
+    except KeyboardInterrupt:
+        print("\nStreaming cancelled.", file=sys.stderr)
+        return 1
+    elapsed = time.time() - start
+    print(f"\n[done in {elapsed:.2f}s]", file=sys.stderr)
+    return 0
+
+
 @contextmanager
 def cancellation_signals():
     """Convert terminal shutdown signals into the normal cancellation path."""
@@ -621,6 +691,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Let the run continue after this client exits",
     )
 
+    stream = subparsers.add_parser(
+        "stream",
+        help="Stream a local prompt with a lightweight local LLM UX",
+    )
+    stream.add_argument(
+        "prompt",
+        nargs="*",
+        help="Prompt text for the stream. If omitted, reads from stdin or prompts interactively.",
+    )
+    stream.add_argument(
+        "--simulate",
+        action="store_true",
+        help="Always use simulated streaming output instead of a real local model.",
+    )
+
     listing = subparsers.add_parser("list", help="List recent runs")
     listing.add_argument("--limit", type=int, default=20)
     show = subparsers.add_parser("show", help="Show one run")
@@ -649,11 +734,14 @@ def main(argv: list[str] | None = None) -> int:
         "resume",
         "run",
         "show",
+        "stream",
         "workspaces",
     }
     if argv and not argv[0].startswith("-") and argv[0] not in commands:
         argv = ["run", *argv]
     args = build_parser().parse_args(argv)
+    if args.command == "stream":
+        return stream_prompt(args)
     try:
         client = AgentClient(args.url, resolve_api_key())
         if args.command == "list":
@@ -742,6 +830,8 @@ def main(argv: list[str] | None = None) -> int:
                 review=not args.no_review,
             )
             return run_exit_code(run)
+        if args.command == "stream":
+            return stream_prompt(args)
         configure_shell_history()
         conversation_id = (
             latest_conversation_id(client, workspace) if args.continue_session else None
