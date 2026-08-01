@@ -796,12 +796,12 @@ def test_execute_plan_stops_after_repeated_empty_searches(
     )
 
     events = []
-    assert (
-        execute_plan(
-            state, on_event=lambda kind, payload: events.append((kind, payload))
-        )
-        == "Useful partial answer"
+    answer = execute_plan(
+        state, on_event=lambda kind, payload: events.append((kind, payload))
     )
+    assert answer.startswith("Useful partial answer")
+    assert "Incomplete requirements:" in answer
+    assert "unresolved failed tool categories: inspection" in answer
 
     assert mock_chat_with_tools.call_count == 3
     mock_synthesize.assert_called_once_with(state)
@@ -827,12 +827,12 @@ def test_execute_plan_stops_after_repeated_failed_tool_calls(
     )
 
     events = []
-    assert (
-        execute_plan(
-            state, on_event=lambda kind, payload: events.append((kind, payload))
-        )
-        == "Useful partial answer"
+    answer = execute_plan(
+        state, on_event=lambda kind, payload: events.append((kind, payload))
     )
+    assert answer.startswith("Useful partial answer")
+    assert "Incomplete requirements:" in answer
+    assert "unresolved failed tool categories: inspection" in answer
 
     assert mock_chat_with_tools.call_count == 3
     mock_synthesize.assert_called_once_with(state)

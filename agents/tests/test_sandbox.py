@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.runs import sandbox
+from app.tools import filesystem
 
 
 def make_repository(path: Path) -> None:
@@ -76,6 +77,42 @@ def test_merge_sandbox_applies_tracked_and_new_files(tmp_path, monkeypatch):
 
     assert (repository / "tracked.txt").read_text(encoding="utf-8") == "after\n"
     assert (repository / "new.txt").read_text(encoding="utf-8") == "new file\n"
+    assert not worktree.path.exists()
+
+
+def test_reviewable_tool_edit_is_isolated_until_approval(tmp_path, monkeypatch):
+    """Exercise source path -> sandbox tool edit -> diff -> local approval."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    make_repository(repository)
+    sandbox_root = tmp_path / "sandboxes"
+    monkeypatch.setattr(sandbox, "SANDBOX_ROOT", sandbox_root)
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", sandbox_root)
+    monkeypatch.setattr(
+        sandbox, "validate_workspace", lambda path: Path(path).resolve()
+    )
+
+    worktree = sandbox.create_sandbox(str(repository), "run-e2e")
+    with filesystem.workspace_context(
+        str(worktree.path),
+        allow_sandbox=True,
+        source_workspace=str(repository),
+    ):
+        result = filesystem.write_file.invoke(
+            {
+                "file_path": str(repository / "approved.txt"),
+                "content": "review me\n",
+            }
+        )
+
+    assert result["status"] == "written"
+    assert not (repository / "approved.txt").exists()
+    assert "approved.txt" in sandbox.sandbox_diff(str(worktree.path))
+
+    sandbox.merge_sandbox(worktree)
+    sandbox.remove_sandbox(str(worktree.repository), str(worktree.path))
+
+    assert (repository / "approved.txt").read_text() == "review me\n"
     assert not worktree.path.exists()
 
 

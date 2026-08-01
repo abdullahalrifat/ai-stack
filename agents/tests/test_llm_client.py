@@ -1,3 +1,5 @@
+import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -151,6 +153,37 @@ def test_stream_closes_transport_when_run_is_cancelled(_available):
             )
         )
 
+    assert response.closed is True
+
+
+@patch("app.llm.client._ensure_model_available")
+def test_stream_wall_clock_deadline_stops_a_heartbeat_stall(_available):
+    class StalledResponse:
+        def __init__(self):
+            self.closed = False
+            self.released = threading.Event()
+
+        def __iter__(self):
+            self.released.wait()
+            return
+            yield  # pragma: no cover - keeps this method an iterator
+
+        def close(self):
+            self.closed = True
+            self.released.set()
+
+    response = StalledResponse()
+    fake_client, completion = _completion_client()
+    completion.return_value = response
+
+    started = time.monotonic()
+    with (
+        patch("app.llm.client.get_client", return_value=fake_client),
+        pytest.raises(TimeoutError, match="deadline"),
+    ):
+        list(client.chat_with_tools_stream([], [], model="coder", timeout_seconds=0.05))
+
+    assert time.monotonic() - started < 1
     assert response.closed is True
 
 

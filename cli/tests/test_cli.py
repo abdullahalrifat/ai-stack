@@ -371,7 +371,7 @@ def test_renderer_sanitizes_untrusted_terminal_control_sequences():
 
 def test_renderer_preserves_only_its_own_color_sequences():
     output = io.StringIO()
-    renderer = EventRenderer(stream=output, color=True)
+    renderer = EventRenderer(stream=output, color=True, verbose=True)
 
     renderer.render({"event_type": "queued", "payload": {}})
     renderer.render(
@@ -391,7 +391,7 @@ def test_renderer_preserves_only_its_own_color_sequences():
     )
 
 
-def test_renderer_collapses_routine_lifecycle_events_to_one_update():
+def test_renderer_reports_only_meaningful_lifecycle_stage_changes():
     output = io.StringIO()
     renderer = EventRenderer(stream=output, color=False)
 
@@ -406,7 +406,13 @@ def test_renderer_collapses_routine_lifecycle_events_to_one_update():
     ):
         renderer.render({"event_type": event_type, "payload": {}})
 
-    assert output.getvalue() == "• Working…\n"
+    assert output.getvalue() == (
+        "• Working…\n"
+        "• Preparing sandbox…\n"
+        "• Planning…\n"
+        "• Inspecting codebase…\n"
+        "• Thinking…\n"
+    )
 
 
 def test_renderer_hides_automatic_prefetch_details():
@@ -427,6 +433,27 @@ def test_renderer_hides_automatic_prefetch_details():
     )
 
     assert output.getvalue() == ""
+
+
+def test_renderer_collapses_duplicate_failures_and_marks_partial_run():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, color=False)
+    failure = {
+        "event_type": "tool_result",
+        "payload": {"tool": "tree", "result": {"error": "bad path"}},
+    }
+
+    renderer.render(failure)
+    renderer.render(failure)
+    renderer.render(
+        {
+            "event_type": "run_completed",
+            "payload": {"answer": "Incomplete", "partial": True},
+        }
+    )
+
+    assert output.getvalue().count("bad path") == 1
+    assert "Run ended incomplete" in output.getvalue()
 
 
 def test_renderer_keeps_stream_json_as_one_valid_object_per_line():
@@ -495,21 +522,21 @@ def test_stream_json_golden_contract_covers_every_durable_event(event_type):
     [
         ({"event_type": "queued", "payload": {}}, "• Working…\n"),
         ({"event_type": "run_started", "payload": {}}, "• Working…\n"),
-        ({"event_type": "planning", "payload": {}}, "• Working…\n"),
+        ({"event_type": "planning", "payload": {}}, "• Planning…\n"),
         (
             {"event_type": "plan_ready", "payload": {"plan": ["inspect"]}},
-            "• Working…\n",
+            "• Inspecting codebase…\n",
         ),
         (
             {"event_type": "step_started", "payload": {"step": 2}},
-            "• Working…\n",
+            "• Thinking…\n",
         ),
         (
             {
                 "event_type": "tool_call",
                 "payload": {"tool": "tree", "args": {"depth": 2}},
             },
-            "",
+            "• Inspecting codebase…\n",
         ),
         (
             {
@@ -1087,12 +1114,12 @@ def test_interactive_shell_requests_edit_permission_for_each_task(monkeypatch, c
         ("tool_result", {"tool": "pytest", "result": "18 passed"}, "18 passed"),
         ("run_failed", {"error": "boom"}, "Run failed: boom"),
         ("run_cancelled", {}, "Run cancelled."),
-        ("sandbox_ready", {}, "Working"),
+        ("sandbox_ready", {}, "Planning"),
     ],
 )
 def test_renderer_covers_status_and_tool_events(event_type, payload, expected):
     output = io.StringIO()
-    renderer = EventRenderer(stream=output, color=False)
+    renderer = EventRenderer(stream=output, color=False, verbose=True)
 
     renderer.render({"event_type": event_type, "payload": payload})
 

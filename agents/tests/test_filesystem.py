@@ -43,9 +43,9 @@ def test_internal_workspace_accepts_only_direct_git_sandbox(
     arbitrary.mkdir(parents=True)
     monkeypatch.setattr(filesystem, "SANDBOX_ROOT", sandbox_root)
 
-    assert filesystem.validate_workspace(
-        str(valid), allow_sandbox=True
-    ) == valid.resolve()
+    assert (
+        filesystem.validate_workspace(str(valid), allow_sandbox=True) == valid.resolve()
+    )
     with pytest.raises(PermissionError):
         filesystem.validate_workspace(str(valid))
     with pytest.raises(PermissionError):
@@ -87,6 +87,69 @@ def test_resolve_path_accepts_absolute_workspace_without_leading_slash(workspace
 
     with filesystem.workspace_context(str(repository)):
         assert filesystem.resolve_path(missing_leading_slash) == repository
+
+
+def test_sandbox_maps_absolute_source_paths_to_active_clone(
+    workspace, tmp_path, monkeypatch
+):
+    source = workspace / "source"
+    source.mkdir()
+    sandbox_root = tmp_path.parent / "sandboxes"
+    sandbox = sandbox_root / workspace.name
+    (sandbox / ".git").mkdir(parents=True, exist_ok=True)
+    (sandbox / "src").mkdir()
+    (sandbox / "src" / "app.py").write_text("sandbox copy")
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", sandbox_root)
+
+    with filesystem.workspace_context(
+        str(sandbox), allow_sandbox=True, source_workspace=str(source)
+    ):
+        resolved = filesystem.resolve_path(str(source / "src" / "app.py"))
+        result = filesystem.read_file.invoke(
+            {"file_path": str(source / "src" / "app.py")}
+        )
+
+    assert resolved == sandbox / "src" / "app.py"
+    assert result == "sandbox copy"
+
+
+def test_sandbox_accepts_singular_alias_only_for_active_run(
+    workspace, tmp_path, monkeypatch
+):
+    sandbox_root = tmp_path.parent / "sandboxes"
+    sandbox = sandbox_root / workspace.name
+    (sandbox / ".git").mkdir(parents=True, exist_ok=True)
+    (sandbox / "agents").mkdir(exist_ok=True)
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", sandbox_root)
+
+    with filesystem.workspace_context(str(sandbox), allow_sandbox=True):
+        assert (
+            filesystem.resolve_path(f"/sandbox/{sandbox.name}/agents")
+            == sandbox / "agents"
+        )
+        with pytest.raises(PermissionError):
+            filesystem.resolve_path("/sandbox/different-run/agents")
+
+
+def test_list_files_tolerates_file_and_glob_arguments(workspace):
+    package = workspace / "agents" / "app" / "llm"
+    package.mkdir(parents=True)
+    init_file = package / "__init__.py"
+    init_file.write_text("")
+
+    with filesystem.workspace_context(str(workspace)):
+        file_result = filesystem.list_files.invoke({"directory": str(init_file)})
+        glob_result = filesystem.list_files.invoke(
+            {"directory": str(package / "**init**.py")}
+        )
+
+    expected = {
+        "name": "__init__.py",
+        "path": "agents/app/llm/__init__.py",
+        "type": "file",
+    }
+    assert file_result == [expected]
+    assert glob_result == [expected]
 
 
 def test_tree_skips_runtime_state_directories(workspace):

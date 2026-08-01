@@ -21,6 +21,7 @@ from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
+from ..tools.filesystem import current_workspace, resolve_path
 from .completion import (
     answer_audit as _answer_audit,
 )
@@ -97,7 +98,17 @@ def normalize_tool_args(tool_name: str, args: dict) -> dict:
 
 
 def _tool_fingerprint(tool_name: str, args: dict) -> str:
-    return f"{tool_name}:{json.dumps(args, sort_keys=True, default=str)}"
+    canonical = dict(args)
+    for key in ("directory", "file_path", "path"):
+        value = canonical.get(key)
+        if not isinstance(value, str) or any(char in value for char in "*?["):
+            continue
+        try:
+            resolved = resolve_path(value)
+            canonical[key] = str(resolved.relative_to(current_workspace())) or "."
+        except (OSError, ValueError, PermissionError):
+            continue
+    return f"{tool_name}:{json.dumps(canonical, sort_keys=True, default=str)}"
 
 
 _LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
@@ -144,8 +155,7 @@ def requires_workspace_inspection(message: str) -> bool:
     """Identify requests whose answer must be grounded in mounted source."""
 
     return bool(
-        _WORKSPACE_REQUEST.search(message)
-        or _WORKSPACE_FILE_REFERENCE.search(message)
+        _WORKSPACE_REQUEST.search(message) or _WORKSPACE_FILE_REFERENCE.search(message)
     )
 
 
@@ -442,9 +452,8 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
     explicit_paths = explicit_workspace_paths(state.user_message)
     if explicit_paths and "inspect_files" in available_tools:
         prefetch_tools.append(("inspect_files", {"paths": explicit_paths}))
-    if (
-        "inspect_test_environment" in available_tools
-        and re.search(r"\b(?:coverage|test|tests|pytest|lint)\b", state.user_message, re.I)
+    if "inspect_test_environment" in available_tools and re.search(
+        r"\b(?:coverage|test|tests|pytest|lint)\b", state.user_message, re.I
     ):
         prefetch_tools.append(("inspect_test_environment", {"directory": "."}))
     if "inspect_files" in available_tools and re.search(
@@ -763,7 +772,14 @@ def execute_plan(
     def finalize(answer: str, *, partial: bool = False) -> str:
         """Publish exactly one audited or explicitly partial terminal answer."""
 
+        if partial:
+            failures = _answer_audit(state, answer)
+            if failures and "Incomplete requirements:" not in answer:
+                answer = f"{answer}\n\nIncomplete requirements:\n- " + "\n- ".join(
+                    failures
+                )
         state.finished = True
+        state.partial = partial
         if on_token is not None:
             on_token(answer)
         payload = {"answer": answer}
@@ -1027,7 +1043,12 @@ Plan:
                         {
                             "steps": state.steps,
                             "plan": state.plan,
-                            "observations": state.observations[-12:],
+                            "observations": [
+                                *state.observations[:4],
+                                *state.observations[
+                                    max(4, len(state.observations) - 8) :
+                                ],
+                            ],
                             "route_tasks": getattr(state, "route_tasks", []),
                             "task_progress": getattr(state, "task_progress", {}),
                             "successful_mutation": getattr(

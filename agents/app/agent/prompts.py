@@ -80,6 +80,10 @@ Rules:
 
 1. Never guess file contents, structure, or behavior -- inspect first.
 
+   Use workspace-relative tool paths such as `.` and `agents/tests`. The
+   Workspace path supplied with the task is authoritative; never invent or
+   singularize a sandbox path.
+
 2. For repository analysis:
    - Call list_files on the workspace root.
    - Call tree to understand structure.
@@ -304,6 +308,11 @@ Give the best useful answer to the user's task from the collected tool
 evidence. Do not call tools, do not describe this instruction, and do not
 claim to have inspected anything that is absent from the evidence. Clearly
 label limitations where the evidence is incomplete. Return only the answer.
+Never infer missing test coverage merely because a module lacks a same-named
+test file. Coverage claims require actual coverage output or direct inspection
+of tests exercising the relevant behavior. If an edit was requested but no
+successful mutation is present in the evidence, say the edit was not completed
+instead of returning recommendations as though they fulfilled the request.
 For a feature comparison, call something missing only when the external source
 shows the feature and the repository evidence does not show an equivalent.
 Treat capabilities listed under a completed/current baseline as present and

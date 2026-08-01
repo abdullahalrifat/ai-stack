@@ -73,15 +73,30 @@ class EventRenderer:
         output: str = "text",
         stream: TextIO | None = None,
         color: bool | None = None,
+        verbose: bool | None = None,
     ):
         self.output = output
         self.stream = stream or sys.stdout
         self.color = self.stream.isatty() if color is None else color
+        self.verbose = (
+            os.getenv("AISTACK_VERBOSE", "").strip().lower() in {"1", "true", "yes"}
+            if verbose is None
+            else verbose
+        )
         self.width = shutil.get_terminal_size((100, 24)).columns if self.color else 100
         self.emitted_output = False
         self.terminal_status_rendered = False
         self.working_rendered = False
+        self.last_progress: str | None = None
+        self.reported_failures: set[str] = set()
         self.diff: str | None = None
+
+    def _progress(self, text: str) -> None:
+        if text == self.last_progress:
+            return
+        self._line(f"• {text}", style="2")
+        self.last_progress = text
+        self.working_rendered = True
 
     def _style(self, text: str, code: str) -> str:
         return f"\033[{code}m{text}\033[0m" if self.color else text
@@ -129,35 +144,58 @@ class EventRenderer:
                 print(content, end="", file=self.stream, flush=True)
                 self.emitted_output = True
             return
-        if kind in {
-            "queued",
-            "run_started",
-            "sandbox_creating",
-            "sandbox_ready",
-            "planning",
-            "plan_ready",
-            "step_started",
-        }:
-            if not self.working_rendered:
-                self._line("• Working…", style="2")
-                self.working_rendered = True
+        if kind in {"queued", "run_started"}:
+            self._progress("Working…")
+        elif kind == "sandbox_creating":
+            self._progress("Preparing sandbox…")
+        elif kind in {"sandbox_ready", "planning"}:
+            self._progress("Planning…")
+        elif kind == "plan_ready":
+            self._progress("Inspecting codebase…")
+        elif kind == "step_started":
+            self._progress("Thinking…")
         elif kind == "tool_call":
-            if payload.get("tool") in _QUIET_READ_TOOLS:
+            tool = str(payload.get("tool", "tool"))
+            if not self.verbose:
+                if tool in _QUIET_READ_TOOLS:
+                    self._progress("Inspecting codebase…")
+                elif tool in {"edit_file", "write_file"}:
+                    self._progress("Editing files…")
+                elif tool == "run_tests":
+                    self._progress("Running tests…")
+                elif tool == "run_command":
+                    command = str((payload.get("args") or {}).get("command", ""))
+                    if command.split(maxsplit=1)[0] in {
+                        "black",
+                        "mypy",
+                        "npm",
+                        "pytest",
+                        "ruff",
+                    }:
+                        self._progress("Running checks…")
+                    else:
+                        self._progress("Applying changes…")
                 return
             self._prefixed_line(
-                f"→ {payload.get('tool', 'tool')}",
+                f"→ {tool}",
                 "33",
                 f" {_compact(payload.get('args', {}))}",
             )
         elif kind == "tool_result":
-            if payload.get("tool") in _QUIET_READ_TOOLS and not _tool_result_failed(
-                payload.get("result")
-            ):
+            tool = str(payload.get("tool", "tool"))
+            result = payload.get("result")
+            failed = _tool_result_failed(result)
+            if not self.verbose and not failed:
                 return
+            if not self.verbose:
+                fingerprint = f"{tool}:{_compact(result)}"
+                if fingerprint in self.reported_failures:
+                    return
+                self.reported_failures.add(fingerprint)
             self._prefixed_line(
-                f"← {payload.get('tool', 'tool')}",
-                "32",
-                f" {_compact(payload.get('result', ''))}",
+                f"← {tool}",
+                "31" if failed else "32",
+                f" {_compact(result)}",
             )
         elif kind == "diff_ready":
             self.diff = _bounded_text(str(payload.get("diff", "")))
@@ -173,6 +211,10 @@ class EventRenderer:
                 self.emitted_output = True
             if payload.get("has_pending_diff"):
                 self._line("Run is awaiting diff approval.", style="35")
+            elif payload.get("partial"):
+                self._line(
+                    "Run ended incomplete; no requested edit was applied.", style="33"
+                )
         elif kind == "run_failed":
             self._line(f"Run failed: {payload.get('error', '')}", style="31")
             self.terminal_status_rendered = True

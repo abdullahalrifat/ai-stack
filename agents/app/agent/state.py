@@ -64,6 +64,8 @@ class AgentState:
 
     finished: bool = False
 
+    partial: bool = False
+
     answer: str | None = None
 
     def add_user(self, content: str):

@@ -390,13 +390,17 @@ def execute_run(run_id: str) -> None:
         events.emit(event_type, payload)
 
     last_cancel_check = 0.0
+    last_worker_heartbeat = 0.0
     cancel_cached = False
 
     def cancelled() -> bool:
-        nonlocal last_cancel_check, cancel_cached
+        nonlocal last_cancel_check, last_worker_heartbeat, cancel_cached
         if cancel_cached:
             return True
         now = time.monotonic()
+        if now - last_worker_heartbeat >= 5:
+            store.heartbeat_run(run_id, worker_id)
+            last_worker_heartbeat = now
         if now - last_cancel_check < 0.25:
             return False
         last_cancel_check = now
@@ -482,9 +486,17 @@ def execute_run(run_id: str) -> None:
             )
         store.update_run(run_id, active_workspace=active_workspace)
 
-        workspace_options = {"allow_sandbox": True} if sandbox is not None else {}
+        workspace_options = (
+            {
+                "allow_sandbox": True,
+                "source_workspace": requested_workspace,
+            }
+            if sandbox is not None
+            else {}
+        )
         with workspace_context(
-            active_workspace, **workspace_options
+            active_workspace,
+            **workspace_options,
         ), cancellation_context(cancelled):
             raise_if_cancelled()
             state.history = get_conversation(conversation_id, limit=4)
@@ -551,7 +563,11 @@ def execute_run(run_id: str) -> None:
         )
         on_event(
             "run_completed",
-            {"answer": answer, "has_pending_diff": has_pending_diff},
+            {
+                "answer": answer,
+                "has_pending_diff": has_pending_diff,
+                "partial": state.partial,
+            },
         )
 
     except RunCancelled:

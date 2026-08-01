@@ -38,6 +38,7 @@ DEFAULT_WORKSPACE = CONFIGURED_DEFAULT_WORKSPACE
 CURRENT_WORKSPACE: ContextVar[Path] = ContextVar(
     "current_workspace", default=DEFAULT_WORKSPACE
 )
+SOURCE_WORKSPACE: ContextVar[Path | None] = ContextVar("source_workspace", default=None)
 
 
 IGNORE_DIRS = {
@@ -240,13 +241,20 @@ def workspace_choices() -> list[str]:
 
 
 @contextmanager
-def workspace_context(path: str, *, allow_sandbox: bool = False):
-    token = CURRENT_WORKSPACE.set(
-        validate_workspace(path, allow_sandbox=allow_sandbox)
+def workspace_context(
+    path: str,
+    *,
+    allow_sandbox: bool = False,
+    source_workspace: str | None = None,
+):
+    token = CURRENT_WORKSPACE.set(validate_workspace(path, allow_sandbox=allow_sandbox))
+    source_token = SOURCE_WORKSPACE.set(
+        Path(source_workspace).resolve() if source_workspace else None
     )
     try:
         yield
     finally:
+        SOURCE_WORKSPACE.reset(source_token)
         CURRENT_WORKSPACE.reset(token)
 
 
@@ -265,6 +273,33 @@ def resolve_path(path: str) -> Path:
     """
 
     p = Path(path)
+
+    # In reviewable runs the model works in a disposable clone but may repeat
+    # an absolute path it discovered before sandbox creation. Map that
+    # request-scoped source path to the same relative location in the clone;
+    # never broaden the sandbox's filesystem boundary.
+    source_workspace = SOURCE_WORKSPACE.get()
+    if p.is_absolute() and source_workspace is not None:
+        try:
+            source_relative = p.relative_to(source_workspace)
+        except ValueError:
+            pass
+        else:
+            p = current_workspace() / source_relative
+
+    # Models occasionally singularize the displayed ``/sandboxes/<run>``
+    # root as ``/sandbox/<run>``. Accept only an alias naming this exact
+    # active run; a different run ID or any other absolute path remains
+    # outside the workspace boundary.
+    workspace = current_workspace()
+    if (
+        p.is_absolute()
+        and workspace.parent == SANDBOX_ROOT
+        and len(p.parts) >= 3
+        and p.parts[1] in {"sandbox", "sandboxes", "agent-sandboxes"}
+        and p.parts[2] == workspace.name
+    ):
+        p = workspace.joinpath(*p.parts[3:])
 
     # Small local models occasionally omit the leading slash when repeating an
     # in-container absolute path (for example ``workspace/ai-stack``). Treat
@@ -417,7 +452,58 @@ def list_files(
     """
 
     try:
+        # Small models sometimes pass a filename or a glob despite this
+        # tool's directory-oriented schema. Return useful bounded matches so
+        # one malformed inspection call does not derail an editing run.
+        if any(character in directory for character in "*?["):
+            pattern = directory
+            for root in filter(None, (current_workspace(), SOURCE_WORKSPACE.get())):
+                root_text = str(root)
+                if pattern == root_text:
+                    pattern = "."
+                    break
+                if pattern.startswith(root_text + os.sep):
+                    pattern = pattern[len(root_text) + 1 :]
+                    break
+            if Path(pattern).is_absolute() or ".." in Path(pattern).parts:
+                return {"error": "Glob must stay inside the active workspace."}
+            # pathlib reserves a full ``**`` component for recursion and
+            # rejects doubled stars embedded in a filename. Treat those as a
+            # normal wildcard, which is what the caller intended.
+            pattern = "/".join(
+                part if part == "**" else part.replace("**", "*")
+                for part in Path(pattern).parts
+            )
+            matches = []
+            for candidate in sorted(current_workspace().glob(pattern)):
+                candidate = candidate.resolve()
+                if ignored(candidate):
+                    continue
+                if (
+                    candidate != current_workspace()
+                    and current_workspace() not in candidate.parents
+                ):
+                    continue
+                matches.append(
+                    {
+                        "name": candidate.name,
+                        "path": relative(candidate),
+                        "type": "directory" if candidate.is_dir() else "file",
+                    }
+                )
+                if len(matches) >= MAX_DIRECTORY_ENTRIES:
+                    break
+            return matches
+
         path = resolve_path(directory)
+
+        if path.is_file():
+            if ignored(path):
+                return []
+            return [{"name": path.name, "path": relative(path), "type": "file"}]
+
+        if not path.exists():
+            return {"error": f"Directory not found: {directory}"}
 
         files = []
 

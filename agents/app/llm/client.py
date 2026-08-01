@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 import threading
 import time
 
@@ -25,6 +26,58 @@ logger = logging.getLogger(__name__)
 _client = None
 _model_cache: dict = {"models": None, "fetched_at": 0.0}
 _llm_slots = threading.BoundedSemaphore(MAX_CONCURRENT_LLM_CALLS)
+
+
+def _iter_stream_with_deadline(response, timeout_seconds: int, should_cancel=None):
+    """Iterate an SSE response with a wall-clock deadline and cancellation.
+
+    HTTP read timeouts can be reset indefinitely by gateway heartbeats. A
+    small producer thread lets the owning run continue polling cancellation
+    and enforce an overall inference deadline even when the stream yields no
+    model chunks.
+    """
+
+    items: queue.Queue = queue.Queue()
+    finished = object()
+
+    def produce() -> None:
+        try:
+            for chunk in response:
+                items.put((True, chunk))
+        except BaseException as exc:
+            items.put((False, exc))
+        finally:
+            items.put((True, finished))
+
+    worker = threading.Thread(target=produce, daemon=True, name="llm-stream-reader")
+    worker.start()
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while True:
+            if should_cancel is not None:
+                if should_cancel():
+                    raise RunCancelled()
+            else:
+                raise_if_cancelled()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Model stream exceeded the {timeout_seconds}-second deadline"
+                )
+            try:
+                succeeded, item = items.get(timeout=min(0.25, remaining))
+            except queue.Empty:
+                continue
+            if not succeeded:
+                raise item
+            if item is finished:
+                break
+            yield item
+    finally:
+        close = getattr(response, "close", None)
+        if close is not None:
+            close()
+        worker.join(timeout=1)
 
 
 def get_client():
@@ -139,14 +192,14 @@ def chat(
     with _llm_slots:
         try:
             stream = client.chat.completions.create(**kwargs, stream=True)
-            for chunk in stream:
-                raise_if_cancelled()
+            for chunk in _iter_stream_with_deadline(
+                stream, timeout_seconds or LLM_TIMEOUT_SECONDS
+            ):
                 choices = getattr(chunk, "choices", None) or []
                 if choices:
                     content = getattr(choices[0].delta, "content", None)
                     if content:
                         parts.append(content)
-            raise_if_cancelled()
         finally:
             close = getattr(stream, "close", None)
             if close is not None:
@@ -219,18 +272,12 @@ def chat_with_tools_stream(
                     timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
                     stream=True,
                 )
-                for chunk in response:
-                    if should_cancel is not None:
-                        if should_cancel():
-                            raise RunCancelled()
-                    else:
-                        raise_if_cancelled()
+                for chunk in _iter_stream_with_deadline(
+                    response,
+                    timeout_seconds or LLM_TIMEOUT_SECONDS,
+                    should_cancel=should_cancel,
+                ):
                     yield chunk
-                if should_cancel is not None:
-                    if should_cancel():
-                        raise RunCancelled()
-                else:
-                    raise_if_cancelled()
             finally:
                 close = getattr(response, "close", None)
                 if close is not None:
