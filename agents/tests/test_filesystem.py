@@ -303,8 +303,11 @@ def test_inspect_test_environment_reports_stable_coverage_capability(
 
 def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
     (workspace / "agents" / "tests").mkdir(parents=True)
+    (workspace / "agents" / "app").mkdir()
     (workspace / "agents" / "requirements.txt").write_text("pytest\n")
     (workspace / "cli" / "tests").mkdir(parents=True)
+    (workspace / "cli" / "src" / "aistack_cli").mkdir(parents=True)
+    (workspace / "cli" / "src" / "aistack_cli" / "__init__.py").write_text("")
     (workspace / "cli" / "pyproject.toml").write_text("[project]\n")
     (workspace / "runs-ui" / "tests").mkdir(parents=True)
     (workspace / "runs-ui" / "package.json").write_text("{}\n")
@@ -318,6 +321,10 @@ def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
         "runs-ui/tests",
     ]
     assert result["configs"] == ["cli/pyproject.toml", "runs-ui/package.json"]
+    assert result["coverage_runs"] == [
+        {"directory": "agents", "coverage_target": "app"},
+        {"directory": "cli", "coverage_target": "aistack_cli"},
+    ]
 
 
 def test_run_tests_coverage_uses_explicit_package_target(workspace, monkeypatch):

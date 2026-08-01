@@ -277,6 +277,48 @@ def test_run_event_buffer_logs_auditable_failure_reason(caplog, monkeypatch):
     assert "requested verification has not completed successfully" in caplog.text
 
 
+def test_run_event_buffer_survives_transient_database_restart(caplog):
+    class Store:
+        def append_event(self, *_args, **_kwargs):
+            raise ConnectionError("database restarting")
+
+    buffer = agent.RunEventBuffer(Store(), "run-1")
+
+    buffer.emit("step_started", {"step": 2})
+
+    assert "Could not persist event step_started" in caplog.text
+
+
+def test_durable_run_uses_independent_worker_heartbeat(monkeypatch):
+    store = FakeRunStore()
+    started = []
+
+    class Thread:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            started.append(self.target)
+
+        def join(self, timeout=None):
+            assert timeout == 1
+
+    monkeypatch.setattr(agent.threading, "Thread", Thread)
+    monkeypatch.setattr(agent, "get_conversation", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(agent, "search_memory", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(agent, "create_plan", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(agent, "execute_plan", lambda *_args, **_kwargs: "done")
+    monkeypatch.setattr(agent, "save_conversation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        agent, "workspace_context", lambda *_args, **_kwargs: nullcontext()
+    )
+
+    with patch("app.agent.service.get_run_store", return_value=store):
+        agent.execute_run("run-1")
+
+    assert len(started) == 1
+
+
 def test_auto_route_hands_full_planning_contract_to_executor(monkeypatch):
     decision = RouteDecision(
         workflow="finance",

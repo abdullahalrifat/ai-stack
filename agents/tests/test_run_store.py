@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
-from app.runs.store import MIGRATIONS_DIR, RunStore
+from app.runs.store import MIGRATIONS_DIR, RUN_WORKER_LEASE_SECONDS, RunStore
 
 
 def store_with_cursor(cursor):
@@ -77,7 +77,7 @@ def test_heartbeat_requires_the_current_worker():
 
     query, params = cursor.execute.call_args.args
     assert "worker_id = %s" in query
-    assert params == (600, "run-1", "other-worker")
+    assert params == (RUN_WORKER_LEASE_SECONDS, "run-1", "other-worker")
 
 
 def test_client_lease_renewal_requires_matching_foreground_client():

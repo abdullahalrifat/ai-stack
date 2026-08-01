@@ -28,6 +28,7 @@ from .completion import (
 from .completion import (
     record_tool_progress as _record_tool_progress,
 )
+from .completion import requires_workspace_change
 from .completion import (
     tool_result_failed,
 )
@@ -495,6 +496,25 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
             {"tool": tool_name, "result": result, "prefetch": True},
         )
         evidence[tool_name] = result
+        if (
+            tool_name == "inspect_test_environment"
+            and state.allow_write
+            and requires_workspace_change(state.user_message)
+            and re.search(r"\bcoverage\b", state.user_message, re.IGNORECASE)
+            and "run_tests" in available_tools
+            and isinstance(result, dict)
+        ):
+            for coverage_run in result.get("coverage_runs", [])[:3]:
+                prefetch_tools.append(
+                    (
+                        "run_tests",
+                        {
+                            "kind": "pytest_coverage",
+                            "directory": coverage_run["directory"],
+                            "coverage_target": coverage_run["coverage_target"],
+                        },
+                    )
+                )
     return evidence or None
 
 
@@ -893,6 +913,13 @@ Plan:
 {external_context}
 {document_context}
 """
+    if state.allow_write and requires_workspace_change(state.user_message):
+        task_context += """
+Mandatory edit outcome:
+This request is not satisfied by a review, plan, or recommendations. Use the
+mutation tools to change workspace files, then run the relevant verification
+tool. Do not provide a final answer before both actions succeed.
+"""
     restored_observations = getattr(state, "observations", [])
     if restored_observations:
         task_context += (
@@ -1112,7 +1139,16 @@ Plan:
                 ),
                 default=0,
             )
-            if duplicate_repeats >= 2:
+            pending_workspace_edit = (
+                state.allow_write
+                and requires_workspace_change(state.user_message)
+                and not getattr(state, "successful_mutation", False)
+            )
+            if (
+                duplicate_repeats >= 2
+                and duplicate_tools
+                and not pending_workspace_edit
+            ):
                 answer = _synthesize_partial_answer(state)
                 on_event(
                     "repeated_tool_loop",
@@ -1167,15 +1203,34 @@ Plan:
                         "role": "user",
                         "content": (
                             "That exact read-only tool result was already collected and was returned "
-                            "from cache. Do not request it again. Use the existing evidence to answer "
-                            "now, or inspect a materially different file/source only if one is still "
-                            "required by the task."
+                            "from cache. Do not request it again. "
+                            + (
+                                "The task requires a workspace change, so use the evidence already "
+                                "collected and call an edit or write tool now. Do not inspect another "
+                                "test directory or provide recommendations."
+                                if pending_workspace_edit
+                                else "Use the existing evidence to answer now, or inspect a materially "
+                                "different file/source only if one is still required by the task."
+                            )
                         ),
                     }
                 )
             else:
                 recovery_required = False
                 recovery_handoff_count = 0
+
+            if pending_workspace_edit and state.steps >= 4 and not duplicate_tools:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "You have enough inspection evidence. Stop surveying the repository. "
+                            "Select one concrete uncovered behavior, read only the implementation "
+                            "needed for that behavior if necessary, then call edit_file or write_file "
+                            "now and verify the focused change."
+                        ),
+                    }
+                )
 
             continue
 
@@ -1293,17 +1348,38 @@ Plan:
             # Draft text is buffered until this audit succeeds, so both
             # streaming and non-streaming callers can receive one repair turn
             # without exposing the rejected draft.
-            if completion_retry_count < 1:
+            needs_action = any(
+                failure
+                in {
+                    "requested workspace change has not been made",
+                    "requested verification has not completed successfully",
+                }
+                for failure in audit_failures
+            )
+            retry_limit = 3 if needs_action else 1
+            if completion_retry_count < retry_limit:
                 completion_retry_count += 1
                 messages.append({"role": "assistant", "content": answer})
+                if needs_action:
+                    recovery_instruction = (
+                        "The draft is rejected because the requested work has not been performed. "
+                        "Do not revise the prose and do not offer recommendations. Continue with "
+                        "tools now: measure the current behavior or coverage, inspect the relevant "
+                        "uncovered code, edit or create focused tests, and run verification. Return "
+                        "a final answer only after mutation and verification tools both succeed."
+                    )
+                else:
+                    recovery_instruction = (
+                        "Revise the draft using only the evidence already provided, cite document "
+                        "source/location, and disclose any requirement that cannot be completed."
+                    )
                 messages.append(
                     {
                         "role": "user",
                         "content": (
-                            "Revise the draft to satisfy these missing requirements:\n- "
+                            recovery_instruction
+                            + "\nMissing requirements:\n- "
                             + "\n- ".join(audit_failures)
-                            + "\nUse only the evidence already provided, cite document source/location, "
-                            "and disclose any requirement that cannot be completed."
                         ),
                     }
                 )

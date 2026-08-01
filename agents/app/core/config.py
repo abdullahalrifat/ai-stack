@@ -81,9 +81,7 @@ LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "768"))
 # synthesis turn only. If it is unavailable, the executor falls back to the
 # active workflow model without losing the collected evidence.
 ANALYSIS_SYNTHESIS_MODEL = os.getenv("ANALYSIS_SYNTHESIS_MODEL", "qwen3-14b")
-ANALYSIS_SYNTHESIS_MAX_TOKENS = int(
-    os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "1200")
-)
+ANALYSIS_SYNTHESIS_MAX_TOKENS = int(os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "1200"))
 ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
     os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "360")
 )
@@ -111,6 +109,7 @@ RUN_EVENT_BATCH_CHARS = int(os.getenv("RUN_EVENT_BATCH_CHARS", "2048"))
 RUN_EVENT_BATCH_SECONDS = float(os.getenv("RUN_EVENT_BATCH_SECONDS", "0.50"))
 MAX_CONCURRENT_AGENT_RUNS = int(os.getenv("MAX_CONCURRENT_AGENT_RUNS", "2"))
 MAX_CONCURRENT_LLM_CALLS = int(os.getenv("MAX_CONCURRENT_LLM_CALLS", "1"))
+RUN_WORKER_LEASE_SECONDS = int(os.getenv("RUN_WORKER_LEASE_SECONDS", "60"))
 RUNNER_URL = os.getenv("RUNNER_URL", "http://agent-runner:8001").rstrip("/")
 RUNNER_API_KEY = os.getenv("RUNNER_API_KEY")
 

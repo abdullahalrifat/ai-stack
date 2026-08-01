@@ -21,6 +21,38 @@ from app.tools.registry import registry
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+WORKER_RECONCILE_SECONDS = 5
+
+
+def reconcile_runs_once() -> None:
+    """Recover expired workers and clean terminal sandboxes."""
+
+    store = get_run_store()
+    queued, _interrupted = store.recover_interrupted_runs()
+    for run in store.sandboxes_needing_cleanup():
+        try:
+            remove_sandbox(run["repository_path"], run["sandbox_path"])
+            store.mark_sandbox_cleaned(str(run["id"]))
+        except Exception:
+            logger.exception(
+                "Could not reconcile abandoned sandbox for run %s", run["id"]
+            )
+    for run_id in queued:
+        logger.info("Claiming queued/recovered run %s", run_id)
+        submit_run(run_id)
+
+
+async def monitor_worker_leases() -> None:
+    """Continuously reconcile crashes and transient database restarts."""
+
+    while True:
+        try:
+            await asyncio.to_thread(reconcile_runs_once)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Could not reconcile worker leases")
+        await asyncio.sleep(WORKER_RECONCILE_SECONDS)
 
 
 @asynccontextmanager
@@ -30,25 +62,14 @@ async def lifespan(_: FastAPI):
     logger.info("WORKSPACE ROOTS: %s", [str(root) for root in WORKSPACE_ROOTS])
 
     client_lease_monitor = None
+    worker_lease_monitor = None
     if POSTGRES_URL:
         store = get_run_store()
         store.initialize()
         logger.info("Durable run store initialized.")
-        queued, _interrupted = store.recover_interrupted_runs()
-        # Terminal rows retain their sandbox path until cleanup succeeds.
-        # This makes reconciliation repeatable across consecutive crashes.
-        for run in store.sandboxes_needing_cleanup():
-            try:
-                remove_sandbox(run["repository_path"], run["sandbox_path"])
-                store.mark_sandbox_cleaned(str(run["id"]))
-            except Exception:
-                logger.exception(
-                    "Could not reconcile abandoned sandbox for run %s", run["id"]
-                )
-        for run_id in queued:
-            logger.info("Resuming queued run %s after service restart", run_id)
-            submit_run(run_id)
+        reconcile_runs_once()
         client_lease_monitor = asyncio.create_task(monitor_client_leases())
+        worker_lease_monitor = asyncio.create_task(monitor_worker_leases())
     else:
         logger.warning("POSTGRES_URL not set; durable /runs endpoints are unavailable.")
     try:
@@ -58,6 +79,10 @@ async def lifespan(_: FastAPI):
             client_lease_monitor.cancel()
             with suppress(asyncio.CancelledError):
                 await client_lease_monitor
+        if worker_lease_monitor is not None:
+            worker_lease_monitor.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker_lease_monitor
         shutdown_run_executor()
         if POSTGRES_URL:
             get_run_store().close()

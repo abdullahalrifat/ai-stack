@@ -216,6 +216,7 @@ def _get_job(job_id: str) -> RunnerJob:
 def _start_job(request: ExecuteRequest) -> RunnerJob:
     parts, directory = _validated_command(request)
     _cleanup_jobs()
+    job_id = str(uuid.uuid4())
     try:
         process = subprocess.Popen(
             parts,
@@ -229,6 +230,9 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
                 "PYTHONDONTWRITEBYTECODE": "1",
+                # pytest-cov otherwise writes a binary .coverage file into the
+                # review worktree and pollutes an otherwise focused code diff.
+                "COVERAGE_FILE": f"/tmp/aistack-coverage-{job_id}",
             },
             # Safe in a threaded ASGI process and gives cancellation a process
             # group containing every child spawned by the command.
@@ -237,7 +241,7 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
     except OSError as exc:
         raise HTTPException(500, f"Could not start command: {exc}") from exc
     job = RunnerJob(
-        id=str(uuid.uuid4()),
+        id=job_id,
         command=request.command,
         directory=str(directory),
         process=process,

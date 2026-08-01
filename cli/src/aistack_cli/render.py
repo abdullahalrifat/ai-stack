@@ -136,7 +136,11 @@ class EventRenderer:
 
         kind = str(event.get("event_type", "event"))
         payload = event.get("payload") or {}
-        if payload.get("prefetch") and kind in {"tool_call", "tool_result"}:
+        if (
+            payload.get("prefetch")
+            and kind in {"tool_call", "tool_result"}
+            and payload.get("tool") in _QUIET_READ_TOOLS
+        ):
             return
         if kind == "output_delta":
             content = _bounded_text(str(payload.get("content", "")))

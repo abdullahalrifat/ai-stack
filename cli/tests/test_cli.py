@@ -435,6 +435,24 @@ def test_renderer_hides_automatic_prefetch_details():
     assert output.getvalue() == ""
 
 
+def test_renderer_shows_prefetched_coverage_as_a_progress_stage():
+    output = io.StringIO()
+    renderer = EventRenderer(stream=output, color=False)
+
+    renderer.render(
+        {
+            "event_type": "tool_call",
+            "payload": {
+                "tool": "run_tests",
+                "args": {"kind": "pytest_coverage"},
+                "prefetch": True,
+            },
+        }
+    )
+
+    assert output.getvalue() == "• Running tests…\n"
+
+
 def test_renderer_collapses_duplicate_failures_and_marks_partial_run():
     output = io.StringIO()
     renderer = EventRenderer(stream=output, color=False)

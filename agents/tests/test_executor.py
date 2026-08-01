@@ -6,6 +6,7 @@ import pytest
 from app.agent.completion import record_tool_progress
 from app.agent.executor import (
     _answer_audit,
+    _prefetch_workspace,
     _synthesize_partial_answer,
     execute_plan,
     explicit_workspace_paths,
@@ -56,6 +57,42 @@ def make_tool_call(call_id: str, name: str, arguments: dict):
 def make_message(content=None, tool_calls=None):
     """Build a stand-in for the OpenAI SDK's response message object."""
     return SimpleNamespace(content=content, tool_calls=tool_calls)
+
+
+@patch("app.agent.executor.registry")
+def test_coverage_edit_prefetches_real_package_baselines(mock_registry):
+    state = DummyState()
+    state.user_message = "Improve test coverage in this codebase"
+    state.allow_write = True
+
+    def execute(tool, _args):
+        if tool == "list_files":
+            return [{"path": "agents", "type": "directory"}]
+        if tool == "inspect_test_environment":
+            return {
+                "coverage_runs": [
+                    {"directory": "agents", "coverage_target": "app"},
+                    {"directory": "cli", "coverage_target": "aistack_cli"},
+                ]
+            }
+        return {"kind": "pytest_coverage", "exit_code": 0, "output": "75%"}
+
+    mock_registry.execute.side_effect = execute
+    _prefetch_workspace(
+        state,
+        ["list_files", "inspect_test_environment", "run_tests"],
+        lambda *_args: None,
+    )
+
+    coverage_calls = [
+        call
+        for call in mock_registry.execute.call_args_list
+        if call.args[0] == "run_tests"
+    ]
+    assert [call.args[1]["directory"] for call in coverage_calls] == [
+        "agents",
+        "cli",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -154,6 +191,24 @@ def test_answer_audit_enforces_mutation_verification_and_task_contract():
 
     assert _answer_audit(state, "Updated tests; the test suite passes.") == []
     assert state.task_progress["improve_coverage"] == "completed"
+
+
+def test_answer_audit_accepts_substantive_synthesis_report():
+    state = DummyState()
+    state.route_tasks = [
+        {
+            "id": "synthesize_report",
+            "completion_criteria": ["Synthesize a coverage report and recommendations"],
+        }
+    ]
+    state.observations = [{"tool": "run_tests", "result": {"exit_code": 0}}]
+    answer = (
+        "Coverage improved after adding the focused regression test. The verified suite "
+        "passes, and the next recommendation is to cover the remaining error branches."
+    )
+
+    assert _answer_audit(state, answer) == []
+    assert state.task_progress["synthesize_report"] == "completed"
 
 
 def test_failed_guess_does_not_invalidate_successful_inspection():
@@ -564,6 +619,59 @@ def test_repeated_read_only_tool_calls_use_cache_and_force_synthesis(
     mock_chat.assert_called_once()
 
 
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_edit_task_breaks_repeated_read_loop_and_performs_change(
+    mock_chat_with_tools,
+    mock_registry,
+):
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Improve test coverage"
+    repeated_read = make_message(
+        tool_calls=[make_tool_call("read", "list_files", {"directory": "tests"})]
+    )
+    mock_chat_with_tools.side_effect = [
+        repeated_read,
+        repeated_read,
+        repeated_read,
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "edit",
+                    "write_file",
+                    {"file_path": "tests/test_added.py", "content": "def test_added(): pass\n"},
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[
+                make_tool_call("verify", "run_tests", {"directory": "."})
+            ]
+        ),
+        make_message(content="Added and verified a focused coverage test."),
+    ]
+    mock_registry.list_tools.return_value = ["list_files", "write_file", "run_tests"]
+
+    def execute(tool, _args):
+        if tool == "list_files":
+            return ["tests/test_existing.py"]
+        if tool == "write_file":
+            return {"status": "written", "path": "tests/test_added.py"}
+        return {"exit_code": 0, "output": "1 passed"}
+
+    mock_registry.execute.side_effect = execute
+
+    assert execute_plan(state) == "Added and verified a focused coverage test."
+    assert state.successful_mutation is True
+    assert state.successful_verification is True
+    assert any(
+        "call an edit or write tool now" in message.get("content", "")
+        for call in mock_chat_with_tools.call_args_list
+        for message in call.args[0]
+    )
+
+
 @patch("app.agent.executor.chat", return_value="Complete comparison report.")
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
@@ -672,6 +780,45 @@ def test_execute_plan_retries_research_refusal(mock_chat_with_tools, mock_regist
         == "The retrieved result reports a previous close of 470.60."
     )
     assert mock_chat_with_tools.call_count == 2
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_edit_request_rejects_recommendations_and_returns_to_tools(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.user_message = "Improve tests and verify them"
+    state.allow_write = True
+    mock_registry.list_tools.return_value = ["write_file", "run_tests"]
+    mock_registry.execute.side_effect = [
+        {"status": "written", "path": "tests/test_new.py"},
+        {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
+    ]
+    mock_chat_with_tools.side_effect = [
+        make_message(content="I recommend adding tests."),
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "write",
+                    "write_file",
+                    {"file_path": "tests/test_new.py", "content": "test"},
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+        ),
+        make_message(content="Added tests; 1 passed."),
+    ]
+
+    assert execute_plan(state) == "Added tests; 1 passed."
+    assert mock_registry.execute.call_count == 2
+    transcript = mock_chat_with_tools.call_args_list[1].args[0]
+    assert any(
+        "Do not revise the prose" in str(message.get("content", ""))
+        for message in transcript
+    )
 
 
 @patch("app.agent.executor.registry")

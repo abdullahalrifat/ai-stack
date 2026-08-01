@@ -11,7 +11,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from ..core.config import POSTGRES_URL
+from ..core.config import POSTGRES_URL, RUN_WORKER_LEASE_SECONDS
 
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
 
@@ -155,7 +155,12 @@ class RunStore:
     def update_checkpoint(self, run_id: str, checkpoint: dict[str, Any]) -> None:
         self.update_run(run_id, checkpoint=Jsonb(checkpoint))
 
-    def claim_run(self, run_id: str, worker_id: str, lease_seconds: int = 600) -> bool:
+    def claim_run(
+        self,
+        run_id: str,
+        worker_id: str,
+        lease_seconds: int = RUN_WORKER_LEASE_SECONDS,
+    ) -> bool:
         """Atomically claim queued work or an expired lease."""
 
         with self.connection() as connection, connection.cursor() as cursor:
@@ -178,7 +183,10 @@ class RunStore:
             return cursor.fetchone() is not None
 
     def heartbeat_run(
-        self, run_id: str, worker_id: str, lease_seconds: int = 600
+        self,
+        run_id: str,
+        worker_id: str,
+        lease_seconds: int = RUN_WORKER_LEASE_SECONDS,
     ) -> bool:
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(

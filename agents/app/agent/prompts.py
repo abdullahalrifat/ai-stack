@@ -91,6 +91,9 @@ Rules:
      (requirements.txt / package.json / pyproject.toml) if present.
    - Inspect the relevant application source directories.
    - Only then answer.
+   - Never infer missing coverage from the absence of a same-named test file.
+     Tests commonly exercise several modules. Coverage claims require actual
+     coverage output or direct test/code inspection.
    - Do not search for generic AI/model-training terms unless repository
      evidence shows this project implements them. Use the files already found
      to choose focused paths and keywords.
@@ -132,6 +135,10 @@ Rules:
    prerequisites, and try a safe alternative. Do not end with a proposal for
    what you would install or run next. Report a blocker only after available
    recovery paths are exhausted.
+
+10. When the task asks to improve, fix, add, or update workspace code, prose
+    recommendations are not completion. You must edit files and verify the
+    change with tools before answering.
 """
 
 QUICK_PROMPT = f"""

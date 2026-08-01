@@ -16,6 +16,7 @@ from app.core.config import (
     FINANCE_MAX_COMPLETION_TOKENS,
     FINANCE_MODEL,
 )
+from app import main as app_main
 
 
 def request(stream: bool = False) -> schemas.OpenAIChatCompletionRequest:
@@ -24,6 +25,33 @@ def request(stream: bool = False) -> schemas.OpenAIChatCompletionRequest:
         messages=[schemas.OpenAIChatMessage(role="user", content="hello")],
         stream=stream,
     )
+
+
+def test_worker_reconciliation_resubmits_and_cleans_sandboxes(monkeypatch):
+    store = MagicMock()
+    store.recover_interrupted_runs.return_value = (["queued-1"], [])
+    store.sandboxes_needing_cleanup.return_value = [
+        {
+            "id": "failed-1",
+            "repository_path": "/repo",
+            "sandbox_path": "/sandboxes/failed-1",
+        }
+    ]
+    removed = []
+    submitted = []
+    monkeypatch.setattr(app_main, "get_run_store", lambda: store)
+    monkeypatch.setattr(
+        app_main,
+        "remove_sandbox",
+        lambda repository, path: removed.append((repository, path)),
+    )
+    monkeypatch.setattr(app_main, "submit_run", submitted.append)
+
+    app_main.reconcile_runs_once()
+
+    assert removed == [("/repo", "/sandboxes/failed-1")]
+    store.mark_sandbox_cleaned.assert_called_once_with("failed-1")
+    assert submitted == ["queued-1"]
 
 
 @pytest.fixture(autouse=True)

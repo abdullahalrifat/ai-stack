@@ -1,5 +1,6 @@
 import logging
 import subprocess
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -233,7 +234,16 @@ class RunEventBuffer:
         self.last_heartbeat = time.monotonic()
 
     def _persist(self, event_type: str, payload: dict[str, Any]) -> None:
-        event = self.store.append_event(self.run_id, event_type, payload)
+        try:
+            event = self.store.append_event(self.run_id, event_type, payload)
+        except Exception:
+            # A brief PostgreSQL restart must not terminate an otherwise
+            # healthy model/tool turn. Worker reconciliation handles a
+            # prolonged outage or process crash from the durable checkpoint.
+            logger.exception(
+                "Could not persist event %s for run %s", event_type, self.run_id
+            )
+            return
         if event_type != "output_delta":
             log = (
                 logger.warning
@@ -399,13 +409,27 @@ def execute_run(run_id: str) -> None:
             return True
         now = time.monotonic()
         if now - last_worker_heartbeat >= 5:
-            store.heartbeat_run(run_id, worker_id)
+            try:
+                store.heartbeat_run(run_id, worker_id)
+            except Exception:
+                logger.warning("Could not heartbeat run %s", run_id, exc_info=True)
             last_worker_heartbeat = now
         if now - last_cancel_check < 0.25:
             return False
         last_cancel_check = now
-        cancel_cached = store.is_cancel_requested(run_id)
+        try:
+            cancel_cached = store.is_cancel_requested(run_id)
+        except Exception:
+            logger.warning(
+                "Could not check cancellation for run %s", run_id, exc_info=True
+            )
         return cancel_cached
+
+    def persist_checkpoint(checkpoint_payload: dict[str, Any]) -> None:
+        try:
+            store.update_checkpoint(run_id, checkpoint_payload)
+        except Exception:
+            logger.warning("Could not checkpoint run %s", run_id, exc_info=True)
 
     if cancelled():
         store.update_run(
@@ -418,6 +442,23 @@ def execute_run(run_id: str) -> None:
         on_event("run_cancelled", {"before_start": True})
         events.flush()
         return
+
+    heartbeat_stop = threading.Event()
+
+    def heartbeat_worker() -> None:
+        while not heartbeat_stop.wait(10):
+            try:
+                if not store.heartbeat_run(run_id, worker_id):
+                    return
+            except Exception:
+                logger.warning("Could not heartbeat run %s", run_id, exc_info=True)
+
+    heartbeat_thread = threading.Thread(
+        target=heartbeat_worker,
+        daemon=True,
+        name=f"run-heartbeat-{run_id[:8]}",
+    )
+    heartbeat_thread.start()
 
     on_event("run_started", {})
 
@@ -531,9 +572,7 @@ def execute_run(run_id: str) -> None:
                 on_token=lambda content: on_event("output_delta", {"content": content}),
                 should_cancel=cancelled,
                 force_research=force_research or state.requires_external_evidence,
-                on_checkpoint=lambda checkpoint: store.update_checkpoint(
-                    run_id, checkpoint
-                ),
+                on_checkpoint=persist_checkpoint,
             )
 
         with cancellation_context(cancelled):
@@ -612,6 +651,8 @@ def execute_run(run_id: str) -> None:
             event_type = "run_timed_out"
         on_event(event_type, {"error": str(e)})
     finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=1)
         events.flush()
 
 

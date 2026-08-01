@@ -741,6 +741,27 @@ def inspect_test_environment(directory: str = "."):
             coverage_target = "app"
         elif (root / "src").is_dir():
             coverage_target = "src"
+        coverage_runs = []
+        for tests_path in test_directories:
+            tests_directory = root / tests_path
+            package_root = tests_directory.parent
+            target = ""
+            if (package_root / "app").is_dir():
+                target = "app"
+            elif (package_root / "src").is_dir():
+                packages = sorted(
+                    child.name
+                    for child in (package_root / "src").iterdir()
+                    if child.is_dir() and (child / "__init__.py").is_file()
+                )
+                target = packages[0] if packages else ""
+            if target:
+                coverage_runs.append(
+                    {
+                        "directory": relative(package_root),
+                        "coverage_target": target,
+                    }
+                )
         return {
             "directory": relative(root),
             "configs": configs,
@@ -756,6 +777,7 @@ def inspect_test_environment(directory: str = "."):
                 "coverage_kind": "pytest_coverage",
                 "coverage_target": coverage_target,
             },
+            "coverage_runs": coverage_runs,
             "fresh_shell_per_command": True,
         }
     except Exception as e:

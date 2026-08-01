@@ -49,6 +49,12 @@ def tool_result_failed(result) -> bool:
     )
 
 
+def requires_workspace_change(message: str) -> bool:
+    """Return whether the user requested a concrete workspace mutation."""
+
+    return bool(_CHANGE_REQUEST.search(message))
+
+
 def _tool_category(tool_name: str, args: dict) -> str:
     if tool_name in {"write_file", "edit_file"}:
         return "mutation"
@@ -87,10 +93,15 @@ def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
 
 def _criterion_satisfied(state, criterion: str, answer: str) -> bool:
     lowered = criterion.casefold()
+    if re.search(r"\b(?:report|summary|synthesi[sz]\w*|recommend\w*)\b", lowered):
+        # A report is a final-answer deliverable, not a tool-side effect. Treat
+        # a substantive evidence-backed answer as completion even when the
+        # planner used a different inflection (synthesize vs. synthesized).
+        return len(answer.strip()) >= 80 and bool(state.observations)
     if _VERIFICATION_REQUEST.search(lowered):
-        return state.successful_verification
+        return getattr(state, "successful_verification", False)
     if _CHANGE_REQUEST.search(lowered):
-        return state.successful_mutation
+        return getattr(state, "successful_mutation", False)
     if re.search(r"\b(?:evidence|inspect|source|file|document)\b", lowered):
         return bool(state.observations)
     keywords = [
@@ -126,7 +137,7 @@ def answer_audit(state, answer: str) -> list[str]:
     if missing_entities:
         failures.append("missing grounded entities: " + ", ".join(missing_entities))
 
-    change_requested = bool(_CHANGE_REQUEST.search(state.user_message))
+    change_requested = requires_workspace_change(state.user_message)
     verification_requested = bool(_VERIFICATION_REQUEST.search(state.user_message))
     if getattr(state, "allow_write", False) and change_requested:
         if not getattr(state, "successful_mutation", False):
@@ -162,6 +173,7 @@ def answer_audit(state, answer: str) -> list[str]:
             failures.append(f"deliverable may be missing: {deliverable}")
 
     task_progress = getattr(state, "task_progress", {})
+    state.task_progress = task_progress
     for task in getattr(state, "route_tasks", [])[:8]:
         criteria = task.get("completion_criteria") or []
         complete = all(
