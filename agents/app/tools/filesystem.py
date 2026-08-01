@@ -617,6 +617,28 @@ def inspect_test_environment(directory: str = "."):
             "package.json",
         )
         configs = [name for name in config_names if (root / name).is_file()]
+        test_directories = []
+        if (root / "tests").is_dir():
+            test_directories.append("tests")
+        try:
+            children = sorted(
+                (child for child in root.iterdir() if child.is_dir()),
+                key=lambda child: child.name.casefold(),
+            )
+        except OSError:
+            children = []
+        for child in children[:100]:
+            if ignored(child):
+                continue
+            child_tests = child / "tests"
+            if child_tests.is_dir():
+                test_directories.append(relative(child_tests))
+            for name in config_names:
+                candidate = child / name
+                if candidate.is_file():
+                    candidate_name = relative(candidate)
+                    if candidate_name not in configs:
+                        configs.append(candidate_name)
         virtualenvs = []
         for name in ("venv", ".venv"):
             candidate = root / name / "bin"
@@ -636,6 +658,7 @@ def inspect_test_environment(directory: str = "."):
         return {
             "directory": relative(root),
             "configs": configs,
+            "test_directories": test_directories,
             "virtualenvs": virtualenvs,
             "runner": {
                 "pytest": bool(shutil.which("pytest")),

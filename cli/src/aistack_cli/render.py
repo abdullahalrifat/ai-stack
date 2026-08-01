@@ -14,6 +14,30 @@ MAX_TEXT_EVENT_CHARS = max(
     int(os.getenv("AISTACK_MAX_TEXT_EVENT_CHARS", "200000")),
 )
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_QUIET_READ_TOOLS = {
+    "find_file",
+    "inspect_files",
+    "inspect_test_environment",
+    "list_files",
+    "project_summary",
+    "read_file",
+    "search_text",
+    "tree",
+    "workspace_root",
+}
+
+
+def _tool_result_failed(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    if result.get("error") or result.get("tool_error"):
+        return True
+    exit_code = result.get("exit_code")
+    return (
+        isinstance(exit_code, int)
+        and not isinstance(exit_code, bool)
+        and exit_code != 0
+    )
 
 
 def _sanitize_terminal(text: str) -> str:
@@ -118,12 +142,18 @@ class EventRenderer:
                 self._line("• Working…", style="2")
                 self.working_rendered = True
         elif kind == "tool_call":
+            if payload.get("tool") in _QUIET_READ_TOOLS:
+                return
             self._prefixed_line(
                 f"→ {payload.get('tool', 'tool')}",
                 "33",
                 f" {_compact(payload.get('args', {}))}",
             )
         elif kind == "tool_result":
+            if payload.get("tool") in _QUIET_READ_TOOLS and not _tool_result_failed(
+                payload.get("result")
+            ):
+                return
             self._prefixed_line(
                 f"← {payload.get('tool', 'tool')}",
                 "32",

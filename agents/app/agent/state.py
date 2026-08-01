@@ -28,6 +28,8 @@ class AgentState:
 
     pending_failure_categories: set[str] = field(default_factory=set)
 
+    successful_tool_categories: set[str] = field(default_factory=set)
+
     model: str = DEFAULT_MODEL
 
     prompt_mode: str = "code"

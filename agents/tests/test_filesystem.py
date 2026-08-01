@@ -238,6 +238,25 @@ def test_inspect_test_environment_reports_stable_coverage_capability(
     assert result["fresh_shell_per_command"] is True
 
 
+def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
+    (workspace / "agents" / "tests").mkdir(parents=True)
+    (workspace / "agents" / "requirements.txt").write_text("pytest\n")
+    (workspace / "cli" / "tests").mkdir(parents=True)
+    (workspace / "cli" / "pyproject.toml").write_text("[project]\n")
+    (workspace / "runs-ui" / "tests").mkdir(parents=True)
+    (workspace / "runs-ui" / "package.json").write_text("{}\n")
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.inspect_test_environment.invoke({"directory": "."})
+
+    assert result["test_directories"] == [
+        "agents/tests",
+        "cli/tests",
+        "runs-ui/tests",
+    ]
+    assert result["configs"] == ["cli/pyproject.toml", "runs-ui/package.json"]
+
+
 def test_run_tests_coverage_uses_explicit_package_target(workspace, monkeypatch):
     commands = []
     monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)

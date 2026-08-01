@@ -378,7 +378,7 @@ def test_renderer_preserves_only_its_own_color_sequences():
         {
             "event_type": "tool_call",
             "payload": {
-                "tool": "tree\x1b[2J",
+                "tool": "run_tests\x1b[2J",
                 "args": {"directory": ".\x1b[31m"},
             },
         }
@@ -386,7 +386,7 @@ def test_renderer_preserves_only_its_own_color_sequences():
 
     assert output.getvalue() == (
         "\x1b[2m• Working…\x1b[0m\n"
-        "\x1b[33m→ tree\\x1b[2J\x1b[0m"
+        "\x1b[33m→ run_tests\\x1b[2J\x1b[0m"
         ' {"directory": ".\\u001b[31m"}\n'
     )
 
@@ -509,14 +509,21 @@ def test_stream_json_golden_contract_covers_every_durable_event(event_type):
                 "event_type": "tool_call",
                 "payload": {"tool": "tree", "args": {"depth": 2}},
             },
-            '→ tree {"depth": 2}\n',
+            "",
         ),
         (
             {
                 "event_type": "tool_result",
                 "payload": {"tool": "tree", "result": "README.md"},
             },
-            "← tree README.md\n",
+            "",
+        ),
+        (
+            {
+                "event_type": "tool_result",
+                "payload": {"tool": "tree", "result": {"error": "not found"}},
+            },
+            '← tree {"error": "not found"}\n',
         ),
         (
             {"event_type": "run_failed", "payload": {"error": "boom"}},
@@ -860,6 +867,7 @@ def test_interactive_edit_permission_is_scoped_to_one_task(monkeypatch, capsys):
         ("summarize README.md", False),
         ("fix the failing tests", True),
         ("improve test coverage", True),
+        ("imporove test coverage", True),
     ],
 )
 def test_edit_prompt_is_limited_to_change_requests(task, expected):

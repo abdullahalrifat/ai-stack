@@ -79,6 +79,32 @@ def test_merge_sandbox_applies_tracked_and_new_files(tmp_path, monkeypatch):
     assert not worktree.path.exists()
 
 
+def test_merge_allows_ignored_sandbox_root_inside_repository(tmp_path, monkeypatch):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    make_repository(repository)
+    (repository / ".gitignore").write_text("agent-sandboxes/\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repository), "add", ".gitignore"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "-m", "ignore sandboxes"],
+        check=True,
+        capture_output=True,
+    )
+    sandbox_root = repository / "agent-sandboxes"
+    monkeypatch.setattr(sandbox, "SANDBOX_ROOT", sandbox_root)
+    monkeypatch.setattr(
+        sandbox, "validate_workspace", lambda path: Path(path).resolve()
+    )
+
+    worktree = sandbox.create_sandbox(str(repository), "run-1")
+    (worktree.path / "new.txt").write_text("approved\n", encoding="utf-8")
+
+    sandbox.merge_sandbox(worktree)
+    sandbox.remove_sandbox(str(worktree.repository), str(worktree.path))
+
+    assert (repository / "new.txt").read_text(encoding="utf-8") == "approved\n"
+
+
 def test_merge_sandbox_rejects_a_changed_base_commit(tmp_path, monkeypatch):
     repository = tmp_path / "repository"
     repository.mkdir()

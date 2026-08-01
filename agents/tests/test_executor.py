@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from app.agent.completion import record_tool_progress
 from app.agent.executor import (
     _answer_audit,
     _synthesize_partial_answer,
@@ -153,6 +154,20 @@ def test_answer_audit_enforces_mutation_verification_and_task_contract():
 
     assert _answer_audit(state, "Updated tests; the test suite passes.") == []
     assert state.task_progress["improve_coverage"] == "completed"
+
+
+def test_failed_guess_does_not_invalidate_successful_inspection():
+    state = DummyState()
+
+    record_tool_progress(state, "list_files", {"directory": "."}, ["agents/tests"])
+    record_tool_progress(
+        state,
+        "list_files",
+        {"directory": "tests"},
+        {"error": "directory not found"},
+    )
+
+    assert state.pending_failure_categories == set()
 
 
 @pytest.fixture(autouse=True)

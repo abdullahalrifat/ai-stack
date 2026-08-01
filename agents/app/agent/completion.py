@@ -3,7 +3,7 @@
 import re
 
 _CHANGE_REQUEST = re.compile(
-    r"\b(?:add|build|change|create|edit|fix|implement|improve|modify|"
+    r"\b(?:add|build|change|create|edit|fix|implement|improve|imporove|modify|"
     r"refactor|remove|rename|replace|update|write)\b",
     re.IGNORECASE,
 )
@@ -68,11 +68,15 @@ def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
 
     category = _tool_category(tool_name, args)
     pending = set(getattr(state, "pending_failure_categories", set()))
+    successful = set(getattr(state, "successful_tool_categories", set()))
     if tool_result_failed(result):
-        pending.add(category)
+        if category != "inspection" or category not in successful:
+            pending.add(category)
         state.pending_failure_categories = pending
         return
 
+    successful.add(category)
+    state.successful_tool_categories = successful
     pending.discard(category)
     state.pending_failure_categories = pending
     if category == "mutation":

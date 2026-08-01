@@ -44,7 +44,7 @@ SHELL_COMMANDS = (
     "/workspace",
 )
 _EDIT_INTENT = re.compile(
-    r"\b(?:add|build|change|create|edit|fix|implement|improve|modify|refactor|"
+    r"\b(?:add|build|change|create|edit|fix|implement|improve|imporove|modify|refactor|"
     r"remove|rename|replace|update|write)\b",
     re.IGNORECASE,
 )
