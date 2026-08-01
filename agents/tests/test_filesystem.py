@@ -31,6 +31,29 @@ def test_workspace_rejects_symlink_escape(workspace, tmp_path):
         filesystem.validate_workspace(str(escaped))
 
 
+def test_internal_workspace_accepts_only_direct_git_sandbox(
+    workspace, tmp_path, monkeypatch
+):
+    sandbox_root = tmp_path.parent / "sandboxes"
+    valid = sandbox_root / "run-1"
+    nested = sandbox_root / "nested" / "run-2"
+    arbitrary = sandbox_root / "arbitrary"
+    (valid / ".git").mkdir(parents=True)
+    (nested / ".git").mkdir(parents=True)
+    arbitrary.mkdir(parents=True)
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", sandbox_root)
+
+    assert filesystem.validate_workspace(
+        str(valid), allow_sandbox=True
+    ) == valid.resolve()
+    with pytest.raises(PermissionError):
+        filesystem.validate_workspace(str(valid))
+    with pytest.raises(PermissionError):
+        filesystem.validate_workspace(str(nested), allow_sandbox=True)
+    with pytest.raises(PermissionError):
+        filesystem.validate_workspace(str(arbitrary), allow_sandbox=True)
+
+
 def test_request_workspace_uses_explicit_repository_in_prompt(workspace, monkeypatch):
     repository = workspace / "ai-stack"
     repository.mkdir()

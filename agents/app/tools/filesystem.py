@@ -163,7 +163,7 @@ def _run_in_isolated_runner(command: str, cwd: Path) -> dict:
 # ============================================================
 
 
-def validate_workspace(path: str) -> Path:
+def validate_workspace(path: str, *, allow_sandbox: bool = False) -> Path:
     """Resolve and validate a requested workspace path.
 
     The path must exist, be a directory, and fall inside one of the
@@ -179,11 +179,16 @@ def validate_workspace(path: str) -> Path:
     if not new_path.is_dir():
         raise ValueError(f"Workspace is not a directory: {new_path}")
 
-    allowed = any(
+    allowed_workspace = any(
         new_path == root or root in new_path.parents for root in WORKSPACE_ROOTS
     )
+    allowed_sandbox = (
+        allow_sandbox
+        and new_path.parent == SANDBOX_ROOT
+        and (new_path / ".git").is_dir()
+    )
 
-    if not allowed:
+    if not (allowed_workspace or allowed_sandbox):
         allowed_list = ", ".join(str(r) for r in WORKSPACE_ROOTS)
         raise PermissionError(
             f"Workspace must be inside one of the configured roots: {allowed_list}"
@@ -235,8 +240,10 @@ def workspace_choices() -> list[str]:
 
 
 @contextmanager
-def workspace_context(path: str):
-    token = CURRENT_WORKSPACE.set(validate_workspace(path))
+def workspace_context(path: str, *, allow_sandbox: bool = False):
+    token = CURRENT_WORKSPACE.set(
+        validate_workspace(path, allow_sandbox=allow_sandbox)
+    )
     try:
         yield
     finally:

@@ -482,7 +482,10 @@ def execute_run(run_id: str) -> None:
             )
         store.update_run(run_id, active_workspace=active_workspace)
 
-        with workspace_context(active_workspace), cancellation_context(cancelled):
+        workspace_options = {"allow_sandbox": True} if sandbox is not None else {}
+        with workspace_context(
+            active_workspace, **workspace_options
+        ), cancellation_context(cancelled):
             raise_if_cancelled()
             state.history = get_conversation(conversation_id, limit=4)
             state.memory_scope = run.get("document_scope") or str(requested_workspace)
