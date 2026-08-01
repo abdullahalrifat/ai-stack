@@ -63,20 +63,17 @@ class LLMScheduler:
             with self.lock:
                 if key in self.in_flight:
                     # Another worker is already processing this key; append
-                    # ourselves to the listeners and wait for its result.
+                    # ourselves to the listeners.
                     self.in_flight[key].append(item)
-                    item.event.wait()
-                    if item.exc:
-                        raise item.exc
-                    return item.result
                 else:
                     # Register as the first listener and queue the work.
                     self.in_flight[key] = [item]
                     self.q.put(item)
-                    item.event.wait()
-                    if item.exc:
-                        raise item.exc
-                    return item.result
+
+            item.event.wait()
+            if item.exc:
+                raise item.exc
+            return item.result
 
         # No coalescing key provided; just queue a standalone work item.
         self.q.put(item)
