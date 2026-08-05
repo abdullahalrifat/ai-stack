@@ -951,6 +951,8 @@ def execute_plan(
                 answer = f"{answer}\n\nIncomplete requirements:\n- " + "\n- ".join(
                     failures
                 )
+            if DOC_ONLY_MUTATION_FAILURE in failures:
+                state.diff_blocked = True
         state.finished = True
         state.partial = partial
         if on_token is not None:
@@ -1724,8 +1726,6 @@ tool. Do not provide a final answer before both actions succeed.
             answer = f"{answer}\n\nIncomplete requirements:\n- " + "\n- ".join(
                 audit_failures
             )
-            if DOC_ONLY_MUTATION_FAILURE in audit_failures:
-                state.diff_blocked = True
             return finalize(answer, partial=True)
 
         if _reflection_needed(state, answer):

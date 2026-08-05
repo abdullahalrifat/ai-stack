@@ -352,6 +352,38 @@ def test_execute_plan_blocks_diff_after_doc_only_mutation(
     assert state.diff_blocked is True
 
 
+@patch("app.agent.executor.MAX_EMPTY_MODEL_TURNS", 1)
+@patch("app.agent.executor._synthesize_partial_answer", return_value="Partial synthesis.")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_blocks_diff_on_partial_finalize_with_doc_only_mutation(
+    mock_chat_with_tools, mock_registry, mock_synthesize
+):
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Review this project and implement Tier 3"
+    mock_registry.list_tools.return_value = ["write_file"]
+    mock_registry.execute.side_effect = [
+        {"status": "written", "path": "TODO.md"},
+    ]
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "write", "write_file", {"file_path": "TODO.md", "content": "- [x]\n"}
+                )
+            ]
+        ),
+        make_message(content=""),
+    ]
+
+    result = execute_plan(state)
+
+    assert state.diff_blocked is True
+    assert "Incomplete requirements:" in result
+    assert "change only modified documentation/marker files" in result
+
+
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_repairs_failing_verification_before_answering(
