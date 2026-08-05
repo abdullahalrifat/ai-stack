@@ -17,6 +17,7 @@ from app.core.config import POSTGRES_URL, WORKSPACE_ROOTS, validate_settings
 from app.runs.client_leases import monitor_client_leases
 from app.runs.sandbox import remove_sandbox
 from app.runs.store import get_run_store
+import app.tools.register  # noqa: F401  (registers tools into the real registry)
 from app.tools.registry import registry
 
 logger = logging.getLogger(__name__)
