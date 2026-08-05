@@ -318,6 +318,42 @@ def test_execute_plan_forces_verification_before_final_answer_after_edit(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_blocks_diff_after_doc_only_mutation(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Review this project and from TODO list implement Tier 3"
+    mock_registry.list_tools.return_value = ["write_file", "run_tests"]
+    mock_registry.execute.side_effect = [
+        {"status": "written", "path": "TODO.md"},
+        {"exit_code": 0, "output": "1 passed"},
+        {"status": "written", "path": "TODO.md"},
+        {"status": "written", "path": "TODO.md"},
+    ]
+    todo_write = make_tool_call(
+        "write", "write_file", {"file_path": "TODO.md", "content": "- [x] item\n"}
+    )
+    mock_chat_with_tools.side_effect = [
+        make_message(tool_calls=[todo_write]),
+        make_message(content="Implemented Tier 3."),
+        make_message(tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]),
+        make_message(content="Implemented Tier 3."),
+        make_message(tool_calls=[todo_write]),
+        make_message(content="Implemented Tier 3."),
+        make_message(tool_calls=[todo_write]),
+        make_message(content="Implemented Tier 3."),
+    ]
+
+    result = execute_plan(state)
+
+    assert "Incomplete requirements:" in result
+    assert "change only modified documentation/marker files" in result
+    assert state.diff_blocked is True
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_repairs_failing_verification_before_answering(
     mock_chat_with_tools, mock_registry
 ):

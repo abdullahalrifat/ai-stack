@@ -37,6 +37,15 @@ _DOCUMENTATION_REQUEST = re.compile(
 
 _DOCUMENTATION_SUFFIXES = (".md", ".rst", ".txt")
 
+# Audit failure raised when an implementation request only touched
+# documentation/marker files. Runs rejected for this reason must not surface
+# a pending diff for approval, so the executor marks the diff as blocked.
+DOC_ONLY_MUTATION_FAILURE = (
+    "change only modified documentation/marker files "
+    "(TODO/README/roadmap); an implementation request must change "
+    "code files"
+)
+
 
 def tool_result_failed(result) -> bool:
     """Recognize registry errors and non-zero command exit codes."""
@@ -180,11 +189,7 @@ def answer_audit(state, answer: str) -> list[str]:
             and not _DOCUMENTATION_REQUEST.search(state.user_message)
             and all(path.endswith(_DOCUMENTATION_SUFFIXES) for path in mutation_paths)
         ):
-            failures.append(
-                "change only modified documentation/marker files "
-                "(TODO/README/roadmap); an implementation request must change "
-                "code files"
-            )
+            failures.append(DOC_ONLY_MUTATION_FAILURE)
 
     relevant_failure_categories = {"inspection"}
     if getattr(state, "allow_write", False) and change_requested:

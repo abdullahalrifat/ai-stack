@@ -31,12 +31,9 @@ from ..tools.filesystem import current_workspace, resolve_path
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
 from .completion import (
+    DOC_ONLY_MUTATION_FAILURE,
     answer_audit as _answer_audit,
-)
-from .completion import (
     record_tool_progress as _record_tool_progress,
-)
-from .completion import (
     requires_workspace_change,
     tool_result_failed,
 )
@@ -1687,6 +1684,7 @@ tool. Do not provide a final answer before both actions succeed.
             needs_action = any(
                 failure
                 in {
+                    DOC_ONLY_MUTATION_FAILURE,
                     "requested workspace change has not been made",
                     "requested verification has not completed successfully",
                 }
@@ -1703,7 +1701,9 @@ tool. Do not provide a final answer before both actions succeed.
                         "tools now: make the required edit, then run verification (run_tests or a "
                         "build/lint/test command). If verification fails, read the failure output "
                         "and the affected code, repair the change, and re-run verification. Return "
-                        "a final answer only after a mutation tool and a verification tool both succeed."
+                        "a final answer only after a mutation tool and a verification tool both succeed. "
+                        "Ticking TODO/README/roadmap checklist items is not implementation: use "
+                        "edit_file or write_file on the actual source code."
                     )
                 else:
                     recovery_instruction = (
@@ -1724,6 +1724,8 @@ tool. Do not provide a final answer before both actions succeed.
             answer = f"{answer}\n\nIncomplete requirements:\n- " + "\n- ".join(
                 audit_failures
             )
+            if DOC_ONLY_MUTATION_FAILURE in audit_failures:
+                state.diff_blocked = True
             return finalize(answer, partial=True)
 
         if _reflection_needed(state, answer):

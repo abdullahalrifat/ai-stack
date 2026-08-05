@@ -587,6 +587,16 @@ def execute_run(run_id: str) -> None:
 
         with cancellation_context(cancelled):
             diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
+        diff_blocked = bool(getattr(state, "diff_blocked", False))
+        if diff_blocked:
+            # The run was rejected because its only change is documentation
+            # marker files (checklist-gaming). Do not offer a pending diff for
+            # approval and do not keep a sandbox open for review.
+            diff = None
+            if sandbox is not None:
+                remove_sandbox(str(sandbox.repository), str(sandbox.path))
+                sandbox = None
+            store.update_run(run_id, sandbox_path=None)
         has_pending_diff = bool(diff and diff.strip())
         if has_pending_diff:
             on_event("diff_ready", {"diff": diff})

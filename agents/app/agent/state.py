@@ -31,6 +31,11 @@ class AgentState:
 
     successful_verification: bool = False
 
+    # When an implementation request finalizes with only doc/marker-file
+    # mutations, the run must not offer a pending diff for approval. The
+    # executor sets this flag so the service layer discards the sandbox.
+    diff_blocked: bool = False
+
     pending_failure_categories: set[str] = field(default_factory=set)
 
     successful_tool_categories: set[str] = field(default_factory=set)
