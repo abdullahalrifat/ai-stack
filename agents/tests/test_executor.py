@@ -230,6 +230,50 @@ def test_answer_audit_requires_verification_after_any_mutation():
     assert _answer_audit(state, "Added the helper function; tests pass.") == []
 
 
+def test_record_tool_progress_tracks_mutated_paths():
+    state = DummyState()
+
+    record_tool_progress(
+        state,
+        "write_file",
+        {"file_path": "./agents/app/worker.py"},
+        {"status": "written"},
+    )
+
+    assert state.successful_mutation is True
+    assert "agents/app/worker.py" in state.successful_mutation_paths
+
+
+def test_answer_audit_rejects_todo_only_mutation_for_implementation():
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Review this project and from TODO list implement Tier 3"
+    state.successful_mutation = True
+    state.successful_verification = True
+    state.successful_mutation_paths = {"TODO.md"}
+
+    failures = _answer_audit(state, "Implemented Tier 3.")
+
+    assert any(
+        "only modified documentation/marker files" in failure
+        for failure in failures
+    )
+
+    state.successful_mutation_paths = {"TODO.md", "agents/app/executor.py"}
+    assert _answer_audit(state, "Implemented Tier 3.") == []
+
+
+def test_answer_audit_allows_documentation_request_with_md_only_change():
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Update the README with usage examples"
+    state.successful_mutation = True
+    state.successful_verification = True
+    state.successful_mutation_paths = {"README.md"}
+
+    assert _answer_audit(state, "Updated the README.") == []
+
+
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_forces_verification_before_final_answer_after_edit(
@@ -1147,7 +1191,7 @@ def test_execute_plan_reprompts_workspace_refusal_to_inspect_then_tool(
         if tool == "list_files":
             return {"files": ["README.md", "TODO.md"]}
         if tool == "write_file":
-            return {"status": "written", "path": "TODO.md"}
+            return {"status": "written", "path": "agents/app/worker.py"}
         if tool == "run_tests":
             return {"exit_code": 0, "output": "1 passed"}
         return {"error": "unknown tool"}
@@ -1168,7 +1212,12 @@ def test_execute_plan_reprompts_workspace_refusal_to_inspect_then_tool(
         make_message(
             tool_calls=[
                 make_tool_call(
-                    "call_2", "write_file", {"file_path": "TODO.md", "content": "x"}
+                    "call_2",
+                    "write_file",
+                    {
+                        "file_path": "agents/app/worker.py",
+                        "content": "def spawn(): pass\n",
+                    },
                 )
             ]
         ),

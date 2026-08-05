@@ -21,6 +21,22 @@ _VERIFICATION_COMMANDS = {
     "ruff",
 }
 
+# A request that asks for real implementation work. Marking TODO/README
+# checkboxes is never a valid completion for these.
+_IMPLEMENTATION_INTENT = re.compile(
+    r"\b(?:implement|build|refactor|fix|repair|develop|create)\b",
+    re.IGNORECASE,
+)
+
+# Requests that are genuinely about documentation are exempt from the
+# documentation-only guard, so "update the README" still works.
+_DOCUMENTATION_REQUEST = re.compile(
+    r"\b(?:document|readme|changelog|docs?|write(?:ing)? (?:a|the|up) )\b",
+    re.IGNORECASE,
+)
+
+_DOCUMENTATION_SUFFIXES = (".md", ".rst", ".txt")
+
 
 def tool_result_failed(result) -> bool:
     """Recognize registry errors and non-zero command exit codes."""
@@ -87,6 +103,11 @@ def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
     state.pending_failure_categories = pending
     if category == "mutation":
         state.successful_mutation = True
+        file_path = str(args.get("file_path") or "").strip().lstrip("./")
+        if file_path:
+            mutated = set(getattr(state, "successful_mutation_paths", set()))
+            mutated.add(file_path)
+            state.successful_mutation_paths = mutated
     elif category == "verification":
         state.successful_verification = True
 
@@ -148,6 +169,22 @@ def answer_audit(state, answer: str) -> list[str]:
         # an edit the model has not proven works is not a finished outcome.
         if not getattr(state, "successful_verification", False):
             failures.append("requested verification has not completed successfully")
+        # Checklist-gaming guard: an implementation request whose only
+        # mutation is a TODO/README/roadmap markdown file (e.g. flipping
+        # "- [ ]" to "- [x]") is not an implementation. Require at least one
+        # non-documentation file to have been written.
+        mutation_paths = getattr(state, "successful_mutation_paths", set()) or set()
+        if (
+            mutation_paths
+            and _IMPLEMENTATION_INTENT.search(state.user_message)
+            and not _DOCUMENTATION_REQUEST.search(state.user_message)
+            and all(path.endswith(_DOCUMENTATION_SUFFIXES) for path in mutation_paths)
+        ):
+            failures.append(
+                "change only modified documentation/marker files "
+                "(TODO/README/roadmap); an implementation request must change "
+                "code files"
+            )
 
     relevant_failure_categories = {"inspection"}
     if getattr(state, "allow_write", False) and change_requested:

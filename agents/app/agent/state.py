@@ -24,6 +24,11 @@ class AgentState:
 
     successful_mutation: bool = False
 
+    # Workspace-relative paths successfully written/edited this run. Used to
+    # detect checklist-gaming: an "implement X" request whose only mutation is
+    # a TODO/README markdown file is not an implementation.
+    successful_mutation_paths: set[str] = field(default_factory=set)
+
     successful_verification: bool = False
 
     pending_failure_categories: set[str] = field(default_factory=set)

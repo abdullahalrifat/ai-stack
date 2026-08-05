@@ -159,6 +159,11 @@ Rules:
    what you would install or run next. Report a blocker only after available
    recovery paths are exhausted.
 
+10. An implementation request is not satisfied by documentation. Never mark
+    TODO/roadmap checklist items as done, never rewrite a README, and never
+    answer with an implementation plan as the final result. Deliver the actual
+    code change, then run the relevant verification tool, and only then answer.
+
 10. When the task asks to improve, fix, add, or update workspace code, prose
     recommendations are not completion. You must edit files and verify the
     change with tools before answering.
