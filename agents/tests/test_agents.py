@@ -1,5 +1,6 @@
 import uuid
 from contextlib import nullcontext
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.agent.service import ingest_documents, run_agent
@@ -263,6 +264,68 @@ def test_execute_read_only_run_persists_answer_and_events(
     mock_execute.assert_called_once()
     assert mock_save_conversation.call_count == 2
     mock_save_memory.assert_not_called()
+
+
+@patch("app.agent.service.remove_sandbox")
+@patch("app.agent.service.sandbox_diff", return_value="diff --git a/TODO.md b/TODO.md\n")
+@patch("app.agent.service.create_sandbox")
+@patch("app.agent.service.workspace_context", return_value=nullcontext())
+@patch("app.agent.service.save_memory")
+@patch("app.agent.service.save_conversation")
+@patch("app.agent.service.execute_plan")
+@patch("app.agent.service.create_plan")
+@patch("app.agent.service.search_memory")
+@patch("app.agent.service.get_conversation")
+def test_write_run_with_blocked_diff_is_not_offered_for_approval(
+    mock_get_conversation,
+    mock_search_memory,
+    mock_create_plan,
+    mock_execute_plan,
+    mock_save_conversation,
+    mock_save_memory,
+    mock_workspace,
+    mock_create_sandbox,
+    mock_sandbox_diff,
+    mock_remove_sandbox,
+):
+    store = FakeRunStore()
+    store.run["allow_write"] = True
+    store.run["task"] = "Review this project and from TODO list implement Tier 3"
+    fake_sandbox = SimpleNamespace(
+        path="/sandboxes/project-run-1",
+        repository="/workspace/project",
+        base_commit="abc123",
+    )
+    mock_create_sandbox.return_value = fake_sandbox
+    mock_get_conversation.return_value = []
+    mock_search_memory.return_value = []
+
+    def fake_execute(state, **kwargs):
+        # Simulate the executor's final rejection: only a doc/marker file was
+        # mutated, so the run must not surface a pending diff for approval.
+        state.diff_blocked = True
+        state.partial = True
+        return (
+            "analysis only.\n\nIncomplete requirements:\n- change only modified "
+            "documentation/marker files (TODO/README/roadmap); an implementation "
+            "request must change code files"
+        )
+
+    mock_execute_plan.side_effect = fake_execute
+
+    with patch("app.agent.service.get_run_store", return_value=store):
+        agent.execute_run("run-1")
+
+    assert store.run["status"] == "completed"
+    assert store.run["sandbox_path"] is None
+    assert store.run["answer"].startswith("analysis only.")
+    assert "change only modified documentation/marker files" in store.run["answer"]
+    mock_sandbox_diff.assert_called_once_with("/sandboxes/project-run-1")
+    mock_remove_sandbox.assert_called_once_with(
+        "/workspace/project", "/sandboxes/project-run-1"
+    )
+    assert "diff_ready" not in [event for event, _ in store.events]
+    assert store.run["status"] != "awaiting_approval"
 
 
 def test_run_event_buffer_batches_output_and_publishes_durable_event(monkeypatch):
