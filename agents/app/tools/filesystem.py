@@ -19,6 +19,7 @@ from app.core.config import (
     ALLOWED_COMMANDS,
     COMMAND_TIMEOUT_SECONDS,
     MAX_TOOL_OUTPUT_CHARS,
+    RUN_COMMANDS_ALLOW_NETWORK,
     RUNNER_API_KEY,
     RUNNER_URL,
     SANDBOX_ROOT,
@@ -28,6 +29,7 @@ from app.core.config import (
     DEFAULT_WORKSPACE as CONFIGURED_DEFAULT_WORKSPACE,
 )
 from app.core.exceptions import RunCancelled
+from app.core.permissions import active_policy
 
 # ============================================================
 # Configuration
@@ -88,7 +90,9 @@ RUNNER_POLL_SECONDS = 0.20
 RUNNER_REQUEST_TIMEOUT_SECONDS = 5
 
 
-def _run_in_isolated_runner(command: str, cwd: Path) -> dict:
+def _run_in_isolated_runner(
+    command: str, cwd: Path, tier: str = "isolated"
+) -> dict:
     if SANDBOX_ROOT not in cwd.parents:
         return {"error": "Commands may run only inside a disposable sandbox worktree."}
     job_id: str | None = None
@@ -108,7 +112,11 @@ def _run_in_isolated_runner(command: str, cwd: Path) -> dict:
     try:
         response = requests.post(
             f"{RUNNER_URL}/jobs",
-            json={"command": command, "directory": str(cwd)},
+            json={
+                "command": command,
+                "directory": str(cwd),
+                "tier": tier,
+            },
             headers={"X-Runner-Key": RUNNER_API_KEY or ""},
             timeout=RUNNER_REQUEST_TIMEOUT_SECONDS,
         )
@@ -1018,6 +1026,7 @@ def write_file(file_path: str, content: str, overwrite: bool = False, dry_run: b
     """
     try:
         path = resolve_path(file_path)
+        active_policy().check_write(path, current_workspace())
         if path.exists() and not overwrite:
             return {
                 "error": "File exists; reread it and set overwrite=true to replace it."
@@ -1064,6 +1073,7 @@ def edit_file(
     """
     try:
         path = resolve_path(file_path)
+        active_policy().check_write(path, current_workspace())
 
         if not path.exists():
             return {"error": "File not found"}
@@ -1143,6 +1153,8 @@ def run_command(command: str, directory: str = "."):
         if not parts:
             return {"error": "Empty command."}
 
+        active_policy().check_command(parts[0])
+
         if parts[0] not in ALLOWED_COMMANDS:
             return {
                 "error": f"'{parts[0]}' is not an approved command. "
@@ -1153,7 +1165,9 @@ def run_command(command: str, directory: str = "."):
         if not cwd.is_dir():
             return {"error": "directory is not a directory."}
 
-        return _run_in_isolated_runner(command, cwd)
+        return _run_in_isolated_runner(
+            command, cwd, tier="network" if RUN_COMMANDS_ALLOW_NETWORK else "isolated"
+        )
     except RunCancelled:
         raise
     except FileNotFoundError:
@@ -1200,7 +1214,11 @@ def run_tests(
         cwd = resolve_path(directory)
         if not cwd.is_dir():
             return {"error": "Test directory is not a directory."}
-        result = _run_in_isolated_runner(" ".join(commands[kind]), cwd)
+        result = _run_in_isolated_runner(
+            " ".join(commands[kind]),
+            cwd,
+            tier="network" if RUN_COMMANDS_ALLOW_NETWORK else "isolated",
+        )
         return {"kind": kind, **result}
     except RunCancelled:
         raise

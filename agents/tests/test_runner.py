@@ -147,6 +147,7 @@ def test_runner_surfaces_kill_failure_without_waiting_forever(monkeypatch):
         id="job-1",
         command="command",
         directory="/sandbox",
+        tier="isolated",
         process=Process(),
         lease_deadline=0,
     )
@@ -156,3 +157,92 @@ def test_runner_surfaces_kill_failure_without_waiting_forever(monkeypatch):
 
     assert job.status == "kill_failed"
     assert "survived SIGKILL" in job.output
+
+
+def test_runner_rejects_unknown_sandbox_tier(configured_runner):
+    with pytest.raises(HTTPException) as error:
+        runner.create_job(
+            runner.ExecuteRequest(
+                command='python3 -c "print(42)"',
+                directory=str(configured_runner),
+                tier="not-a-tier",
+            ),
+            x_runner_key="secret",
+        )
+
+    assert error.value.status_code == 400
+    assert "Unsupported sandbox tier" in error.value.detail
+
+
+def test_rlimit_args_uses_tier_limits():
+    limits = runner._rlimit_args("isolated")
+    assert limits["cpu_seconds"] == runner.RUNNER_CPU_SECONDS
+    assert limits["memory_mb"] == runner.RUNNER_MEMORY_MB
+    assert limits["max_open_files"] == runner.RUNNER_MAX_OPEN_FILES
+
+
+def test_command_argv_wraps_isolated_tier_in_netns_when_available(monkeypatch):
+    monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
+    monkeypatch.setattr(runner.shutil, "which", lambda name: "/usr/bin/unshare")
+    monkeypatch.setattr(runner, "_netns_available", lambda: True)
+
+    argv = runner._command_argv(["python3", "-c", "x"], "isolated")
+    assert argv == ["/usr/bin/unshare", "-n", "python3", "-c", "x"]
+
+
+def test_command_argv_skips_netns_when_unavailable(monkeypatch):
+    monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
+    monkeypatch.setattr(runner, "_netns_available", lambda: False)
+
+    assert runner._command_argv(["python3", "-c", "x"], "isolated") == [
+        "python3",
+        "-c",
+        "x",
+    ]
+
+
+def test_command_argv_network_tier_is_not_wrapped(monkeypatch):
+    monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
+    monkeypatch.setattr(runner.shutil, "which", lambda name: "/usr/bin/unshare")
+    monkeypatch.setattr(runner, "_netns_available", lambda: True)
+
+    assert runner._command_argv(["python3", "-c", "x"], "network") == [
+        "python3",
+        "-c",
+        "x",
+    ]
+
+
+def test_command_argv_netns_disabled_by_config(monkeypatch):
+    monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", False)
+
+    assert runner._command_argv(["python3", "-c", "x"], "isolated") == [
+        "python3",
+        "-c",
+        "x",
+    ]
+
+
+def test_runner_applies_tier_resource_limits_in_child(configured_runner):
+    probe = (
+        "import resource\n"
+        "print(resource.getrlimit(resource.RLIMIT_CPU)[1])\n"
+        "print(resource.getrlimit(resource.RLIMIT_NOFILE)[1])\n"
+        "print(resource.getrlimit(resource.RLIMIT_AS)[1])\n"
+    )
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command=f'python3 -c "{probe}"',
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+
+    completed = _wait_for_status(payload["job_id"], {"completed"})
+    cpu, nofile, address_space = [
+        int(line) for line in completed["output"].splitlines() if line
+    ]
+
+    assert cpu == runner.RUNNER_CPU_SECONDS
+    assert nofile == runner.RUNNER_MAX_OPEN_FILES
+    assert address_space == runner.RUNNER_MEMORY_MB * 1024 * 1024

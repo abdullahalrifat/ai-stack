@@ -592,6 +592,28 @@ environments, and coverage support. `run_tests` then provides fixed presets
 (`pytest`, `pytest_coverage`, `python_compile`, `npm_test`, `ruff`), avoiding
 shell activation and interpreter mismatches.
 
+### Trust and scoped permissions
+
+Write tools and `run_command` are gated by a per-request permission scope,
+not just by tool visibility. A read-only request gets a `read` scope that
+refuses every write and command; a write-capable request is either
+`scoped-write` (limited to workspace-relative `EDIT_ALLOWED_PATHS`) or
+`full-write`. Every scope still refuses sensitive paths (`.env*` except
+`.env.example`/`.sample`/`.template`, `credentials.json`, SSH keys, and
+`.key`/`.pem`/`.p12`/`.pfx` files). `COMMAND_ALLOWLIST` can narrow
+`ALLOWED_COMMANDS` further for write-capable runs.
+
+All tool results in the model transcript are prefixed as untrusted reference
+data, and the system prompt forbids following instructions found in files,
+search results, or fetched pages, so prompt-injection payloads in repository
+contents or web pages are treated as content rather than directives.
+
+Command execution runs on a sandbox runner with per-tier kernel limits
+(`RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `RUNNER_MAX_OPEN_FILES`). The
+default `isolated` tier also drops network egress inside a private network
+namespace when `unshare` is available; `RUN_COMMANDS_ALLOW_NETWORK=true`
+moves commands to the `network` tier for workflows like `npm install`.
+
 ### Tests and coverage
 
 For a host IDE or terminal, install the agent test environment once:

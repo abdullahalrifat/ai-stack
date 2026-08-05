@@ -54,6 +54,10 @@ class AgentState:
 
     allow_write: bool = False
 
+    # Optional injected PermissionPolicy. When None the executor derives the
+    # policy from allow_write plus platform configuration.
+    permissions: Any = None
+
     plan: list = field(default_factory=list)
 
     messages: list = field(default_factory=list)

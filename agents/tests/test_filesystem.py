@@ -4,6 +4,13 @@ import pytest
 
 from app.core.cancellation import cancellation_context
 from app.core.exceptions import RunCancelled
+from app.core.permissions import (
+    FULL_WRITE,
+    READ,
+    SCOPED_WRITE,
+    PermissionPolicy,
+    permissions_context,
+)
 from app.tools import filesystem
 
 
@@ -327,7 +334,11 @@ def test_run_command_enforces_policy_before_execution(workspace, monkeypatch):
     monkeypatch.setattr(
         filesystem,
         "_run_in_isolated_runner",
-        lambda command, cwd: {"command": command, "exit_code": 0, "output": "ok"},
+        lambda command, cwd, tier="isolated": {
+            "command": command,
+            "exit_code": 0,
+            "output": "ok",
+        },
     )
 
     with filesystem.workspace_context(str(workspace)):
@@ -400,7 +411,7 @@ def test_run_tests_coverage_uses_explicit_package_target(workspace, monkeypatch)
     monkeypatch.setattr(
         filesystem,
         "_run_in_isolated_runner",
-        lambda command, cwd: (
+        lambda command, cwd, tier="isolated": (
             commands.append(command)
             or {"command": command, "exit_code": 0, "output": "covered"}
         ),
@@ -505,3 +516,103 @@ def test_isolated_runner_attempts_cleanup_after_network_loss(workspace, monkeypa
 
     assert result == {"error": "Isolated runner is unavailable."}
     assert posts[-1].endswith("/jobs/job-1/cancel")
+
+
+# ============================================================
+# Tier 2: scoped permissions enforcement in write/run tools
+# ============================================================
+
+
+def test_write_file_denied_under_read_scope(workspace):
+    policy = PermissionPolicy(scope=READ)
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.write_file.invoke(
+            {"file_path": "note.txt", "content": "hello"}
+        )
+
+    assert "not permitted" in result["error"]
+
+
+def test_edit_file_denied_under_read_scope(workspace):
+    (workspace / "note.txt").write_text("before", encoding="utf-8")
+    policy = PermissionPolicy(scope=READ)
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.edit_file.invoke(
+            {"file_path": "note.txt", "old_string": "before", "new_string": "after"}
+        )
+
+    assert "not permitted" in result["error"]
+    assert (workspace / "note.txt").read_text(encoding="utf-8") == "before"
+
+
+def test_write_file_allowed_under_full_write_scope(workspace):
+    policy = PermissionPolicy(scope=FULL_WRITE)
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.write_file.invoke(
+            {"file_path": "note.txt", "content": "hello"}
+        )
+
+    assert result["status"] == "written"
+
+
+def test_write_file_denies_sensitive_paths_even_full_write(workspace):
+    policy = PermissionPolicy(scope=FULL_WRITE)
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.write_file.invoke(
+            {"file_path": ".env", "content": "SECRET=1"}
+        )
+
+    assert "sensitive" in result["error"].lower()
+    assert not (workspace / ".env").exists()
+
+
+def test_write_file_scoped_to_allowed_roots(workspace):
+    (workspace / "src").mkdir()
+    policy = PermissionPolicy(scope=SCOPED_WRITE, edit_roots=(Path("src"),))
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        allowed = filesystem.write_file.invoke(
+            {"file_path": "src/mod.py", "content": "x = 1"}
+        )
+        denied = filesystem.write_file.invoke(
+            {"file_path": "README.md", "content": "# nope"}
+        )
+
+    assert allowed["status"] == "written"
+    assert "edit scope" in denied["error"]
+
+
+def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    monkeypatch.setattr(filesystem, "ALLOWED_COMMANDS", ["echo", "git"])
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda command, cwd, tier="isolated": {
+            "command": command,
+            "exit_code": 0,
+            "output": "ok",
+        },
+    )
+    policy = PermissionPolicy(command_allowlist=frozenset({"echo"}))
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        allowed = filesystem.run_command.invoke({"command": "echo hi"})
+        denied = filesystem.run_command.invoke({"command": "git status"})
+
+    assert allowed["exit_code"] == 0
+    assert "command allowlist" in denied["error"]
+
+
+def test_run_tests_does_not_hit_runner_under_read_scope(workspace, monkeypatch):
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    calls = []
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda command, cwd, tier="isolated": calls.append(tier) or {},
+    )
+    policy = PermissionPolicy(command_allowlist=frozenset({"pytest"}))
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.run_tests.invoke({"kind": "pytest"})
+
+    assert result["kind"] == "pytest"
+    assert calls == ["isolated"]

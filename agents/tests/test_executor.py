@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -19,7 +20,8 @@ from app.agent.executor import (
     report_pdf_link,
     tool_result_failed,
 )
-from app.agent.prompts import executor_prompt
+from app.agent.prompts import UNTRUSTED_TOOL_RESULT_HEADER, executor_prompt
+from app.core.permissions import FULL_WRITE, SCOPED_WRITE, PermissionPolicy
 
 
 class DummyState:
@@ -628,6 +630,82 @@ def test_execute_plan_executes_tool(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_emits_permissions_event_and_marks_results_untrusted(
+    mock_chat_with_tools,
+    mock_registry,
+):
+    state = DummyState()
+    state.allow_write = False
+
+    mock_registry.list_tools.return_value = ["list_files"]
+    mock_registry.execute.return_value = {"files": ["README.md"]}
+
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[make_tool_call("call_1", "list_files", {"directory": "."})]
+        ),
+        make_message(content="Finished", tool_calls=None),
+    ]
+    events = []
+
+    execute_plan(state, on_event=lambda kind, payload: events.append((kind, payload)))
+
+    permissions_events = [payload for kind, payload in events if kind == "permissions"]
+    assert len(permissions_events) == 1
+    assert permissions_events[0]["scope"] == "read"
+    assert permissions_events[0]["allow_write"] is False
+
+    messages_for_final_call = mock_chat_with_tools.call_args_list[1].args[0]
+    tool_messages = [m for m in messages_for_final_call if m["role"] == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["content"].startswith(UNTRUSTED_TOOL_RESULT_HEADER)
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_prefers_state_permissions_over_allow_write(
+    mock_chat_with_tools,
+    mock_registry,
+):
+    state = DummyState()
+    state.allow_write = False
+    state.permissions = PermissionPolicy(
+        scope=SCOPED_WRITE,
+        edit_roots=(Path("src"),),
+        command_allowlist=frozenset({"pytest"}),
+    )
+
+    mock_registry.list_tools.return_value = []
+    mock_chat_with_tools.return_value = make_message(content="Done", tool_calls=None)
+    events = []
+
+    execute_plan(state, on_event=lambda kind, payload: events.append((kind, payload)))
+
+    permissions_events = [payload for kind, payload in events if kind == "permissions"]
+    assert permissions_events[0]["scope"] == "scoped-write"
+    assert permissions_events[0]["edit_roots"] == ["src"]
+    assert permissions_events[0]["command_allowlist"] == ["pytest"]
+    assert permissions_events[0]["allow_write"] is False
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_full_write_policy_from_allow_write(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    state.allow_write = True
+
+    mock_registry.list_tools.return_value = []
+    mock_chat_with_tools.return_value = make_message(content="Done", tool_calls=None)
+    events = []
+
+    execute_plan(state, on_event=lambda kind, payload: events.append((kind, payload)))
+
+    permissions_events = [payload for kind, payload in events if kind == "permissions"]
+    assert permissions_events[0]["scope"] == FULL_WRITE
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_runner_timeout_gets_its_own_durable_event(
     mock_chat_with_tools,
     mock_registry,
@@ -772,6 +850,21 @@ def test_requires_workspace_inspection_recognizes_repo_shorthand():
     assert requires_workspace_inspection("Review this repo") is True
     assert requires_workspace_inspection("Inspect only README.md") is True
     assert requires_workspace_inspection("Find today's market price") is False
+
+
+def test_requires_workspace_inspection_recognizes_project_and_todo_wording():
+    assert (
+        requires_workspace_inspection(
+            "Review this project and from TODO list implement Tier 3"
+        )
+        is True
+    )
+    assert (
+        requires_workspace_inspection("Implement the items in TODO.md") is True
+    )
+    assert requires_workspace_inspection("Follow the roadmap") is True
+    assert requires_workspace_inspection("Resolve issue #12") is True
+    assert requires_workspace_inspection("Give me a stock analysis") is False
 
 
 def test_explicit_workspace_paths_are_bounded_and_deduplicated():
@@ -1039,6 +1132,60 @@ def test_execute_plan_retries_research_refusal(mock_chat_with_tools, mock_regist
         == "The retrieved result reports a previous close of 470.60."
     )
     assert mock_chat_with_tools.call_count == 2
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_reprompts_workspace_refusal_to_inspect_then_tool(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.user_message = "Review this project and from TODO list implement Tier 3"
+    state.allow_write = True
+
+    def execute(tool, _args):
+        if tool == "list_files":
+            return {"files": ["README.md", "TODO.md"]}
+        if tool == "write_file":
+            return {"status": "written", "path": "TODO.md"}
+        if tool == "run_tests":
+            return {"exit_code": 0, "output": "1 passed"}
+        return {"error": "unknown tool"}
+
+    mock_registry.list_tools.return_value = ["list_files", "write_file", "run_tests"]
+    mock_registry.execute.side_effect = execute
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            content=(
+                "I am unable to proceed without the required files. "
+                "Please provide the relevant source code and TODO list."
+            ),
+            tool_calls=None,
+        ),
+        make_message(
+            tool_calls=[make_tool_call("call_1", "list_files", {"directory": "."})]
+        ),
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "call_2", "write_file", {"file_path": "TODO.md", "content": "x"}
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[make_tool_call("call_3", "run_tests", {"kind": "pytest"})]
+        ),
+        make_message(content="Inspected the workspace and implemented the change."),
+    ]
+
+    assert execute_plan(state) == "Inspected the workspace and implemented the change."
+
+    assert mock_chat_with_tools.call_count == 5
+    transcript = mock_chat_with_tools.call_args_list[1].args[0]
+    assert any(
+        "Inspect the repository yourself now" in str(message.get("content", ""))
+        for message in transcript
+    )
 
 
 @patch("app.agent.executor.registry")

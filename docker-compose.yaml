@@ -323,6 +323,16 @@ services:
       # are permitted regardless of this list).
       ALLOWED_COMMANDS: ${ALLOWED_COMMANDS:-git,ls,cat,pytest,python,python3,npm,node,make,grep,find,mypy,ruff,black,flake8}
 
+      # Tier 2 scoped permissions. EDIT_ALLOWED_PATHS narrows write tools to
+      # these workspace-relative directories (comma-separated); empty means a
+      # full-write scope when write permission is granted. COMMAND_ALLOWLIST
+      # optionally narrows ALLOWED_COMMANDS further for write-capable runs.
+      # RUN_COMMANDS_ALLOW_NETWORK moves command execution to the runner's
+      # "network" tier; off by default so commands stay on the internal network.
+      EDIT_ALLOWED_PATHS: ${EDIT_ALLOWED_PATHS:-}
+      COMMAND_ALLOWLIST: ${COMMAND_ALLOWLIST:-}
+      RUN_COMMANDS_ALLOW_NETWORK: ${RUN_COMMANDS_ALLOW_NETWORK:-false}
+
       CONTEXT_COMPACT_THRESHOLD_TOKENS: ${CONTEXT_COMPACT_THRESHOLD_TOKENS:-7000}
       MEMORY_ENABLED: ${MEMORY_ENABLED:-true}
       MEMORY_FOR_CODE_RUNS: ${MEMORY_FOR_CODE_RUNS:-false}
@@ -397,6 +407,10 @@ services:
       RUNNER_CPU_SECONDS: ${RUNNER_CPU_SECONDS:-90}
       RUNNER_MEMORY_MB: ${RUNNER_MEMORY_MB:-2048}
       RUNNER_MAX_OPEN_FILES: ${RUNNER_MAX_OPEN_FILES:-256}
+      # Wrap "isolated"-tier commands in a private network namespace when the
+      # host's unshare supports it (cap_drop: ALL means it is normally
+      # unavailable here; the internal "runner" network stays the boundary).
+      RUNNER_ENABLE_NETNS: ${RUNNER_ENABLE_NETNS:-true}
       ALLOWED_COMMANDS: ${ALLOWED_COMMANDS:-git,pytest,python,python3,npm,node,make,mypy,ruff,black,flake8}
     volumes:
       - ./agent-sandboxes:/sandboxes

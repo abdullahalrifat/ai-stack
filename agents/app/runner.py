@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import os
 import shlex
+import shutil
 import signal
 import subprocess
 import threading
@@ -35,12 +36,45 @@ ALLOWED = {
 }
 TERMINAL_STATUSES = {"completed", "cancelled", "timed_out", "kill_failed"}
 
+# Sandbox tiers: per-tier network access and kernel resource limits applied to
+# every command. The "isolated" tier is the default for review worktrees and
+# blocks egress whenever a network namespace is available; the "network" tier
+# keeps CPU/memory/open-file limits but allows the command to reach the
+# network. Compose already places this runner on an internal network, so the
+# netns wrapper is defense in depth, not the only boundary.
+RUNNER_CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "90"))
+RUNNER_MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "2048"))
+RUNNER_MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
+RUNNER_NETWORK_TIERS = {"network"}
+RUNNER_ENABLE_NETNS = os.getenv("RUNNER_ENABLE_NETNS", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+TIERS: dict[str, dict[str, Any]] = {
+    "isolated": {
+        "network": False,
+        "cpu_seconds": RUNNER_CPU_SECONDS,
+        "memory_mb": RUNNER_MEMORY_MB,
+        "max_open_files": RUNNER_MAX_OPEN_FILES,
+    },
+    "network": {
+        "network": True,
+        "cpu_seconds": RUNNER_CPU_SECONDS,
+        "memory_mb": RUNNER_MEMORY_MB,
+        "max_open_files": RUNNER_MAX_OPEN_FILES,
+    },
+}
+
 app = FastAPI(title="Private agent runner", version="1.0")
 
 
 class ExecuteRequest(BaseModel):
     command: str
     directory: str
+    tier: str = "isolated"
 
 
 @dataclass
@@ -48,6 +82,7 @@ class RunnerJob:
     id: str
     command: str
     directory: str
+    tier: str
     process: subprocess.Popen[str]
     status: str = "running"
     output: str = ""
@@ -76,6 +111,11 @@ def _authorize(x_runner_key: str | None) -> None:
 
 
 def _validated_command(request: ExecuteRequest) -> tuple[list[str], Path]:
+    if request.tier not in TIERS:
+        raise HTTPException(
+            400, f"Unsupported sandbox tier: {request.tier}. "
+            f"Supported tiers: {', '.join(sorted(TIERS))}"
+        )
     forbidden = ["&&", "||", "|", ";", ">", "<", "`", "$("]
     if any(token in request.command for token in forbidden):
         raise HTTPException(400, "Command chaining/redirection is not permitted")
@@ -91,6 +131,81 @@ def _validated_command(request: ExecuteRequest) -> tuple[list[str], Path]:
     if not directory.is_dir():
         raise HTTPException(400, "Sandbox directory does not exist")
     return parts, directory
+
+
+def _rlimit_args(tier: str) -> dict[str, Any]:
+    """Kernel resource limits (RLIMIT_CPU, RLIMIT_AS, RLIMIT_NOFILE) for a tier."""
+
+    limits = TIERS.get(tier, TIERS["isolated"])
+    return {
+        "cpu_seconds": limits["cpu_seconds"],
+        "memory_mb": limits["memory_mb"],
+        "max_open_files": limits["max_open_files"],
+    }
+
+
+def _apply_limits(limits: dict[str, Any]) -> None:
+    """Set resource limits in the child before exec.
+
+    Runs from subprocess.Popen's preexec_fn, so it must only call
+    async-signal-safe syscalls: resource.setrlimit is a raw syscall and is
+    safe to use even though preexec_fn in a threaded process is otherwise
+    discouraged.
+    """
+
+    import resource
+
+    cpu = int(limits.get("cpu_seconds") or 0)
+    memory = int(limits.get("memory_mb") or 0)
+    nofile = int(limits.get("max_open_files") or 0)
+    if cpu > 0:
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+    if nofile > 0:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
+    if memory > 0:
+        resource.setrlimit(resource.RLIMIT_AS, (memory * 1024 * 1024, memory * 1024 * 1024))
+
+
+_netns_checked = False
+_netns_works = False
+
+
+def _netns_available() -> bool:
+    """Whether ``unshare -n`` (network namespace) is usable on this host."""
+
+    global _netns_checked, _netns_works
+    if not _netns_checked:
+        _netns_checked = True
+        unshare = shutil.which("unshare")
+        if unshare:
+            try:
+                probe = subprocess.run(
+                    [unshare, "-n", "true"],
+                    timeout=10,
+                    capture_output=True,
+                )
+                _netns_works = probe.returncode == 0
+            except (OSError, subprocess.SubprocessError):
+                _netns_works = False
+    return _netns_works
+
+
+def _command_argv(parts: list[str], tier: str) -> list[str]:
+    """Wrap the command for its tier.
+
+    The "isolated" tier drops external network by running the command in a
+    private network namespace (loopback only) when unshare is available. If
+    the namespace cannot be created, the command still runs with its kernel
+    limits; the runner's internal Docker network remains the outer boundary.
+    """
+
+    limits = TIERS.get(tier, TIERS["isolated"])
+    if limits["network"] or not RUNNER_ENABLE_NETNS:
+        return parts
+    unshare = shutil.which("unshare")
+    if unshare and _netns_available():
+        return [unshare, "-n", *parts]
+    return parts
 
 
 def _trim_output(stdout: str | None, stderr: str | None) -> str:
@@ -197,6 +312,7 @@ def _job_payload(job: RunnerJob, *, renew_lease: bool = False) -> dict[str, Any]
         return {
             "job_id": job.id,
             "status": job.status,
+            "tier": job.tier,
             "exit_code": job.exit_code,
             "output": job.output,
             "created_at": job.created_at,
@@ -217,9 +333,11 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
     parts, directory = _validated_command(request)
     _cleanup_jobs()
     job_id = str(uuid.uuid4())
+    argv = _command_argv(parts, request.tier)
+    limits = _rlimit_args(request.tier)
     try:
         process = subprocess.Popen(
-            parts,
+            argv,
             cwd=directory,
             text=True,
             stdout=subprocess.PIPE,
@@ -237,6 +355,8 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
             # Safe in a threaded ASGI process and gives cancellation a process
             # group containing every child spawned by the command.
             start_new_session=True,
+            # Bounded by the tier's kernel limits before the command execs.
+            preexec_fn=lambda: _apply_limits(limits),
         )
     except OSError as exc:
         raise HTTPException(500, f"Could not start command: {exc}") from exc
@@ -244,6 +364,7 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
         id=job_id,
         command=request.command,
         directory=str(directory),
+        tier=request.tier,
         process=process,
     )
     with _jobs_lock:

@@ -21,11 +21,11 @@
 - [x] Re-planning on failure: detect stalled/failing loops and revise the plan with
       failure evidence instead of burning steps
 
-## Tier 2 - Trust & safety
+## Tier 2 - Trust & safety (completed)
 
-- [ ] Scoped permissions model (path edit rules, command allowlists, ask/allow scopes)
-- [ ] Prompt-injection defense (mark tool/web output as untrusted data)
-- [ ] Sandbox tiering for arbitrary tool execution (network/kernel limits)
+- [x] Scoped permissions model (path edit rules, command allowlists, ask/allow scopes)
+- [x] Prompt-injection defense (mark tool/web output as untrusted data)
+- [x] Sandbox tiering for arbitrary tool execution (network/kernel limits)
 
 ## Tier 3 - Autonomy & scale
 

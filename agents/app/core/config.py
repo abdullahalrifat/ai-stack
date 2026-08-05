@@ -63,7 +63,7 @@ DEFAULT_WORKSPACE = Path(
     os.getenv("DEFAULT_WORKSPACE_DIR", str(WORKSPACE_ROOT))
 ).resolve()
 
-MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "24"))
+MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "40"))
 # Independent read-only tool calls in one model turn run concurrently instead
 # of sequentially. Write tools are never parallelized.
 MAX_PARALLEL_TOOL_CALLS = int(os.getenv("MAX_PARALLEL_TOOL_CALLS", "4"))
@@ -139,6 +139,19 @@ ALLOWED_COMMANDS = env_list(
     "ALLOWED_COMMANDS",
     "git,ls,cat,pytest,python,python3,npm,node,make,grep,find,mypy,ruff,black,flake8",
 )
+
+# Tier 2 scoped permissions. EDIT_ALLOWED_PATHS narrows write tools to a
+# comma-separated list of workspace-relative directories when a request has
+# allow_write set (scope becomes "scoped-write"); empty keeps the legacy
+# full-write scope. COMMAND_ALLOWLIST optionally narrows ALLOWED_COMMANDS
+# further for every run that carries write permission.
+EDIT_ALLOWED_PATHS = env_list("EDIT_ALLOWED_PATHS")
+COMMAND_ALLOWLIST = env_list("COMMAND_ALLOWLIST")
+
+# Commands may need outbound network for some workflows (for example npm
+# install). Off by default: the compose "runner" network is internal, and the
+# runner blocks egress for the "isolated" tier as defense in depth.
+RUN_COMMANDS_ALLOW_NETWORK = env_flag("RUN_COMMANDS_ALLOW_NETWORK", False)
 
 # How long the cached model list from the inference gateway is trusted
 # before being refreshed, to avoid an extra HTTP round trip on every call.
@@ -230,3 +243,8 @@ def validate_settings() -> None:
         raise RuntimeError("Invalid document retrieval settings")
     if not RUNNER_API_KEY:
         raise RuntimeError("RUNNER_API_KEY is required for isolated command execution")
+    for root in EDIT_ALLOWED_PATHS:
+        if Path(root).is_absolute():
+            raise RuntimeError(
+                "EDIT_ALLOWED_PATHS entries must be workspace-relative paths"
+            )

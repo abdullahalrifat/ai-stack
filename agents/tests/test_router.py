@@ -193,6 +193,101 @@ def test_route_request_builds_dependency_validated_task_graph(
 
 @patch("app.agent.router.extract_json")
 @patch("app.agent.router.chat")
+def test_change_request_appends_implementation_task_to_analysis_graph(
+    mock_chat, mock_extract_json
+):
+    mock_chat.return_value = "{}"
+    mock_extract_json.return_value = {
+        "workflow": "code",
+        "complexity": "complex",
+        "translated_task": "Inspect the project and propose an implementation plan for Tier 3.",
+        "tasks": [
+            {
+                "id": "analyze_todo",
+                "objective": "Analyze the TODO list",
+                "workflow": "code",
+                "depends_on": [],
+                "completion_criteria": ["TODO items are understood"],
+            },
+            {
+                "id": "assess_current_state",
+                "objective": "Assess the current repository state",
+                "workflow": "code",
+                "depends_on": ["analyze_todo"],
+                "completion_criteria": ["Current state is documented"],
+            },
+            {
+                "id": "propose_implementation_plan",
+                "objective": "Propose an implementation plan for Tier 3",
+                "workflow": "code",
+                "depends_on": ["assess_current_state"],
+                "completion_criteria": ["A plan is written up"],
+            },
+        ],
+    }
+
+    route = route_request("Review this project and from TODO list implement Tier 3")
+
+    assert route.workflow == "code"
+    assert route.tasks[-1].id == "implement_requested_change"
+    assert route.tasks[-1].depends_on == ["propose_implementation_plan"]
+    assert "edit the workspace files" in route.translated_task
+
+
+@patch("app.agent.router.extract_json")
+@patch("app.agent.router.chat")
+def test_change_request_keeps_graph_that_already_edits(mock_chat, mock_extract_json):
+    mock_chat.return_value = "{}"
+    mock_extract_json.return_value = {
+        "workflow": "code",
+        "complexity": "moderate",
+        "translated_task": "Implement the autoscaling worker pool from TODO.md.",
+        "tasks": [
+            {
+                "id": "implement_worker_pool",
+                "objective": "Implement the autoscaling worker pool and verify it",
+                "workflow": "code",
+                "depends_on": [],
+                "completion_criteria": ["Change implemented and verified"],
+            }
+        ],
+    }
+
+    route = route_request("Implement Tier 3 autoscaling from the TODO list")
+
+    assert route.workflow == "code"
+    assert route.tasks[-1].id == "implement_worker_pool"
+    assert len(route.tasks) == 1
+
+
+@patch("app.agent.router.extract_json")
+@patch("app.agent.router.chat")
+def test_non_code_change_request_is_not_forced_to_edit(mock_chat, mock_extract_json):
+    mock_chat.return_value = "{}"
+    mock_extract_json.return_value = {
+        "workflow": "quick",
+        "complexity": "simple",
+        "translated_task": "Rewrite the opening paragraph.",
+        "tasks": [
+            {
+                "id": "rewrite",
+                "objective": "Rewrite the opening paragraph",
+                "workflow": "quick",
+                "depends_on": [],
+                "completion_criteria": ["Rewritten"],
+            }
+        ],
+    }
+
+    route = route_request("Rewrite this sentence plainly")
+
+    assert route.workflow == "quick"
+    assert route.tasks[-1].id == "rewrite"
+    assert len(route.tasks) == 1
+
+
+@patch("app.agent.router.extract_json")
+@patch("app.agent.router.chat")
 def test_route_request_rejects_cyclic_task_graph(mock_chat, mock_extract_json):
     mock_chat.return_value = "{}"
     mock_extract_json.return_value = {

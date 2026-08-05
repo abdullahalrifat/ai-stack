@@ -176,6 +176,43 @@ def _fallback_route(message: str) -> RouteDecision:
     )
 
 
+def _ensure_implementation_task(
+    message: str,
+    workflow: str,
+    tasks: list[PlannedTask],
+    translated: str,
+) -> tuple[list[PlannedTask], str]:
+    """Deterministically preserve a change request the router may have diluted.
+
+    A small routing model occasionally translates "implement/fix/update X" into
+    an analysis-only graph (for example analyze -> assess -> propose a plan)
+    and loses the requested action. For a code workflow with an explicit change
+    verb, append an implementation task that requires a real workspace edit, so
+    the executor is never asked to merely propose a plan.
+    """
+
+    if workflow != "code" or not tasks or not _CHANGE_INTENT.search(message):
+        return tasks, translated
+    if any(_CHANGE_INTENT.search(task.objective) for task in tasks):
+        return tasks, translated
+    last = tasks[-1]
+    implementation = PlannedTask(
+        id="implement_requested_change",
+        objective="Implement the requested change in the workspace by editing the relevant files",
+        workflow="code",
+        depends_on=[last.id],
+        completion_criteria=[
+            "Implement the requested change in the workspace files"
+        ],
+    )
+    directive = (
+        "\n\nThe user explicitly asked to change the code. A plan, review, or "
+        "recommendation is NOT completion: edit the workspace files with the "
+        "mutation tools, then run the relevant verification tool before answering."
+    )
+    return [*tasks, implementation], (translated + directive)[:2_600]
+
+
 def _policy_workflow(message: str, attachment_text: str, proposed: str) -> str:
     """Apply high-confidence domain policy around fallible model routing."""
     text = message.casefold()
@@ -519,6 +556,7 @@ def route_request(
         ]
     if not tasks:
         return _fallback_route(message)
+    tasks, translated = _ensure_implementation_task(message, workflow, tasks, translated)
     # External evidence is mandatory for Finance/Research. For other workflows
     # accept the model's request only when the original user wording also
     # contains an explicit freshness/source signal, avoiding needless searches
