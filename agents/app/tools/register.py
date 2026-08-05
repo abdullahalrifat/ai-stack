@@ -10,24 +10,25 @@ Tool schemas for native function calling live in app/tool_schemas.py and
 must be kept in sync with the tool names registered below.
 """
 
-from app.tools.registry import registry
 from app.tools.filesystem import (
     edit_file,
     find_file,
-    inspect_test_environment,
     inspect_files,
+    inspect_test_environment,
     list_files,
     project_summary,
     read_file,
     run_command,
     run_tests,
+    search_code,
     search_text,
     tree,
     workspace_root,
     write_file,
 )
-from app.tools.web_search import web_search
+from app.tools.registry import registry
 from app.tools.web_fetch import web_fetch
+from app.tools.web_search import web_search
 
 # =====================================================
 # Filesystem Tools
@@ -44,6 +45,8 @@ registry.register(name="read_file", function=read_file)
 registry.register(name="find_file", function=find_file)
 
 registry.register(name="search_text", function=search_text)
+
+registry.register(name="search_code", function=search_code)
 
 registry.register(name="project_summary", function=project_summary)
 
@@ -62,28 +65,3 @@ registry.register(name="run_tests", function=run_tests)
 registry.register(name="web_search", function=web_search)
 
 registry.register(name="web_fetch", function=web_fetch)
-
-# =====================================================
-# LangChain compatibility
-# =====================================================
-#
-# Used only if agent.py uses create_agent()
-#
-
-TOOLS = [
-    workspace_root,
-    tree,
-    list_files,
-    read_file,
-    find_file,
-    search_text,
-    project_summary,
-    inspect_test_environment,
-    inspect_files,
-    write_file,
-    edit_file,
-    run_command,
-    run_tests,
-    web_search,
-    web_fetch,
-]

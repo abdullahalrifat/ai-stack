@@ -387,7 +387,7 @@ endpoint or Runs UI when that guarantee is required.
 The agent requires `Authorization: Bearer $AGENT_API_KEY` on every endpoint
 except `/health` and the read-only `/models/available` catalog. Tool calls are made through the model's native function
 calling rather than hand-written JSON, and the tools available to it are:
-`list_files`, `tree`, `read_file`, `find_file`, `search_text`,
+`list_files`, `tree`, `read_file`, `find_file`, `search_text`, `search_code`,
 `project_summary`, `inspect_files`, `inspect_test_environment`, `edit_file`,
 `write_file`, `run_command`, `run_tests`, and `web_search`. `edit_file`,
 `write_file`, and `run_command` are

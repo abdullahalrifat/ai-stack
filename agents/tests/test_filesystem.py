@@ -200,6 +200,73 @@ def test_repository_tools_hide_secrets_but_allow_env_templates(workspace):
     assert template == "SECRET=placeholder"
 
 
+def test_search_code_returns_line_numbers_and_context(workspace):
+    (workspace / "src").mkdir()
+    (workspace / "src" / "main.py").write_text(
+        "import os\n"
+        "\n"
+        "def greet(name):\n"
+        "    return f'hello {name}'\n"
+        "\n"
+        "result = greet('world')\n"
+    )
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.search_code.invoke({"pattern": r"def greet"})
+
+    assert result["truncated"] is False
+    match = result["matches"][0]
+    assert match["path"] == "src/main.py"
+    assert match["line"] == 3
+    assert match["text"] == "def greet(name):"
+    assert match["context"]["before"] == ["import os", ""]
+    assert match["context"]["after"] == ["    return f'hello {name}'", ""]
+
+
+def test_search_code_supports_plain_substring_and_case_folding(workspace):
+    (workspace / "a.py").write_text("def Handler(): pass\n")
+    (workspace / "b.py").write_text("def handler(): pass\n")
+
+    with filesystem.workspace_context(str(workspace)):
+        sensitive = filesystem.search_code.invoke({"pattern": "handler"})
+        folded = filesystem.search_code.invoke(
+            {"pattern": "handler", "ignore_case": True}
+        )
+
+    assert [match["path"] for match in sensitive["matches"]] == ["b.py"]
+    assert [match["path"] for match in folded["matches"]] == ["a.py", "b.py"]
+
+
+def test_search_code_honors_file_glob(workspace):
+    (workspace / "one.py").write_text("def target(): pass\n")
+    (workspace / "one.txt").write_text("def target(): pass\n")
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.search_code.invoke(
+            {"pattern": "target", "file_glob": "*.py"}
+        )
+
+    assert [match["path"] for match in result["matches"]] == ["one.py"]
+
+
+def test_search_code_rejects_invalid_regex(workspace):
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.search_code.invoke({"pattern": "["})
+
+    assert "Invalid regular expression" in result["error"]
+
+
+def test_search_code_skips_sensitive_and_binary_files(workspace):
+    (workspace / ".env").write_text("SECRET=handler\n")
+    (workspace / "blob.bin").write_bytes(b"handler\x00binary")
+    (workspace / "ok.py").write_text("def handler(): pass\n")
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.search_code.invoke({"pattern": "handler"})
+
+    assert [match["path"] for match in result["matches"]] == ["ok.py"]
+
+
 def test_inspect_files_bounds_requested_paths(workspace, monkeypatch):
     monkeypatch.setattr(filesystem, "MAX_INSPECT_PATHS", 2)
     for index in range(3):

@@ -96,6 +96,49 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "search_code",
+            "description": (
+                "Search file contents for a regular expression and return each "
+                "matching line with its line number and surrounding context. "
+                "Prefer over search_text when the location of a definition, "
+                "call site, or usage matters."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": (
+                            "Regular expression to match. Patterns without "
+                            "metacharacters match as plain text."
+                        ),
+                    },
+                    "directory": {"type": "string", "default": "."},
+                    "file_glob": {
+                        "type": "string",
+                        "description": (
+                            "Optional glob restricting files to search, such "
+                            "as *.py or tests/*.py."
+                        ),
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "description": "How many lines of context around each match.",
+                        "default": 2,
+                    },
+                    "ignore_case": {
+                        "type": "boolean",
+                        "description": "Match case-insensitively.",
+                        "default": False,
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "project_summary",
             "description": "Summarize the mounted project: file extensions present and important config files found.",
             "parameters": {"type": "object", "properties": {}},

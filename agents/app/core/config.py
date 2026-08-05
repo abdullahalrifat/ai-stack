@@ -64,6 +64,9 @@ DEFAULT_WORKSPACE = Path(
 ).resolve()
 
 MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "24"))
+# Independent read-only tool calls in one model turn run concurrently instead
+# of sequentially. Write tools are never parallelized.
+MAX_PARALLEL_TOOL_CALLS = int(os.getenv("MAX_PARALLEL_TOOL_CALLS", "4"))
 # Stop a weak tool-calling model from spending the entire run repeatedly
 # returning an empty assistant turn. The executor synthesizes its collected
 # evidence once this threshold is reached.
@@ -75,6 +78,14 @@ MAX_UNPRODUCTIVE_TOOL_CALLS = int(os.getenv("MAX_UNPRODUCTIVE_TOOL_CALLS", "3"))
 # A local 8B model has a finite context window.  Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
+# Model-visible budget for a single tool result once structured summarization
+# kicks in. Smaller than MAX_TOOL_OUTPUT_CHARS because it is the token budget
+# for the transcript, not the raw tool payload. The full result is always
+# retained in the run's observations.
+TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "3000"))
+# Head/tail items preserved when a list-shaped tool result exceeds the summary
+# budget (search matches, directory listings, file items).
+TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "3"))
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
 LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "768"))
 # Evidence-rich cross-domain comparisons use a stronger model for the one
@@ -88,6 +99,14 @@ ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
 # Planning is advisory; a small bounded response avoids wasting the local
 # context window on a plan the executor does not need to execute literally.
 PLANNER_MAX_COMPLETION_TOKENS = int(os.getenv("PLANNER_MAX_COMPLETION_TOKENS", "192"))
+REPLAN_MAX_COMPLETION_TOKENS = int(os.getenv("REPLAN_MAX_COMPLETION_TOKENS", "256"))
+# Re-planning policy: revise the plan when this many consecutive tool-failing
+# steps occur, or when this many steps produce no new useful evidence.
+REPLAN_FAIL_STREAK = int(os.getenv("REPLAN_FAIL_STREAK", "3"))
+REPLAN_STUCK_STEPS = int(os.getenv("REPLAN_STUCK_STEPS", "6"))
+# Hard cap so a pathological loop cannot re-plan forever; after this many
+# revisions the executor falls back to its normal recovery behavior.
+REPLAN_MAX_RETRIES = int(os.getenv("REPLAN_MAX_RETRIES", "2"))
 # OpenAI-compatible clients often attach long histories, IDE excerpts, and
 # tool instructions. This bounds only their *incoming* text before the agent
 # adds its own prompt and tool schemas for an 8K local model context.
@@ -187,6 +206,8 @@ def validate_settings() -> None:
         raise RuntimeError("Invalid model context token budget")
     if MAX_CONCURRENT_AGENT_RUNS < 1:
         raise RuntimeError("MAX_CONCURRENT_AGENT_RUNS must be at least 1")
+    if MAX_PARALLEL_TOOL_CALLS < 1:
+        raise RuntimeError("MAX_PARALLEL_TOOL_CALLS must be at least 1")
     if MAX_CONCURRENT_LLM_CALLS < 1:
         raise RuntimeError("MAX_CONCURRENT_LLM_CALLS must be at least 1")
     if RUN_EVENT_BATCH_CHARS < 1 or RUN_EVENT_BATCH_SECONDS <= 0:
@@ -197,6 +218,14 @@ def validate_settings() -> None:
         raise RuntimeError("MAX_EMPTY_SEARCH_RESULTS must be at least 1")
     if MAX_UNPRODUCTIVE_TOOL_CALLS < 1:
         raise RuntimeError("MAX_UNPRODUCTIVE_TOOL_CALLS must be at least 1")
+    if TOOL_RESULT_SUMMARY_CHARS < 256:
+        raise RuntimeError("TOOL_RESULT_SUMMARY_CHARS must be at least 256")
+    if TOOL_RESULT_SUMMARY_ITEMS < 1:
+        raise RuntimeError("TOOL_RESULT_SUMMARY_ITEMS must be at least 1")
+    if REPLAN_FAIL_STREAK < 1 or REPLAN_STUCK_STEPS < 1:
+        raise RuntimeError("Re-planning thresholds must be at least 1")
+    if REPLAN_MAX_RETRIES < 0:
+        raise RuntimeError("REPLAN_MAX_RETRIES cannot be negative")
     if MEMORY_CONTEXT_TOKENS < 128 or DOCUMENT_MAX_BYTES < 1:
         raise RuntimeError("Invalid document retrieval settings")
     if not RUNNER_API_KEY:

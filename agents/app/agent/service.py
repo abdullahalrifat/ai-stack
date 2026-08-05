@@ -523,9 +523,14 @@ def execute_run(run_id: str) -> None:
             state.pending_failure_categories = set(
                 checkpoint.get("pending_failure_categories") or []
             )
+            state.restored_transcript = list(checkpoint.get("messages") or [])
             on_event(
                 "checkpoint_restored",
-                {"steps": state.steps, "observations": len(state.observations)},
+                {
+                    "steps": state.steps,
+                    "observations": len(state.observations),
+                    "transcript_messages": len(state.restored_transcript),
+                },
             )
         store.update_run(run_id, active_workspace=active_workspace)
 

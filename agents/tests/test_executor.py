@@ -211,6 +211,214 @@ def test_answer_audit_accepts_substantive_synthesis_report():
     assert state.task_progress["synthesize_report"] == "completed"
 
 
+def test_answer_audit_requires_verification_after_any_mutation():
+    state = DummyState()
+    state.allow_write = True
+    # "add" triggers the change policy; no verification keyword is present.
+    state.user_message = "Add a helper function"
+    state.successful_mutation = True
+    state.successful_verification = False
+
+    failures = _answer_audit(state, "Added the helper function.")
+
+    assert "requested verification has not completed successfully" in failures
+    assert "requested workspace change has not been made" not in failures
+
+    state.successful_verification = True
+    assert _answer_audit(state, "Added the helper function; tests pass.") == []
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_forces_verification_before_final_answer_after_edit(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Add a helper function"  # no verify keyword in request
+    mock_registry.list_tools.return_value = ["write_file", "run_tests"]
+    mock_registry.execute.side_effect = [
+        {"status": "written", "path": "helpers.py"},
+        {"exit_code": 0, "output": "1 passed"},
+    ]
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "write",
+                    "write_file",
+                    {"file_path": "helpers.py", "content": "def helper(): pass\n"},
+                )
+            ]
+        ),
+        make_message(content="Done. Added the helper function."),
+        make_message(
+            tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+        ),
+        make_message(content="Added the helper function; the test suite passes."),
+    ]
+
+    assert execute_plan(state) == "Added the helper function; the test suite passes."
+    assert mock_registry.execute.call_count == 2
+    transcript = mock_chat_with_tools.call_args_list[1].args[0]
+    repair_messages = [
+        message["content"]
+        for message in transcript
+        if message["role"] == "user"
+        and "read the failure output" in message["content"]
+    ]
+    assert repair_messages, "draft without verification must be rejected with a repair loop"
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_repairs_failing_verification_before_answering(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Fix the broken test"
+    mock_registry.list_tools.return_value = ["write_file", "run_tests"]
+    mock_registry.execute.side_effect = [
+        {"status": "written", "path": "test_broken.py"},
+        {"kind": "pytest", "exit_code": 1, "output": "FAILED test_broken.py::test_x"},
+        {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
+    ]
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "write",
+                    "write_file",
+                    {"file_path": "test_broken.py", "content": "test"},
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+        ),
+        make_message(content="I could not fix it; the tests still fail."),
+        make_message(
+            tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+        ),
+        make_message(content="The failing test was repaired; the suite passes."),
+    ]
+
+    assert (
+        execute_plan(state)
+        == "The failing test was repaired; the suite passes."
+    )
+    assert mock_registry.execute.call_count == 3
+    assert state.successful_mutation is True
+    assert state.successful_verification is True
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_reflects_before_accepting_unevidenced_answer(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    mock_registry.list_tools.return_value = []
+    long_guess = (
+        "This repository uses a FastAPI backend with PostgreSQL and Redis, and it "
+        "serves a React dashboard to authenticated users through a WebSocket API. "
+        "The CLI is packaged with Poetry and the UI uses a PostgreSQL queue. "
+    )
+    mock_chat_with_tools.side_effect = [
+        make_message(content=long_guess),
+        make_message(content=long_guess),
+    ]
+    events = []
+
+    result = execute_plan(
+        state, on_event=lambda kind, payload: events.append((kind, payload))
+    )
+
+    assert result == long_guess.strip()
+    assert [kind for kind, _ in events].count("reflection_required") == 1
+    transcript = mock_chat_with_tools.call_args_list[1].args[0]
+    assert any(
+        message["role"] == "user" and "reviewing your previous reasoning" in message["content"]
+        for message in transcript
+    )
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_reflection_runs_at_most_once(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    mock_registry.list_tools.return_value = []
+    long_guess = (
+        "This repository implements a distributed event pipeline with Kafka-backed "
+        "streams and a gRPC control plane that coordinates worker replicas. "
+    )
+    mock_chat_with_tools.return_value = make_message(content=long_guess)
+    events = []
+
+    result = execute_plan(
+        state, on_event=lambda kind, payload: events.append((kind, payload))
+    )
+
+    assert result == long_guess.strip()
+    assert mock_chat_with_tools.call_count == 2
+    assert [kind for kind, _ in events].count("reflection_required") == 1
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_retries_transient_tool_error_once(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    mock_registry.list_tools.return_value = ["web_fetch"]
+    mock_registry.execute.side_effect = [
+        {"tool_error": "Connection reset by peer"},
+        {"text": "fetched content"},
+    ]
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[make_tool_call("fetch", "web_fetch", {"url": "https://x.test"})]
+        ),
+        make_message(content="Done"),
+    ]
+    events = []
+
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Done"
+    )
+    assert mock_registry.execute.call_count == 2
+    assert [kind for kind, _ in events].count("tool_retry") == 1
+    assert state.observations[-1]["result"] == {"text": "fetched content"}
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_does_not_retry_deterministic_tool_failure(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    mock_registry.list_tools.return_value = ["web_fetch"]
+    mock_registry.execute.return_value = {"error": "URL returned HTTP 404"}
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[make_tool_call("fetch", "web_fetch", {"url": "https://x.test"})]
+        ),
+        make_message(content="Done"),
+    ]
+    events = []
+
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Done"
+    )
+    mock_registry.execute.assert_called_once()
+    assert not any(kind == "tool_retry" for kind, _ in events)
+
+
 def test_failed_guess_does_not_invalidate_successful_inspection():
     state = DummyState()
 
@@ -465,20 +673,71 @@ def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_regis
     checkpoints = []
 
     assert execute_plan(state, on_checkpoint=checkpoints.append) == "Done"
-    assert checkpoints == [
-        {
-            "steps": 1,
-            "plan": [],
-            "observations": [
-                {"tool": "list_files", "result": {"files": ["README.md"]}}
-            ],
-            "route_tasks": [],
-            "task_progress": {},
-            "successful_mutation": False,
-            "successful_verification": False,
-            "pending_failure_categories": [],
-        }
+    assert len(checkpoints) == 1
+    checkpoint = checkpoints[0]
+    assert checkpoint["steps"] == 1
+    assert checkpoint["plan"] == []
+    assert checkpoint["observations"] == [
+        {"tool": "list_files", "result": {"files": ["README.md"]}}
     ]
+    assert checkpoint["route_tasks"] == []
+    assert checkpoint["task_progress"] == {}
+    assert checkpoint["successful_mutation"] is False
+    assert checkpoint["successful_verification"] is False
+    assert checkpoint["pending_failure_categories"] == []
+    transcript = checkpoint["messages"]
+    assert [message["role"] for message in transcript] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+    ]
+    assert transcript[-1]["tool_call_id"] == "call_1"
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_resumes_from_restored_transcript(mock_chat_with_tools, mock_registry):
+    state = DummyState()
+    state.steps = 1
+    state.restored_transcript = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "list_files",
+                        "arguments": '{"directory": "."}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": '[{"path": "README.md"}]',
+        },
+    ]
+    mock_registry.list_tools.return_value = ["list_files"]
+    mock_chat_with_tools.side_effect = [
+        make_message(content="Continuing from the prior evidence.", tool_calls=None),
+    ]
+    events = []
+
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Continuing from the prior evidence."
+    )
+    assert state.restored_transcript == []
+    transcript = mock_chat_with_tools.call_args.args[0]
+    assert len(transcript) == 4  # system + task + two restored messages
+    assert transcript[2]["tool_calls"][0]["id"] == "call_1"
+    assert transcript[3]["tool_call_id"] == "call_1"
 
 
 @patch("app.agent.executor.registry")
@@ -984,6 +1243,64 @@ def test_execute_plan_stops_after_repeated_failed_tool_calls(
     assert mock_chat_with_tools.call_count == 3
     mock_synthesize.assert_called_once_with(state)
     assert ("unproductive_tool_loop", {"repeated_calls": 3}) in events
+
+
+@patch("app.agent.executor.replan", return_value=["read error log", "fix root cause"])
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_replans_after_consecutive_failures(
+    mock_chat_with_tools,
+    mock_registry,
+    mock_replan,
+):
+    state = DummyState()
+    state.reflection_run = True
+    mock_registry.list_tools.return_value = ["read_file"]
+    mock_registry.execute.return_value = {"error": "File not found"}
+    seen_messages = []
+    events = []
+    turns = 0
+
+    def respond(messages, **kwargs):
+        nonlocal turns
+        turns += 1
+        seen_messages.append([dict(message) for message in messages])
+        if turns < 4:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "call",
+                        "read_file",
+                        {"file_path": f"missing_{turns}.py"},
+                    )
+                ]
+            )
+        return make_message(content="Blocked by missing source files.")
+
+    mock_chat_with_tools.side_effect = respond
+
+    answer = execute_plan(
+        state, on_event=lambda kind, payload: events.append((kind, payload))
+    )
+
+    assert answer.startswith("Blocked by missing source files.")
+    assert mock_chat_with_tools.call_count == 5
+    mock_replan.assert_called_once()
+    assert mock_replan.call_args.args[0] is state
+    assert "read_file" in mock_replan.call_args.args[1]
+
+    replanned = [payload for kind, payload in events if kind == "replanned"]
+    assert len(replanned) == 1
+    assert replanned[0]["reason"] == "3 consecutive tool-call steps failed"
+    assert replanned[0]["new_plan"] == ["read error log", "fix root cause"]
+    assert state.plan == ["read error log", "fix root cause"]
+
+    last_turn = seen_messages[-1]
+    assert any(
+        message["role"] == "user"
+        and "Follow this revised plan" in message["content"]
+        for message in last_turn
+    )
 
 
 @patch("app.agent.executor.registry")

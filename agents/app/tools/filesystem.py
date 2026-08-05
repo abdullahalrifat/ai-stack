@@ -1,5 +1,6 @@
-import importlib.util
+import asyncio
 import difflib
+import importlib.util
 import logging
 import os
 import re
@@ -12,7 +13,6 @@ from pathlib import Path
 
 import requests
 from langchain.tools import tool
-import asyncio
 
 from app.core.cancellation import cancellation_requested
 from app.core.config import (
@@ -82,6 +82,8 @@ MAX_SCAN_FILES = 5_000
 MAX_SEARCH_FILE_SIZE = 512_000
 MAX_INSPECT_PATHS = 20
 MAX_DIRECTORY_ENTRIES = 1_000
+MAX_CODE_SEARCH_MATCHES = 100
+MAX_CODE_SEARCH_CONTEXT_LINES = 5
 RUNNER_POLL_SECONDS = 0.20
 RUNNER_REQUEST_TIMEOUT_SECONDS = 5
 
@@ -702,6 +704,81 @@ def search_text(
                     break
 
         return matches[:100]
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================
+# Search Code
+# ============================================================
+
+
+@tool
+def search_code(
+    pattern: str,
+    directory: str = ".",
+    file_glob: str = "",
+    context_lines: int = 2,
+    ignore_case: bool = False,
+):
+    """Search file contents for a regular expression with line numbers and context.
+
+    Returns each matching line with its 1-based line number, the matched text,
+    and a bounded window of surrounding context, sorted by file path and line
+    number. The pattern is treated as a regular expression; patterns without
+    metacharacters are matched as plain case-sensitive substrings unless
+    ignore_case is set. file_glob restricts the search to matching file paths
+    (for example "*.py" or "tests/*.py"). Results are bounded to the first 100
+    matches across at most 5000 files.
+    """
+
+    try:
+        root = resolve_path(directory)
+        try:
+            regex = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        except re.error as exc:
+            return {"error": f"Invalid regular expression: {exc}"}
+
+        context_lines = max(0, min(int(context_lines), MAX_CODE_SEARCH_CONTEXT_LINES))
+        matches = []
+
+        for index, file in enumerate(sorted(root.rglob("*"))):
+            if index >= MAX_SCAN_FILES:
+                break
+            if ignored(file) or not file.is_file():
+                continue
+            if file.stat().st_size > MAX_SEARCH_FILE_SIZE:
+                continue
+            if file_glob and not file.match(file_glob):
+                continue
+
+            try:
+                text = _read_utf8_text(file)
+            except ValueError:
+                continue
+            lines = text.splitlines()
+
+            for line_index, line in enumerate(lines, start=1):
+                if not regex.search(line):
+                    continue
+                matches.append(
+                    {
+                        "path": relative(file),
+                        "line": line_index,
+                        "text": line,
+                        "context": {
+                            "before": lines[
+                                max(0, line_index - 1 - context_lines) : line_index - 1
+                            ],
+                            "after": lines[line_index : line_index + context_lines],
+                        },
+                    }
+                )
+                if len(matches) >= MAX_CODE_SEARCH_MATCHES:
+                    return {"matches": matches, "truncated": True}
+
+        return {"matches": matches, "truncated": False}
 
     except Exception as e:
         return {"error": str(e)}

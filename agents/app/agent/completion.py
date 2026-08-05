@@ -142,9 +142,11 @@ def answer_audit(state, answer: str) -> list[str]:
     if getattr(state, "allow_write", False) and change_requested:
         if not getattr(state, "successful_mutation", False):
             failures.append("requested workspace change has not been made")
-        if verification_requested and not getattr(
-            state, "successful_verification", False
-        ):
+        # A completed mutation is not accepted until a verification tool
+        # (run_tests, or a build/lint/test run_command) succeeds. This is
+        # deterministic rather than derived from the wording of the request:
+        # an edit the model has not proven works is not a finished outcome.
+        if not getattr(state, "successful_verification", False):
             failures.append("requested verification has not completed successfully")
 
     relevant_failure_categories = {"inspection"}

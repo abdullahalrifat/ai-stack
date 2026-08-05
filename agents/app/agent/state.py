@@ -58,6 +58,8 @@ class AgentState:
 
     messages: list = field(default_factory=list)
 
+    restored_transcript: list = field(default_factory=list)
+
     steps: int = 0
 
     max_steps: int = 15

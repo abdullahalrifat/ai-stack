@@ -364,6 +364,66 @@ def test_durable_run_uses_independent_worker_heartbeat(monkeypatch):
     assert len(started) == 1
 
 
+@patch("app.agent.service.save_memory")
+@patch("app.agent.service.save_conversation")
+@patch("app.agent.service.execute_plan", return_value="continued answer")
+@patch("app.agent.service.create_plan", return_value=["inspect"])
+@patch("app.agent.service.search_memory", return_value=[])
+@patch("app.agent.service.get_conversation", return_value=[])
+@patch("app.agent.service.workspace_context", return_value=nullcontext())
+def test_execute_read_only_run_restores_checkpoint_transcript(
+    mock_workspace,
+    mock_history,
+    mock_memory,
+    mock_plan,
+    mock_execute,
+    mock_save_conversation,
+    mock_save_memory,
+    monkeypatch,
+):
+    store = FakeRunStore()
+    store.run["checkpoint"] = {
+        "steps": 3,
+        "observations": [{"tool": "read_file", "result": "file content"}],
+        "route_tasks": [],
+        "task_progress": {},
+        "successful_mutation": False,
+        "successful_verification": False,
+        "pending_failure_categories": [],
+        "messages": [
+            {"role": "assistant", "content": ""},
+            {"role": "tool", "tool_call_id": "call_1", "content": "file content"},
+        ],
+    }
+
+    class Thread:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            pass
+
+        def join(self, timeout=None):
+            assert timeout == 1
+
+    monkeypatch.setattr(agent.threading, "Thread", Thread)
+    with patch("app.agent.service.get_run_store", return_value=store):
+        agent.execute_run("run-1")
+
+    assert store.run["status"] == "completed"
+    assert store.run["answer"] == "continued answer"
+    executed_state = mock_execute.call_args.args[0]
+    assert executed_state.steps == 3
+    assert executed_state.observations == [
+        {"tool": "read_file", "result": "file content"}
+    ]
+    assert executed_state.restored_transcript == [
+        {"role": "assistant", "content": ""},
+        {"role": "tool", "tool_call_id": "call_1", "content": "file content"},
+    ]
+    assert "checkpoint_restored" in [event for event, _ in store.events]
+
+
 def test_auto_route_hands_full_planning_contract_to_executor(monkeypatch):
     decision = RouteDecision(
         workflow="finance",

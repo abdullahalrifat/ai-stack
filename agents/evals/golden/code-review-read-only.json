@@ -1,0 +1,50 @@
+{
+  "id": "code-review-read-only",
+  "prompt": "Review this repository for reliability issues. Inspect the project before answering.",
+  "profile": "code",
+  "model": "test-model",
+  "workspace": ".",
+  "allow_write": false,
+  "plan": [
+    "Inspect the repository root and project documentation.",
+    "Read the relevant configuration, manifests, source, and tests.",
+    "Summarize evidence-backed findings and verification results."
+  ],
+  "steps": 2,
+  "partial": false,
+  "successful_mutation": false,
+  "successful_verification": false,
+  "tool_sequence": [
+    {
+      "tool": "list_files",
+      "args": {"directory": "."},
+      "result": [
+        {"path": "README.md", "type": "file"},
+        {"path": "src", "type": "directory"}
+      ]
+    },
+    {
+      "tool": "read_file",
+      "args": {"file_path": "README.md"},
+      "result": {
+        "path": "README.md",
+        "content": "# Example\n\nThis is a demo repository used for offline replay tests."
+      }
+    }
+  ],
+  "model_turns": [
+    {
+      "tool_calls": [
+        {
+          "id": "call_readme",
+          "name": "read_file",
+          "arguments": {"file_path": "README.md"}
+        }
+      ]
+    },
+    {
+      "content": "Evidence: README.md states this is a demo repository used for offline replay tests."
+    }
+  ],
+  "answer": "Evidence: README.md states this is a demo repository used for offline replay tests."
+}

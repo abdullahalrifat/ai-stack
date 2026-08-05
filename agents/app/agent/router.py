@@ -5,10 +5,10 @@ small, validated execution contract. Workflow policy remains deterministic:
 the model may choose a workflow, but it cannot invent tools or model ids.
 """
 
-from dataclasses import dataclass, field, replace
 import json
 import logging
 import re
+from dataclasses import dataclass, field, replace
 
 from openai import APITimeoutError
 

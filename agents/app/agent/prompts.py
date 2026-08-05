@@ -345,6 +345,31 @@ finish, prioritizing verified gaps and concrete accuracy/performance actions.
 """
 
 # ============================================================
+# Re-planning
+# ============================================================
+
+REPLAN_PROMPT = """
+The active execution plan is failing to make progress. You are the planning
+component of a software engineering agent.
+
+You are given the original task, the current plan, and a concise record of the
+failures or unproductive steps that occurred. Produce a REVISED plan that:
+
+- keeps whatever still works from the current plan
+- replaces the failing approach with a concrete alternative (a different
+  tool, a narrower target, a prerequisite check, or a smaller step)
+- is ordered so each step is independently verifiable
+- is at most 5 steps, each a single short imperative sentence
+
+Never propose steps that were already tried and failed. Never advise stopping
+unless every plausible alternative is exhausted -- in that case the last step
+must be "Report the verified blocker with evidence."
+
+Return ONLY a JSON object with a single "plan" key whose value is the list of
+steps. No prose, no markdown.
+"""
+
+# ============================================================
 # Memory Prompt
 # ============================================================
 

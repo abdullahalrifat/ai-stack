@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from types import SimpleNamespace
 
 from ..core.cancellation import cancellation_context
@@ -13,28 +14,38 @@ from ..core.config import (
     MAX_AGENT_STEPS,
     MAX_EMPTY_MODEL_TURNS,
     MAX_EMPTY_SEARCH_RESULTS,
+    MAX_PARALLEL_TOOL_CALLS,
     MAX_TOOL_OUTPUT_CHARS,
     MAX_UNPRODUCTIVE_TOOL_CALLS,
+    REPLAN_FAIL_STREAK,
+    REPLAN_MAX_RETRIES,
+    REPLAN_STUCK_STEPS,
 )
 from ..core.evidence import evidence_prompt
 from ..core.exceptions import RunCancelled
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
+from ..tools.filesystem import current_workspace, resolve_path
 from ..tools.registry import registry
 from ..tools.schemas import schemas_for
-from ..tools.filesystem import current_workspace, resolve_path
 from .completion import (
     answer_audit as _answer_audit,
 )
 from .completion import (
     record_tool_progress as _record_tool_progress,
 )
-from .completion import requires_workspace_change
 from .completion import (
+    requires_workspace_change,
     tool_result_failed,
 )
-from .context_budget import estimate_tokens, fit_user_context
+from .context_budget import estimate_tokens, fit_user_context, summarize_tool_result
 from .parser import parse_tool_arguments
-from .prompts import COMPACTION_PROMPT, PARTIAL_SYNTHESIS_PROMPT, executor_prompt
+from .planner import replan
+from .prompts import (
+    COMPACTION_PROMPT,
+    PARTIAL_SYNTHESIS_PROMPT,
+    REFLECTION_PROMPT,
+    executor_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +64,7 @@ QUICK_WORKSPACE_TOOLS = {
     "read_file",
     "find_file",
     "search_text",
+    "search_code",
     "project_summary",
     "inspect_files",
 }
@@ -88,6 +100,7 @@ def normalize_tool_args(tool_name: str, args: dict) -> dict:
         "read_file": {"path": "file_path"},
         "tree": {"path": "directory"},
         "search_text": {"query": "keyword"},
+        "search_code": {"query": "pattern", "path": "directory"},
     }
 
     if tool_name in aliases:
@@ -118,6 +131,20 @@ _LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
 # up with a clear diagnostic instead of quietly burning all MAX_STEPS.
 MAX_LEAKED_TOOL_CALLS = 2
 
+# A transient tool failure (an unexpected exception, or the isolated runner
+# being briefly unavailable) is retried once with the same arguments before it
+# is surfaced to the model as a failed call. Deterministic results -- missing
+# files, command failures -- are never retried.
+TOOL_TRANSIENT_RETRIES = 1
+
+# Runner/connection error strings that represent transient infrastructure
+# problems rather than the tool's deterministic verdict.
+_TRANSIENT_TOOL_ERROR_MARKERS = (
+    "Isolated runner is unavailable.",
+    "Could not read isolated runner job.",
+    "Isolated runner status timed out.",
+)
+
 # Models with weak native tool calling commonly answer current-data questions
 # from their training cutoff.  These requests must use the local search tool
 # before the model is allowed to synthesize an answer.
@@ -146,6 +173,12 @@ _PREMATURE_RECOVERY_HANDOFF = re.compile(
     r"(?:check|run|execute|install|try|start|proceed|continue)\b",
     re.IGNORECASE | re.DOTALL,
 )
+
+# A draft answer this long is a claim of substantive findings. If the model
+# produced it without a single useful tool observation for a repository
+# request, it is almost certainly asserting facts it did not collect, so it is
+# sent through one bounded self-reflection pass before being accepted.
+REFLECTION_MIN_ANSWER_CHARS = 120
 
 
 def requires_external_search(message: str) -> bool:
@@ -454,7 +487,7 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
     if explicit_paths and "inspect_files" in available_tools:
         prefetch_tools.append(("inspect_files", {"paths": explicit_paths}))
     if "inspect_test_environment" in available_tools and re.search(
-        r"\b(?:coverage|test|tests|pytest|lint)\b", state.user_message, re.I
+        r"\b(?:coverage|test|tests|pytest|lint)\b", state.user_message, re.IGNORECASE
     ):
         prefetch_tools.append(("inspect_test_environment", {"directory": "."}))
     if "inspect_files" in available_tools and re.search(
@@ -561,6 +594,96 @@ def _truncate(text: str) -> str:
     return text
 
 
+def _execute_tool_worker(should_cancel, tool_name: str, args: dict):
+    """Run one read-only tool call on a parallel worker thread.
+
+    Cancellation is cooperative: the worker installs the run's cancellation
+    callback in its own thread-local context so long-running tools abort when
+    the run is cancelled.
+    """
+
+    with cancellation_context(should_cancel):
+        return registry.execute(tool_name, args)
+
+
+def _parallel_read_only_calls(tool_calls, available_tools, tool_result_cache):
+    """Split a model turn's tool calls into a parallel-safe read-only batch.
+
+    Returns a list of ``(index, tool_name, args)`` tuples for independent
+    read-only calls. Write tools, unavailable tools, and calls that would
+    hit the result cache are left for the sequential path.
+    """
+
+    candidates = []
+    for index, call in enumerate(tool_calls):
+        tool_name = call.function.name
+        if tool_name in WRITE_TOOLS or tool_name not in available_tools:
+            continue
+        raw_args = parse_tool_arguments(call.function.arguments)
+        args = normalize_tool_args(tool_name, raw_args)
+        fingerprint = _tool_fingerprint(tool_name, args)
+        duplicate = (
+            tool_name in CACHEABLE_READ_TOOLS
+            and fingerprint in tool_result_cache
+        )
+        if duplicate:
+            continue
+        candidates.append((index, tool_name, args))
+    return candidates
+
+
+def _is_transient_tool_failure(result) -> bool:
+    """Recognize retryable infrastructure failures from a tool result.
+
+    Only unexpected exceptions and isolated-runner connectivity problems are
+    retried. Deterministic errors (file not found, failed command, rejected
+    arguments) are not: retrying them would only burn a step.
+    """
+
+    if not isinstance(result, dict):
+        return False
+    if result.get("tool_error"):
+        return True
+    error = result.get("error")
+    if not isinstance(error, str):
+        return False
+    return any(marker in error for marker in _TRANSIENT_TOOL_ERROR_MARKERS)
+
+
+def _failure_context(state) -> str:
+    """Build a concise record of recent failed tool results for re-planning."""
+
+    lines = []
+    for observation in getattr(state, "observations", [])[-8:]:
+        result = observation.get("result")
+        if tool_result_failed(result):
+            summary = json.dumps(result, default=str)[:300]
+            lines.append(f"- {observation.get('tool')}: {summary}")
+    return "\n".join(lines) or "(no failure details recorded)"
+
+
+def _reflection_needed(state, answer: str) -> bool:
+    """Decide whether a draft answer needs one bounded self-reflection pass.
+
+    Reflection runs at most once per run and only when a repository request
+    produced a substantive draft with no useful tool evidence behind it -- the
+    situation in which a weak model is most likely to assert unsupported facts
+    about the mounted source. When triggered, the draft is held back and the
+    model is asked to verify or correct it with tools.
+    """
+
+    if getattr(state, "reflection_run", False):
+        return False
+    if not requires_workspace_inspection(state.user_message):
+        return False
+    if len(answer.strip()) < REFLECTION_MIN_ANSWER_CHARS:
+        return False
+    return not any(
+        not tool_result_failed(observation.get("result"))
+        for observation in state.observations
+    )
+
+
 def _bounded_context(value, limit: int) -> str:
     """Serialize stored history/memory without letting it exhaust model context."""
 
@@ -570,14 +693,16 @@ def _bounded_context(value, limit: int) -> str:
     return f"{text[:limit]}\n...[older stored context omitted]"
 
 
-def _compact_history(messages: list, model: str) -> list:
+def _compact_history(messages: list, model: str, goal: str = "") -> list:
     """Summarize older tool exchanges once the transcript grows large.
 
     Keeps the system prompt, the original task message, and the most recent
     CONTEXT_COMPACT_KEEP_RECENT messages verbatim; folds everything else into
-    a single summary message. This lets the loop keep running for many steps
-    without unbounded context growth. If summarization itself fails, the
-    full history is kept rather than losing information silently.
+    a single summary message. The original task and current plan are passed to
+    the summarizer so the compressed record keeps goal-relevant facts. This
+    lets the loop keep running for many steps without unbounded context
+    growth. If summarization itself fails, the full history is kept rather
+    than losing information silently.
     """
 
     head_len = 2  # system prompt + initial task message
@@ -596,12 +721,16 @@ def _compact_history(messages: list, model: str) -> list:
         indent=2,
         default=str,
     )
+    user = (
+        f"Original task:\n{_bounded_context(goal, 1_200)}\n\n"
+        f"Transcript of earlier steps:\n{transcript}"
+    )
 
     try:
         summary = chat(
             [
                 {"role": "system", "content": COMPACTION_PROMPT},
-                {"role": "user", "content": transcript},
+                {"role": "user", "content": user},
             ],
             model=model,
         )
@@ -938,6 +1067,10 @@ tool. Do not provide a final answer before both actions succeed.
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": task_context},
     ]
+    restored_transcript = getattr(state, "restored_transcript", None) or []
+    if restored_transcript:
+        messages.extend(restored_transcript)
+        state.restored_transcript = []
 
     leaked_tool_call_count = 0
     research_retry_count = 0
@@ -951,6 +1084,9 @@ tool. Do not provide a final answer before both actions succeed.
     )
     recovery_required = False
     recovery_handoff_count = 0
+    fail_streak = 0
+    stuck_steps = 0
+    replan_count = 0
 
     for step in range(MAX_STEPS):
         if should_cancel():
@@ -961,7 +1097,11 @@ tool. Do not provide a final answer before both actions succeed.
 
         if _needs_compaction(messages, system_prompt, tools):
             before = len(messages)
-            messages = _compact_history(messages, state.model)
+            messages = _compact_history(
+                messages,
+                state.model,
+                goal=f"{state.user_message}\nPlan: {state.plan}",
+            )
             if len(messages) < before:
                 on_event(
                     "context_compacted",
@@ -993,6 +1133,7 @@ tool. Do not provide a final answer before both actions succeed.
             empty_turn_count = 0
             failed_tools: list[str] = []
             duplicate_tools: list[str] = []
+            turn_had_success = False
             messages.append(
                 {
                     "role": "assistant",
@@ -1011,7 +1152,48 @@ tool. Do not provide a final answer before both actions succeed.
                 }
             )
 
-            for call in tool_calls:
+            parallel_results = {}
+            if len(tool_calls) > 1:
+                candidates = _parallel_read_only_calls(
+                    tool_calls, available_tools, tool_result_cache
+                )
+                if len(candidates) >= 2:
+                    logger.info(
+                        "Executing %d independent read-only tool calls in parallel",
+                        len(candidates),
+                    )
+                    on_event(
+                        "tool_call_parallel",
+                        {
+                            "tools": [tool for _, tool, _ in candidates],
+                            "workers": min(
+                                MAX_PARALLEL_TOOL_CALLS, len(candidates)
+                            ),
+                        },
+                    )
+                    with ThreadPoolExecutor(
+                        max_workers=min(MAX_PARALLEL_TOOL_CALLS, len(candidates))
+                    ) as pool:
+                        future_map = {
+                            pool.submit(
+                                _execute_tool_worker, should_cancel, tool, args
+                            ): (index, tool, args)
+                            for index, tool, args in candidates
+                        }
+                        for future in as_completed(future_map):
+                            index, tool, args = future_map[future]
+                            try:
+                                result = future.result()
+                            except RunCancelled:
+                                raise
+                            except Exception as e:
+                                logger.exception(
+                                    "Parallel tool %s raised unexpectedly", tool
+                                )
+                                result = {"error": str(e)}
+                            parallel_results[index] = result
+
+            for call_index, call in enumerate(tool_calls):
                 if should_cancel():
                     on_event("run_cancelling", {})
                     raise RunCancelled()
@@ -1040,14 +1222,37 @@ tool. Do not provide a final answer before both actions succeed.
                         {"tool": tool_name, "args": args, "cached": True},
                     )
                 else:
-                    try:
-                        with cancellation_context(should_cancel):
-                            result = registry.execute(tool_name, args)
-                    except RunCancelled:
-                        raise
-                    except Exception as e:
-                        logger.exception("Tool %s raised unexpectedly", tool_name)
-                        result = {"error": str(e)}
+                    if call_index in parallel_results:
+                        result = parallel_results[call_index]
+                    else:
+                        try:
+                            with cancellation_context(should_cancel):
+                                result = registry.execute(tool_name, args)
+                        except RunCancelled:
+                            raise
+                        except Exception as e:
+                            logger.exception("Tool %s raised unexpectedly", tool_name)
+                            result = {"error": str(e)}
+                    for attempt in range(TOOL_TRANSIENT_RETRIES):
+                        if should_cancel() or not _is_transient_tool_failure(result):
+                            break
+                        on_event(
+                            "tool_retry",
+                            {"tool": tool_name, "attempt": attempt + 1},
+                        )
+                        logger.warning(
+                            "Retrying tool %s after transient failure: %s",
+                            tool_name,
+                            result,
+                        )
+                        try:
+                            with cancellation_context(should_cancel):
+                                result = registry.execute(tool_name, args)
+                        except RunCancelled:
+                            raise
+                        except Exception as e:
+                            logger.exception("Tool %s raised on retry", tool_name)
+                            result = {"error": str(e)}
 
                 if not duplicate:
                     state.add_tool(tool_name, result)
@@ -1065,6 +1270,34 @@ tool. Do not provide a final answer before both actions succeed.
                             "exit_code": result.get("exit_code"),
                         },
                     )
+                failed = tool_result_failed(result)
+                if not failed and not duplicate and tool_name in CACHEABLE_READ_TOOLS:
+                    tool_result_cache[fingerprint] = result
+                if tool_name in {"search_text", "search_code"} and not result:
+                    empty_search_count += 1
+                elif not failed:
+                    empty_search_count = 0
+
+                unproductive = failed
+                if unproductive:
+                    unproductive_calls[fingerprint] = (
+                        unproductive_calls.get(fingerprint, 0) + 1
+                    )
+                    failed_tools.append(tool_name)
+                else:
+                    unproductive_calls.clear()
+                    turn_had_success = True
+
+                result_text = summarize_tool_result(tool_name, result)
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": result_text,
+                    }
+                )
+
                 if on_checkpoint is not None:
                     on_checkpoint(
                         {
@@ -1087,35 +1320,9 @@ tool. Do not provide a final answer before both actions succeed.
                             "pending_failure_categories": sorted(
                                 getattr(state, "pending_failure_categories", set())
                             ),
+                            "messages": [dict(message) for message in messages[-40:]],
                         }
                     )
-
-                failed = tool_result_failed(result)
-                if not failed and not duplicate and tool_name in CACHEABLE_READ_TOOLS:
-                    tool_result_cache[fingerprint] = result
-                if tool_name == "search_text" and not result:
-                    empty_search_count += 1
-                elif not failed:
-                    empty_search_count = 0
-
-                unproductive = failed
-                if unproductive:
-                    unproductive_calls[fingerprint] = (
-                        unproductive_calls.get(fingerprint, 0) + 1
-                    )
-                    failed_tools.append(tool_name)
-                else:
-                    unproductive_calls.clear()
-
-                result_text = _truncate(json.dumps(result, default=str))
-
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": result_text,
-                    }
-                )
 
             if empty_search_count >= MAX_EMPTY_SEARCH_RESULTS:
                 answer = _synthesize_partial_answer(state)
@@ -1180,6 +1387,59 @@ tool. Do not provide a final answer before both actions succeed.
                         },
                     )
                     return finalize(answer, partial=not evidence_ready)
+
+            if turn_had_success:
+                fail_streak = 0
+                stuck_steps = 0
+            else:
+                fail_streak += 1
+                stuck_steps += 1
+
+            replan_reason = ""
+            if replan_count < REPLAN_MAX_RETRIES:
+                if stuck_steps >= REPLAN_STUCK_STEPS:
+                    replan_reason = (
+                        f"{stuck_steps} consecutive steps produced no new useful evidence"
+                    )
+                elif fail_streak >= REPLAN_FAIL_STREAK:
+                    replan_reason = f"{fail_streak} consecutive tool-call steps failed"
+
+            if replan_reason:
+                old_plan = list(state.plan or [])
+                new_plan = replan(state, _failure_context(state))
+                state.plan = new_plan
+                replan_count += 1
+                fail_streak = 0
+                stuck_steps = 0
+                recovery_required = False
+                recovery_handoff_count = 0
+                on_event(
+                    "replanned",
+                    {
+                        "reason": replan_reason,
+                        "old_plan": old_plan,
+                        "new_plan": new_plan,
+                        "steps": state.steps,
+                    },
+                )
+                logger.warning(
+                    "Re-planning after %s (replan %d/%d)",
+                    replan_reason,
+                    replan_count,
+                    REPLAN_MAX_RETRIES,
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "The current plan is not producing progress. Do not keep repeating the "
+                            "failing approach. Follow this revised plan and continue with tools:\n"
+                            + "\n".join(f"{i + 1}. {step}" for i, step in enumerate(new_plan))
+                            or "(no revised plan available; use the safest alternative path)"
+                        ),
+                    }
+                )
+                continue
 
             if failed_tools:
                 recovery_required = True
@@ -1364,9 +1624,10 @@ tool. Do not provide a final answer before both actions succeed.
                     recovery_instruction = (
                         "The draft is rejected because the requested work has not been performed. "
                         "Do not revise the prose and do not offer recommendations. Continue with "
-                        "tools now: measure the current behavior or coverage, inspect the relevant "
-                        "uncovered code, edit or create focused tests, and run verification. Return "
-                        "a final answer only after mutation and verification tools both succeed."
+                        "tools now: make the required edit, then run verification (run_tests or a "
+                        "build/lint/test command). If verification fails, read the failure output "
+                        "and the affected code, repair the change, and re-run verification. Return "
+                        "a final answer only after a mutation tool and a verification tool both succeed."
                     )
                 else:
                     recovery_instruction = (
@@ -1388,6 +1649,22 @@ tool. Do not provide a final answer before both actions succeed.
                 audit_failures
             )
             return finalize(answer, partial=True)
+
+        if _reflection_needed(state, answer):
+            state.reflection_run = True
+            on_event("reflection_required", {})
+            messages.append({"role": "assistant", "content": answer})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        REFLECTION_PROMPT
+                        + "\n\nDraft answer to review against the evidence:\n"
+                        + answer
+                    ),
+                }
+            )
+            continue
 
         return finalize(answer)
 
