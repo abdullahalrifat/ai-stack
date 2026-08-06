@@ -1135,6 +1135,165 @@ def edit_file(
         return {"error": str(e)}
 
 
+def _fuzzy_locate(text: str, old_string: str) -> dict | None:
+    """Find the best approximate location of `old_string` in `text`.
+
+    Returns a dict with 0-based line range ``start``/``end``, the matched
+    region text, and a 0..1 ``confidence``, or None when nothing is close.
+    Matching is line-based (line counts must agree) and strips leading/trailing
+    whitespace per line so small indentation or spacing drift still matches.
+    When two distinct regions score within 0.05 of each other the match is
+    ambiguous and None is returned -- silently editing the wrong location is
+    worse than asking for more context.
+    """
+    old_lines = old_string.splitlines()
+    if not old_lines or len(old_lines) > len(text.splitlines(keepends=True)):
+        return None
+    text_lines = text.splitlines()
+    n = len(old_lines)
+    if len(text_lines) < n:
+        return None
+
+    def ratio(a: str, b: str) -> float:
+        return difflib.SequenceMatcher(None, a.strip(), b.strip()).ratio()
+
+    old_stripped = [line.strip() for line in old_lines]
+    old_joined = "\n".join(old_stripped)
+    scored: list[tuple[float, int]] = []
+    for start in range(len(text_lines) - n + 1):
+        window = [line.strip() for line in text_lines[start : start + n]]
+        if window == old_stripped:
+            scored.append((1.0, start))
+            continue
+        # Cheap gate: the first line must resemble the target's first line.
+        if ratio(text_lines[start], old_lines[0]) < 0.70:
+            continue
+        score = difflib.SequenceMatcher(None, "\n".join(window), old_joined).ratio()
+        if score >= 0.60:
+            scored.append((score, start))
+
+    if not scored:
+        return None
+    scored.sort(reverse=True)
+    best_score, best_start = scored[0]
+    if len(scored) > 1:
+        _, second_start = scored[1]
+        if second_start != best_start and best_score - scored[1][0] < 0.05:
+            return None
+    end = best_start + n
+    keepends = text.splitlines(keepends=True)
+    return {
+        "start": best_start,
+        "end": end,
+        "matched_text": "".join(keepends[best_start:end]),
+        "confidence": round(best_score, 3),
+    }
+
+
+@tool
+def apply_patch(
+    file_path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+    dry_run: bool = False,
+):
+    """Apply an edit, tolerating small mismatches in old_string.
+
+    Tries edit_file's exact unique substring match first. If the exact text
+    is absent, finds the closest line-aligned region (fuzzy) and replaces it,
+    reporting the confidence and the actual matched text so the model can
+    verify it edited the intended location. Refuses ambiguous matches instead
+    of guessing.
+    """
+    try:
+        path = resolve_path(file_path)
+        active_policy().check_write(path, current_workspace())
+
+        if not path.exists():
+            return {"error": "File not found"}
+
+        if path.stat().st_size > MAX_FILE_SIZE:
+            return {"error": "File exceeds maximum size."}
+
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        count = text.count(old_string)
+
+        match_info = {"match": "exact"}
+        new_text = text
+        if count == 1 or (count > 1 and replace_all):
+            new_text = (
+                text.replace(old_string, new_string)
+                if replace_all
+                else text.replace(old_string, new_string, 1)
+            )
+            match_info["occurrences_replaced"] = count if replace_all else 1
+        elif count > 1:
+            return {
+                "error": f"old_string is not unique ({count} occurrences). "
+                "Provide more surrounding context, or set replace_all=true "
+                "to replace every occurrence."
+            }
+        else:
+            located = _fuzzy_locate(text, old_string)
+            if located is None:
+                return {
+                    "error": "old_string not found in file and no close match "
+                    "was located. Re-read the file and retry with an exact "
+                    "match or additional surrounding context."
+                }
+            keepends = text.splitlines(keepends=True)
+            head = "".join(keepends[: located["start"]])
+            tail = "".join(keepends[located["end"] :])
+            replacement = new_string
+            if replacement:
+                # A code edit replacing a line usually keeps the line's
+                # indentation; inherit it when the model guessed content
+                # without leading whitespace.
+                first = keepends[located["start"]]
+                indent = first[: len(first) - len(first.lstrip())]
+                first_repl = replacement.splitlines()[0] if replacement.splitlines() else replacement
+                if indent and not first_repl[:1].isspace():
+                    replacement = indent + replacement
+            if (
+                replacement
+                and located["end"] > located["start"]
+                and keepends[located["end"] - 1].endswith("\n")
+                and not replacement.endswith("\n")
+            ):
+                replacement += "\n"
+            new_text = head + replacement + tail
+            match_info = {
+                "match": "fuzzy",
+                "confidence": located["confidence"],
+                "matched_text": located["matched_text"],
+            }
+
+        if dry_run:
+            diff = "\n".join(
+                difflib.unified_diff(
+                    text.splitlines(),
+                    new_text.splitlines(),
+                    fromfile=str(path),
+                    tofile=str(path) + " (applied)",
+                    lineterm="",
+                )
+            )
+            return {
+                "status": "dry_run",
+                "action": "patch",
+                "path": relative(path),
+                "diff": diff,
+                **match_info,
+            }
+
+        path.write_text(new_text, encoding="utf-8")
+        return {"status": "applied", "path": relative(path), **match_info}
+    except Exception as e:
+        logger.exception("apply_patch: unexpected error editing %s", file_path)
+        return {"error": str(e)}
+
+
 @tool
 def run_command(command: str, directory: str = "."):
     """Run a single allowlisted shell command inside the active workspace.

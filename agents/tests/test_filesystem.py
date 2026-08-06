@@ -1,4 +1,5 @@
 from pathlib import Path
+from contextlib import contextmanager
 
 import pytest
 
@@ -616,3 +617,96 @@ def test_run_tests_does_not_hit_runner_under_read_scope(workspace, monkeypatch):
 
     assert result["kind"] == "pytest"
     assert calls == ["isolated"]
+
+
+@contextmanager
+def _full_write_ctx(workspace):
+    with (
+        permissions_context(PermissionPolicy(scope=FULL_WRITE)),
+        filesystem.workspace_context(str(workspace)),
+    ):
+        yield
+
+
+def test_apply_patch_exact_match(workspace):
+    (workspace / "a.txt").write_text("line one\nline two\n", encoding="utf-8")
+    with _full_write_ctx(workspace):
+        result = filesystem.apply_patch.invoke(
+            {"file_path": "a.txt", "old_string": "line two", "new_string": "changed"}
+        )
+
+    assert result["status"] == "applied"
+    assert result["match"] == "exact"
+    assert (workspace / "a.txt").read_text(encoding="utf-8") == "line one\nchanged\n"
+
+
+def test_apply_patch_fuzzy_whitespace_drift(workspace):
+    (workspace / "a.txt").write_text(
+        "def f():\n    print('hello')\n", encoding="utf-8"
+    )
+    with _full_write_ctx(workspace):
+        # Model guesses a similar-but-not-identical line.
+        result = filesystem.apply_patch.invoke(
+            {"file_path": "a.txt", "old_string": "print('hell')", "new_string": "print('bye')"}
+        )
+
+    assert result["status"] == "applied"
+    assert result["match"] == "fuzzy"
+    assert result["confidence"] >= 0.8
+    assert (workspace / "a.txt").read_text(encoding="utf-8") == (
+        "def f():\n    print('bye')\n"
+    )
+
+
+def test_apply_patch_refuses_ambiguous_fuzzy_match(workspace):
+    (workspace / "a.txt").write_text(
+        "AAA\nfoo bar baz\nBBB\nfoo bar bax\nCCC\n", encoding="utf-8"
+    )
+    with _full_write_ctx(workspace):
+        result = filesystem.apply_patch.invoke(
+            {
+                "file_path": "a.txt",
+                "old_string": "foo bar bay",
+                "new_string": "X",
+            }
+        )
+
+    assert result["error"]
+    assert (workspace / "a.txt").read_text(encoding="utf-8") == (
+        "AAA\nfoo bar baz\nBBB\nfoo bar bax\nCCC\n"
+    )
+
+
+def test_apply_patch_rejects_unrelated_text(workspace):
+    (workspace / "a.txt").write_text("hello world\n", encoding="utf-8")
+    with _full_write_ctx(workspace):
+        result = filesystem.apply_patch.invoke(
+            {"file_path": "a.txt", "old_string": "totally unrelated", "new_string": "X"}
+        )
+
+    assert "no close match" in result["error"]
+    assert (workspace / "a.txt").read_text(encoding="utf-8") == "hello world\n"
+
+
+def test_apply_patch_denied_under_read_scope(workspace):
+    (workspace / "a.txt").write_text("before\n", encoding="utf-8")
+    policy = PermissionPolicy(scope=READ)
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.apply_patch.invoke(
+            {"file_path": "a.txt", "old_string": "before", "new_string": "after"}
+        )
+
+    assert "not permitted" in result["error"]
+    assert (workspace / "a.txt").read_text(encoding="utf-8") == "before\n"
+
+
+def test_apply_patch_dry_run_does_not_modify(workspace):
+    (workspace / "a.txt").write_text("keep me\n", encoding="utf-8")
+    with _full_write_ctx(workspace):
+        result = filesystem.apply_patch.invoke(
+            {"file_path": "a.txt", "old_string": "keep me", "new_string": "gone", "dry_run": True}
+        )
+
+    assert result["status"] == "dry_run"
+    assert "+gone" in result["diff"]
+    assert (workspace / "a.txt").read_text(encoding="utf-8") == "keep me\n"
