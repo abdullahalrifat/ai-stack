@@ -3,7 +3,7 @@
 import re
 
 _CHANGE_REQUEST = re.compile(
-    r"\b(?:add|build|change|create|edit|fix|implement|improve|imporove|modify|"
+    r"\b(?:add|build|change|create|edit|fix|implement|improve|modify|"
     r"refactor|remove|rename|replace|update|write)\b",
     re.IGNORECASE,
 )
