@@ -372,6 +372,12 @@ services:
 
     cap_drop:
       - ALL
+    # The agents container merges approved sandbox diffs directly into the
+    # host bind-mounted workspace, which is owned by the host user's UID.
+    # Without DAC_OVERRIDE the root process cannot write into those 775
+    # subdirectories and approvals fail to land.
+    cap_add:
+      - DAC_OVERRIDE
 
     pids_limit: 256
     mem_limit: ${AGENT_MEMORY_LIMIT:-8g}
