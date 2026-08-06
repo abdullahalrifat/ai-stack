@@ -207,3 +207,74 @@ def test_planner_completion_streams_when_cancellation_context_exists(_available)
         assert client.chat([], model="coder") == "one two"
 
     assert completion.call_args.kwargs["stream"] is True
+
+
+class _Transient(Exception):
+    pass
+
+
+class _GatewayError(Exception):
+    pass
+
+
+def test_is_transient_error_classifies_gateway_statuses():
+    assert client._is_transient_error(_GatewayError("boom"))
+    for status in (408, 429, 500, 502, 503, 504):
+        assert client._is_transient_error(
+            SimpleNamespace(status_code=status, response=None)
+        )
+    assert not client._is_transient_error(ValueError("model not found"))
+    assert not client._is_transient_error(SimpleNamespace(status_code=400))
+    assert not client._is_transient_error(
+        SimpleNamespace(status_code=None, response=SimpleNamespace(status_code=401))
+    )
+    assert not client._is_transient_error(RunCancelled())
+
+
+def test_is_transient_error_sees_connection_and_timeout_names():
+    assert client._is_transient_error(TimeoutError("read timed out"))
+    assert client._is_transient_error(ConnectionError("connection refused"))
+
+
+def test_with_transient_retry_succeeds_after_gateway_error():
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _GatewayError("upstream 503")
+        return "ok"
+
+    with patch("app.llm.client.time.sleep"):
+        assert client._with_transient_retry(flaky) == "ok"
+    assert calls["n"] == 2
+
+
+def test_with_transient_retry_gives_up_after_retries():
+    calls = {"n": 0}
+
+    def always_flaky():
+        calls["n"] += 1
+        raise _GatewayError("upstream 503")
+
+    with (
+        patch("app.llm.client.time.sleep"),
+        pytest.raises(_GatewayError),
+    ):
+        client._with_transient_retry(always_flaky)
+    assert calls["n"] == client.LLM_MAX_RETRIES + 1
+
+
+def test_with_transient_retry_does_not_retry_permanent_errors():
+    calls = {"n": 0}
+
+    def permanent():
+        calls["n"] += 1
+        raise ValueError("model not found")
+
+    with (
+        patch("app.llm.client.time.sleep"),
+        pytest.raises(ValueError),
+    ):
+        client._with_transient_retry(permanent)
+    assert calls["n"] == 1

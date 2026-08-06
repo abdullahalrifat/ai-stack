@@ -15,6 +15,8 @@ from ..core.config import (
     AGENT_MODEL_ID,
     DEFAULT_MODEL,
     LLM_MAX_COMPLETION_TOKENS,
+    LLM_MAX_RETRIES,
+    LLM_RETRY_BACKOFF_SECONDS,
     LLM_TIMEOUT_SECONDS,
     MAX_CONCURRENT_LLM_CALLS,
     MODEL_LIST_CACHE_SECONDS,
@@ -29,6 +31,48 @@ logger = logging.getLogger(__name__)
 _client = None
 _model_cache: dict = {"models": None, "fetched_at": 0.0}
 _llm_slots = threading.BoundedSemaphore(MAX_CONCURRENT_LLM_CALLS)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """True when a retry could plausibly succeed: transport hiccups, timeouts,
+    rate limits, and gateway 5xx. Model-not-found and logic errors are not."""
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    if isinstance(exc, RunCancelled):
+        return False
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+    if status in (408, 429, 500, 502, 503, 504):
+        return True
+    name = type(exc).__name__.lower()
+    return any(
+        token in name
+        for token in ("timeout", "connection", "unavailable", "gateway")
+    )
+
+
+def _with_transient_retry(call):
+    """Run `call`, retrying transient transport/gateway failures with backoff."""
+    last_exc = None
+    for attempt in range(LLM_MAX_RETRIES + 1):
+        try:
+            return call()
+        except RunCancelled:
+            raise
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= LLM_MAX_RETRIES or not _is_transient_error(exc):
+                raise
+            logger.warning(
+                "Transient LLM error (attempt %d/%d): %s",
+                attempt + 1,
+                LLM_MAX_RETRIES,
+                exc,
+            )
+            time.sleep(LLM_RETRY_BACKOFF_SECONDS * (2**attempt))
+    raise last_exc  # pragma: no cover - defensive; loop always returns or raises
 
 
 def _iter_stream_with_deadline(response, timeout_seconds: int, should_cancel=None):
@@ -197,7 +241,9 @@ def chat(
         # serializes requests through a worker pool to stabilize load.
         def do_request():
             with _llm_slots:
-                return client.chat.completions.create(**kwargs)
+                return _with_transient_retry(
+                    lambda: client.chat.completions.create(**kwargs)
+                )
 
         start = time.perf_counter()
         response = default_scheduler.submit_sync(do_request, key=key)
@@ -219,7 +265,9 @@ def chat(
     stream = None
     with _llm_slots:
         try:
-            stream = client.chat.completions.create(**kwargs, stream=True)
+            stream = _with_transient_retry(
+                lambda: client.chat.completions.create(**kwargs, stream=True)
+            )
             for chunk in _iter_stream_with_deadline(
                 stream, timeout_seconds or LLM_TIMEOUT_SECONDS
             ):
@@ -265,14 +313,16 @@ def chat_with_tools(
     incr("llm.request")
     start = time.perf_counter()
     with _llm_slots:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
-            temperature=0,
-            max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
-            timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
+        response = _with_transient_retry(
+            lambda: client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=0,
+                max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
+                timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
+            )
         )
     elapsed = time.perf_counter() - start
     record_timing("llm.latency", elapsed)
@@ -314,15 +364,17 @@ def chat_with_tools_stream(
         start = time.perf_counter()
         with _llm_slots:
             try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                    temperature=0,
-                    max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
-                    timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
-                    stream=True,
+                response = _with_transient_retry(
+                    lambda: client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                        temperature=0,
+                        max_tokens=max_tokens or LLM_MAX_COMPLETION_TOKENS,
+                        timeout=timeout_seconds or LLM_TIMEOUT_SECONDS,
+                        stream=True,
+                    )
                 )
                 for chunk in _iter_stream_with_deadline(
                     response,

@@ -88,6 +88,11 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "3000"))
 TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "3"))
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
 LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "768"))
+# Transient gateway errors (connection refused while Ollama reloads a model,
+# 5xx, rate limits) are retried with exponential backoff before a run fails.
+# Stream-setup failures are retried; errors after output has begun are not.
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
+LLM_RETRY_BACKOFF_SECONDS = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2"))
 # Evidence-rich cross-domain comparisons use a stronger model for the one
 # synthesis turn only. If it is unavailable, the executor falls back to the
 # active workflow model without losing the collected evidence.
