@@ -11,6 +11,7 @@ must be kept in sync with the tool names registered below.
 """
 
 from app.tools.filesystem import (
+    apply_patch,
     edit_file,
     find_file,
     inspect_files,
@@ -26,6 +27,7 @@ from app.tools.filesystem import (
     workspace_root,
     write_file,
 )
+from app.tools.git import git_blame, git_diff, git_log, git_status
 from app.tools.registry import registry
 from app.tools.web_fetch import web_fetch
 from app.tools.web_search import web_search
@@ -58,9 +60,23 @@ registry.register(name="write_file", function=write_file)
 
 registry.register(name="edit_file", function=edit_file)
 
+registry.register(name="apply_patch", function=apply_patch)
+
 registry.register(name="run_command", function=run_command)
 
 registry.register(name="run_tests", function=run_tests)
+
+# =====================================================
+# Read-only Git Tools
+# =====================================================
+
+registry.register(name="git_status", function=git_status)
+
+registry.register(name="git_diff", function=git_diff)
+
+registry.register(name="git_log", function=git_log)
+
+registry.register(name="git_blame", function=git_blame)
 
 registry.register(name="web_search", function=web_search)
 

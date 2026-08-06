@@ -231,6 +231,39 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "apply_patch",
+            "description": (
+                "Apply an edit to an existing file, tolerating small "
+                "mismatches in old_string (whitespace or minor text drift). "
+                "Tries an exact unique match first, then a fuzzy line match; "
+                "ambiguous matches are refused rather than guessed. The result "
+                "reports the confidence and actual matched text for verification."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string"},
+                    "old_string": {
+                        "type": "string",
+                        "description": "Text to replace; may be approximate.",
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "Replacement text.",
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace every exact occurrence instead of requiring a unique match.",
+                        "default": False,
+                    },
+                },
+                "required": ["file_path", "old_string", "new_string"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": (
                 "Run a single allowlisted shell command (e.g. git, pytest, "
@@ -313,6 +346,88 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {"url": {"type": "string", "format": "uri"}},
                 "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_status",
+            "description": (
+                "Show the repository's working-tree status (read-only): branch, "
+                "tracked modifications, staged changes, and untracked files. Use "
+                "before planning edits or after running tests to see what changed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "default": "."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": (
+                "Show a unified diff of uncommitted changes against a base ref "
+                "(default HEAD, read-only). Untracked files are listed by name "
+                "only. Use to review exactly what a change touched before finalizing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "default": "."},
+                    "base": {
+                        "type": "string",
+                        "description": "Base ref to diff against, e.g. HEAD or <commit>.",
+                        "default": "HEAD",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Optional hard character cap on the returned diff.",
+                        "default": 0,
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_log",
+            "description": (
+                "Show recent commit history, one line per commit (read-only)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "default": "."},
+                    "max_count": {
+                        "type": "integer",
+                        "description": "How many commits to show (1-100).",
+                        "default": 10,
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_blame",
+            "description": (
+                "Show the commit and author responsible for each line of a file "
+                "(read-only). Use to understand why a line exists before changing it."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string"},
+                    "directory": {"type": "string", "default": "."},
+                },
+                "required": ["file_path"],
             },
         },
     },
