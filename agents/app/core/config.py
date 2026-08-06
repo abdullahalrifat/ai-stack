@@ -86,8 +86,8 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "3000"))
 # Head/tail items preserved when a list-shaped tool result exceeds the summary
 # budget (search matches, directory listings, file items).
 TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "3"))
-LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
-LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "768"))
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "360"))
+LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "1536"))
 # Transient gateway errors (connection refused while Ollama reloads a model,
 # 5xx, rate limits) are retried with exponential backoff before a run fails.
 # Stream-setup failures are retried; errors after output has begun are not.

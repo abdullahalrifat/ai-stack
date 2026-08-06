@@ -362,8 +362,9 @@ def test_run_event_stream_renews_and_releases_foreground_lease(monkeypatch):
     assert renewals == [("run-1", "terminal-1", routes.RUN_CLIENT_LEASE_SECONDS)]
 
 
-def test_auto_profile_uses_fast_model_while_code_uses_default_model():
-    assert PROFILES["auto"].model == FAST_MODEL
+def test_auto_profile_uses_default_model_while_quick_uses_fast_model():
+    assert PROFILES["auto"].model == DEFAULT_MODEL
+    assert PROFILES["quick"].model == FAST_MODEL
     assert PROFILES["code"].model == DEFAULT_MODEL
     assert PROFILES["finance"].model == FINANCE_MODEL
     assert PROFILES["finance"].max_completion_tokens == FINANCE_MAX_COMPLETION_TOKENS

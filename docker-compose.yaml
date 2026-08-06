@@ -302,9 +302,10 @@ services:
       MAX_CONCURRENT_LLM_CALLS: ${MAX_CONCURRENT_LLM_CALLS:-1}
       MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-8000}
       # A cold local 8B model can spend ~40s loading and ~60s ingesting a
-      # repository/tool prompt before its first streamed token.
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-180}
-      LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-768}
+      # repository/tool prompt before its first streamed token, and a
+      # thinking-enabled 8B turn can run ~2.5-3min at CPU inference speed.
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-360}
+      LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-1536}
       ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3-14b}
       ANALYSIS_SYNTHESIS_MAX_TOKENS: ${ANALYSIS_SYNTHESIS_MAX_TOKENS:-1200}
       ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS: ${ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS:-360}
