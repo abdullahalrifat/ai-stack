@@ -114,9 +114,9 @@ REPLAN_STUCK_STEPS = int(os.getenv("REPLAN_STUCK_STEPS", "6"))
 REPLAN_MAX_RETRIES = int(os.getenv("REPLAN_MAX_RETRIES", "2"))
 # OpenAI-compatible clients often attach long histories, IDE excerpts, and
 # tool instructions. This bounds only their *incoming* text before the agent
-# adds its own prompt and tool schemas for an 8K local model context.
-OPENAI_INPUT_MAX_CHARS = int(os.getenv("OPENAI_INPUT_MAX_CHARS", "3500"))
-CONTEXT_TOKEN_LIMIT = int(os.getenv("CONTEXT_TOKEN_LIMIT", "8192"))
+# adds its own prompt and tool schemas for the model context budget.
+OPENAI_INPUT_MAX_CHARS = int(os.getenv("OPENAI_INPUT_MAX_CHARS", "8000"))
+CONTEXT_TOKEN_LIMIT = int(os.getenv("CONTEXT_TOKEN_LIMIT", "32768"))
 CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "768"))
 # Finance answers need room for a compact evidence summary plus scenarios.
 # Kept separate so normal Code/Quick responses remain fast on CPU.
@@ -170,7 +170,7 @@ CONTEXT_COMPACT_KEEP_RECENT = int(os.getenv("CONTEXT_COMPACT_KEEP_RECENT", "4"))
 # model context budget. The old step-count setting is retained for backwards
 # compatible configuration but is no longer the trigger.
 CONTEXT_COMPACT_THRESHOLD_TOKENS = int(
-    os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "7000")
+    os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "28000")
 )
 
 # Embeddings are useful for explicit RAG workflows but expensive on a host
