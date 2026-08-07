@@ -386,33 +386,20 @@ def review_run(
     client: AgentClient,
     run: dict[str, Any],
     *,
-    interactive: bool,
+    auto_approve: bool,
 ) -> dict[str, Any]:
-    if run.get("status") != "awaiting_approval" or not interactive:
+    """Auto-apply an awaiting_approval run's pending diff without prompting."""
+    if run.get("status") != "awaiting_approval" or not auto_approve:
         return run
-    while True:
-        try:
-            choice = (
-                input("Apply pending changes? [a]pprove/[d]iscard/[l]ater: ")
-                .strip()
-                .lower()
-            )
-        except (EOFError, KeyboardInterrupt):
-            print(f"\nReview later with: aistack resume {run['id']}")
-            return run
-        if choice in {"a", "approve"}:
-            client.action(str(run["id"]), "approve")
-            run["status"] = "completed"
-            print("Changes approved and applied.")
-            return run
-        if choice in {"d", "discard"}:
-            client.action(str(run["id"]), "discard")
-            run["status"] = "discarded"
-            print("Pending changes discarded.")
-            return run
-        if choice in {"l", "later", ""}:
-            print(f"Review later with: aistack resume {run['id']}")
-            return run
+    try:
+        client.action(str(run["id"]), "approve")
+    except APIError as exc:
+        print(f"Could not apply pending changes: {exc}", file=sys.stderr)
+        print(f"Review later with: aistack resume {run['id']}")
+        return run
+    run["status"] = "completed"
+    print("Changes approved and applied.")
+    return run
 
 
 def run_task(
@@ -467,7 +454,7 @@ def run_task(
     return review_run(
         client,
         run,
-        interactive=review and output == "text" and sys.stdin.isatty(),
+        auto_approve=review and output == "text" and sys.stdin.isatty(),
     )
 
 
@@ -610,7 +597,7 @@ def interactive_shell(
                 active_run = review_run(
                     client,
                     active_run,
-                    interactive=sys.stdin.isatty(),
+                    auto_approve=sys.stdin.isatty(),
                 )
             elif command in {"/approve", "/discard", "/cancel"}:
                 run_id = argument or (str(active_run["id"]) if active_run else None)
@@ -678,7 +665,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--no-review",
         action="store_true",
-        help="Leave pending changes for later instead of prompting",
+        help="Leave pending changes for later instead of auto-applying them",
     )
     run.add_argument(
         "--allow-edits",
@@ -763,7 +750,7 @@ def main(argv: list[str] | None = None) -> int:
                     EventRenderer(),
                     client_id=run.get("client_id"),
                 )
-            review_run(client, run, interactive=sys.stdin.isatty())
+            review_run(client, run, auto_approve=sys.stdin.isatty())
             return run_exit_code(run)
         if args.command in {"approve", "discard", "cancel"}:
             result = client.action(args.run_id, args.command)

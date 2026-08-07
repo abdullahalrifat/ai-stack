@@ -92,12 +92,13 @@ def sandbox_diff(path: str) -> str:
     # intent-to-add makes them appear in the review diff without staging file
     # contents or changing the real repository's index (each worktree owns an
     # index).  Without this, write_file could report success and its new file
-    # would be silently discarded when the sandbox was cleaned up.
+    # would be silently discarded when the sandbox was cleaned up.  Ignored
+    # files (build caches such as `.ruff_cache/`) stay out of the diff so they
+    # are not reviewable or approvable.
     intent = _git(
         directory,
         "add",
         "--intent-to-add",
-        "--force",
         "--all",
         safe_directory=directory,
     )
@@ -123,30 +124,11 @@ def merge_sandbox(sandbox: Sandbox) -> None:
     if not diff.strip():
         return
 
-    current = _git(
-        sandbox.repository, "rev-parse", "HEAD", safe_directory=sandbox.repository
-    )
-    if current.returncode != 0 or current.stdout.strip() != sandbox.base_commit:
-        raise RuntimeError(
-            "Repository HEAD changed since this run started; refresh the run and resolve/retry "
-            "instead of applying a stale diff."
-        )
-
-    # HEAD alone is not enough: a user may have local edits that an otherwise
-    # cleanly-applying agent patch could overwrite. Approval is deliberately
-    # conservative; commit/stash user changes or rerun from the new state.
-    dirty = _git(
-        sandbox.repository, "status", "--porcelain", safe_directory=sandbox.repository
-    )
-    if dirty.returncode != 0:
-        raise RuntimeError(
-            "Could not inspect repository status before applying sandbox diff"
-        )
-    if dirty.stdout.strip():
-        raise RuntimeError(
-            "Repository has uncommitted changes; commit or stash them before approving this run."
-        )
-
+    # The repository is not required to be clean or at the recorded base
+    # commit. `git apply --check` verifies the patch still applies to the
+    # current working tree; only then is it applied. Local edits outside the
+    # patch's hunks are preserved, and genuine conflicts fail loudly -- just
+    # as they would for a direct edit.
     check = run_cancellable(
         [
             "git",

@@ -279,7 +279,7 @@ def current_workspace() -> Path:
     return CURRENT_WORKSPACE.get()
 
 
-def resolve_path(path: str) -> Path:
+def resolve_path(path: str, *, unique_basename: bool = True) -> Path:
     """
     Resolve a path relative to the current workspace.
 
@@ -344,7 +344,12 @@ def resolve_path(path: str) -> Path:
     # that emit a short path like `src` when the repository's nested layout is
     # `cli/src` or similar. Only accept a single unambiguous candidate. Limit
     # the search breadth to avoid long-running file system scans.
-    if not p.exists():
+    #
+    # Writes disable this: a write to a path that does not exist is a request to
+    # CREATE that file, and redirecting it to a different existing file with the
+    # same basename would silently clobber unrelated code (a common 8B-model
+    # failure that destroyed agents/app/agent/executor.py in production).
+    if unique_basename and not p.exists():
         name = p.name
         candidates = []
         try:
@@ -1036,7 +1041,7 @@ def write_file(file_path: str, content: str, overwrite: bool = False, dry_run: b
     files.
     """
     try:
-        path = resolve_path(file_path)
+        path = resolve_path(file_path, unique_basename=False)
         active_policy().check_write(path, current_workspace())
         if path.exists() and not overwrite:
             return {
@@ -1083,7 +1088,7 @@ def edit_file(
     untouched.
     """
     try:
-        path = resolve_path(file_path)
+        path = resolve_path(file_path, unique_basename=False)
         active_policy().check_write(path, current_workspace())
 
         if not path.exists():
@@ -1097,8 +1102,7 @@ def edit_file(
 
         if count == 0:
             return {
-                "error": "old_string not found in file. Re-read the file and "
-                "try again with an exact match."
+                "error": "old_string not found in file. Re-read the file and try again with an exact match."
             }
 
         if count > 1 and not replace_all:
@@ -1240,7 +1244,7 @@ def apply_patch(
     of guessing.
     """
     try:
-        path = resolve_path(file_path)
+        path = resolve_path(file_path, unique_basename=False)
         active_policy().check_write(path, current_workspace())
 
         if not path.exists():

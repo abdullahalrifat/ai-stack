@@ -615,6 +615,58 @@ def test_write_file_scoped_to_allowed_roots(workspace):
     assert "edit scope" in denied["error"]
 
 
+def test_write_file_does_not_clobber_same_basename_existing_file(workspace):
+    """A write to a path that does not exist must CREATE that path, never be
+    redirected onto a different existing file that shares its basename. This
+    is the regression that destroyed agents/app/agent/executor.py when a model
+    wrote to the non-existent agents/executor.py."""
+    (workspace / "src").mkdir()
+    existing = workspace / "src" / "deep" / "executor.py"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("REAL IMPLEMENTATION\n", encoding="utf-8")
+    policy = PermissionPolicy(scope=FULL_WRITE)
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.write_file.invoke(
+            {
+                "file_path": "src/executor.py",
+                "content": "stub",
+                "overwrite": True,
+            }
+        )
+
+    assert result["status"] == "written"
+    assert result["path"] == "src/executor.py"
+    assert (workspace / "src" / "executor.py").read_text(encoding="utf-8") == "stub"
+    # The pre-existing same-basename file must be untouched.
+    assert (
+        workspace / "src" / "deep" / "executor.py"
+    ).read_text(encoding="utf-8") == "REAL IMPLEMENTATION\n"
+
+
+def test_edit_file_does_not_fall_back_to_same_basename_existing_file(workspace):
+    """edit_file must fail with File not found when the requested path does
+    not exist, instead of redirecting onto a same-basename file elsewhere."""
+    (workspace / "src").mkdir()
+    (workspace / "src" / "deep").mkdir()
+    (workspace / "src" / "deep" / "executor.py").write_text(
+        "def run(): pass\n", encoding="utf-8"
+    )
+    policy = PermissionPolicy(scope=FULL_WRITE)
+    with permissions_context(policy), filesystem.workspace_context(str(workspace)):
+        result = filesystem.edit_file.invoke(
+            {
+                "file_path": "src/executor.py",
+                "old_string": "def run(): pass",
+                "new_string": "def run(): return 1",
+            }
+        )
+
+    assert "File not found" in result["error"]
+    assert (
+        workspace / "src" / "deep" / "executor.py"
+    ).read_text(encoding="utf-8") == "def run(): pass\n"
+
+
 def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):
     monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
     monkeypatch.setattr(filesystem, "ALLOWED_COMMANDS", ["echo", "git"])

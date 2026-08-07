@@ -1,8 +1,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from app.runs import sandbox
 from app.tools import filesystem
 
@@ -54,6 +52,26 @@ def test_sandbox_diff_includes_untracked_files(tmp_path, monkeypatch):
 
     assert "created.py" in diff
     assert "+print('created')" in diff
+
+
+def test_sandbox_diff_excludes_ignored_cache_files(tmp_path, monkeypatch):
+    """Build caches created inside the sandbox must not enter the review diff."""
+    sandbox_root = tmp_path / "sandboxes"
+    worktree = sandbox_root / "run-1"
+    worktree.mkdir(parents=True)
+    monkeypatch.setattr(sandbox, "SANDBOX_ROOT", sandbox_root)
+
+    subprocess.run(["git", "init", str(worktree)], check=True, capture_output=True)
+    (worktree / ".gitignore").write_text(".ruff_cache/\n", encoding="utf-8")
+    (worktree / "real.py").write_text("print('real')\n", encoding="utf-8")
+    cache = worktree / ".ruff_cache"
+    cache.mkdir()
+    (cache / "binary").write_bytes(b"\x00\x01\x02")
+
+    diff = sandbox.sandbox_diff(str(worktree))
+
+    assert "real.py" in diff
+    assert ".ruff_cache/binary" not in diff
 
 
 def test_merge_sandbox_applies_tracked_and_new_files(tmp_path, monkeypatch):
@@ -142,7 +160,7 @@ def test_merge_allows_ignored_sandbox_root_inside_repository(tmp_path, monkeypat
     assert (repository / "new.txt").read_text(encoding="utf-8") == "approved\n"
 
 
-def test_merge_sandbox_rejects_a_changed_base_commit(tmp_path, monkeypatch):
+def test_merge_sandbox_applies_over_a_changed_base_commit(tmp_path, monkeypatch):
     repository = tmp_path / "repository"
     repository.mkdir()
     make_repository(repository)
@@ -161,6 +179,28 @@ def test_merge_sandbox_rejects_a_changed_base_commit(tmp_path, monkeypatch):
         capture_output=True,
     )
 
-    with pytest.raises(RuntimeError, match="HEAD changed"):
-        sandbox.merge_sandbox(worktree)
+    sandbox.merge_sandbox(worktree)
     sandbox.remove_sandbox(str(worktree.repository), str(worktree.path))
+
+    assert (repository / "tracked.txt").read_text(encoding="utf-8") == "agent edit\n"
+    assert (repository / "other.txt").read_text(encoding="utf-8") == "concurrent commit\n"
+
+
+def test_merge_sandbox_applies_over_uncommitted_changes(tmp_path, monkeypatch):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    make_repository(repository)
+    monkeypatch.setattr(sandbox, "SANDBOX_ROOT", tmp_path / "sandboxes")
+    monkeypatch.setattr(
+        sandbox, "validate_workspace", lambda path: Path(path).resolve()
+    )
+    worktree = sandbox.create_sandbox(str(repository), "run-1")
+    (worktree.path / "tracked.txt").write_text("agent edit\n", encoding="utf-8")
+
+    (repository / "local.txt").write_text("uncommitted local change\n", encoding="utf-8")
+
+    sandbox.merge_sandbox(worktree)
+    sandbox.remove_sandbox(str(worktree.repository), str(worktree.path))
+
+    assert (repository / "tracked.txt").read_text(encoding="utf-8") == "agent edit\n"
+    assert (repository / "local.txt").read_text(encoding="utf-8") == "uncommitted local change\n"

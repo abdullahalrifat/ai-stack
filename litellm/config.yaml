@@ -41,7 +41,7 @@ model_list:
         # Thinking mode is qwen3's strength; enable it for coding work even
         # though it slows output on CPU. Flip to false if tool-call fidelity
         # degrades on this hardware.
-        think: true
+        think: false
     model_info:
       supports_function_calling: true
 

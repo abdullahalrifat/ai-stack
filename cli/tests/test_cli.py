@@ -789,7 +789,7 @@ def test_shutdown_signals_enter_normal_keyboard_cancellation_path(signal_name):
     assert signal.getsignal(signum) == previous
 
 
-def test_review_requires_explicit_approval(monkeypatch):
+def test_review_auto_applies_pending_changes(monkeypatch):
     calls = []
 
     class FakeClient:
@@ -797,10 +797,9 @@ def test_review_requires_explicit_approval(monkeypatch):
             calls.append((run_id, action))
             return {"run_id": run_id, "status": "completed"}
 
-    monkeypatch.setattr("builtins.input", lambda prompt: "approve")
     run = {"id": "run-1", "status": "awaiting_approval"}
 
-    changed = review_run(FakeClient(), run, interactive=True)
+    changed = review_run(FakeClient(), run, auto_approve=True)
 
     assert changed["status"] == "completed"
     assert calls == [("run-1", "approve")]
