@@ -318,6 +318,101 @@ def test_execute_plan_forces_verification_before_final_answer_after_edit(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_guides_search_after_hallucinated_edit_anchor(
+    mock_chat_with_tools, mock_registry
+):
+    """A failed edit anchor must trigger targeted search guidance, not a
+    generic tool-failure nudge that lets the model retry the same bad edit."""
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Implement parallel subagents in the runner"
+    mock_registry.list_tools.return_value = [
+        "edit_file",
+        "search_text",
+        "read_file",
+        "run_tests",
+    ]
+    mock_registry.execute.side_effect = [
+        {"error": "old_string not found in file. Re-read the file and try again."},
+        [{"path": "agents/app/runner.py"}],
+        {"path": "agents/app/runner.py", "status": "edited"},
+        {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
+    ]
+    seen_messages = []
+    events = []
+
+    def respond(messages, **kwargs):
+        seen_messages.append([dict(message) for message in messages])
+        if len(seen_messages) == 1:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "edit",
+                        "edit_file",
+                        {
+                            "file_path": "agents/app/runner.py",
+                            "old_string": "def execute(self):\n    return []",
+                            "new_string": "def execute(self):\n    return self._dispatch()",
+                        },
+                    )
+                ]
+            )
+        if len(seen_messages) == 2:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "search",
+                        "search_text",
+                        {"keyword": "def execute", "directory": "agents/app"},
+                    )
+                ]
+            )
+        if len(seen_messages) == 3:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "edit",
+                        "edit_file",
+                        {
+                            "file_path": "agents/app/runner.py",
+                            "old_string": "def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):",
+                            "new_string": "def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):",
+                        },
+                    )
+                ]
+            )
+        if len(seen_messages) == 4:
+            return make_message(
+                tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+            )
+        return make_message(
+            content="Implemented parallel subagents in the runner; tests pass."
+        )
+
+    mock_chat_with_tools.side_effect = respond
+
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Implemented parallel subagents in the runner; tests pass."
+    )
+
+    guidance = [
+        message["content"]
+        for message in seen_messages[1]
+        if message["role"] == "user" and "old_string" in message["content"]
+    ]
+    assert guidance, "failed edit anchor must produce targeted recovery guidance"
+    assert "search_text or search_code" in guidance[0]
+    assert "Do not call the same edit again" in guidance[0]
+    assert state.successful_mutation is True
+    assert state.successful_verification is True
+    assert not any(kind == "unproductive_tool_loop" for kind, _ in events)
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_blocks_diff_after_doc_only_mutation(
     mock_chat_with_tools, mock_registry
 ):

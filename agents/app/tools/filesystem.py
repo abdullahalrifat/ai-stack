@@ -672,6 +672,20 @@ def find_file(
 # ============================================================
 
 
+def _search_files(root: Path) -> list[Path]:
+    """Yield text files under a search root.
+
+    The model often passes the file it is investigating as ``directory``
+    (``agents/app/runner.py``) instead of its parent folder. Treat a file
+    path as a single-file search rather than silently returning no matches,
+    which previously made weak edit-calling models conclude the symbol does
+    not exist anywhere.
+    """
+    if root.is_file():
+        return [root]
+    return [file for file in sorted(root.rglob("*")) if file.is_file()]
+
+
 @tool
 def search_text(
     keyword: str,
@@ -686,13 +700,10 @@ def search_text(
 
         matches = []
 
-        for index, file in enumerate(root.rglob("*")):
+        for index, file in enumerate(_search_files(root)):
             if index >= MAX_SCAN_FILES:
                 break
-            if ignored(file):
-                continue
-
-            if not file.is_file():
+            if root.is_file() is False and ignored(file):
                 continue
             if file.stat().st_size > MAX_SEARCH_FILE_SIZE:
                 continue
@@ -751,10 +762,10 @@ def search_code(
         context_lines = max(0, min(int(context_lines), MAX_CODE_SEARCH_CONTEXT_LINES))
         matches = []
 
-        for index, file in enumerate(sorted(root.rglob("*"))):
+        for index, file in enumerate(_search_files(root)):
             if index >= MAX_SCAN_FILES:
                 break
-            if ignored(file) or not file.is_file():
+            if root.is_file() is False and (ignored(file) or not file.is_file()):
                 continue
             if file.stat().st_size > MAX_SEARCH_FILE_SIZE:
                 continue
@@ -1135,6 +1146,9 @@ def edit_file(
         return {"error": str(e)}
 
 
+_DEF_OR_CLASS = re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
+
+
 def _fuzzy_locate(text: str, old_string: str) -> dict | None:
     """Find the best approximate location of `old_string` in `text`.
 
@@ -1145,6 +1159,12 @@ def _fuzzy_locate(text: str, old_string: str) -> dict | None:
     When two distinct regions score within 0.05 of each other the match is
     ambiguous and None is returned -- silently editing the wrong location is
     worse than asking for more context.
+
+    A hard safety rule: when `old_string` names a def/class (``def name(`` or
+    ``class name``), any candidate window whose matching line names a
+    *different* identifier is rejected outright. A fuzzy match must never
+    rename a function or class; that corrupts call sites and is the classic
+    small-model edit failure (matching ``cancel_job`` onto ``_watch_job``).
     """
     old_lines = old_string.splitlines()
     if not old_lines or len(old_lines) > len(text.splitlines(keepends=True)):
@@ -1157,7 +1177,12 @@ def _fuzzy_locate(text: str, old_string: str) -> dict | None:
     def ratio(a: str, b: str) -> float:
         return difflib.SequenceMatcher(None, a.strip(), b.strip()).ratio()
 
+    def identifiers(line: str) -> set[str]:
+        match = _DEF_OR_CLASS.match(line)
+        return {match.group(1)} if match else set()
+
     old_stripped = [line.strip() for line in old_lines]
+    old_ids = [identifiers(line) for line in old_lines]
     old_joined = "\n".join(old_stripped)
     scored: list[tuple[float, int]] = []
     for start in range(len(text_lines) - n + 1):
@@ -1167,6 +1192,14 @@ def _fuzzy_locate(text: str, old_string: str) -> dict | None:
             continue
         # Cheap gate: the first line must resemble the target's first line.
         if ratio(text_lines[start], old_lines[0]) < 0.70:
+            continue
+        # Safety gate: the window must not rename any def/class the target
+        # names. A differing identifier means this is not the intended symbol.
+        if any(
+            target and target != identifiers(window[index])
+            for index, target in enumerate(old_ids)
+            if target
+        ):
             continue
         score = difflib.SequenceMatcher(None, "\n".join(window), old_joined).ratio()
         if score >= 0.60:
@@ -1371,6 +1404,11 @@ def run_tests(
         return {"error": f"Unsupported test kind: {kind}"}
     try:
         cwd = resolve_path(directory)
+        # The model commonly passes the file under investigation (e.g.
+        # agents/app/runner.py) as directory. Run from its parent folder so
+        # "run the tests for this file" resolves instead of erroring.
+        if not cwd.is_dir():
+            cwd = cwd.parent
         if not cwd.is_dir():
             return {"error": "Test directory is not a directory."}
         result = _run_in_isolated_runner(

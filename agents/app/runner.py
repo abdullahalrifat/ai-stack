@@ -392,6 +392,14 @@ def get_job(job_id: str, x_runner_key: str | None = Header(None)):
 
 @app.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, x_runner_key: str | None = Header(None)):
+    """
+    Cancels a job by its ID. This function updates the job's status to "cancelled",
+    terminates the associated process, and releases resources.
+
+    Args:
+        job_id (str): Unique identifier for the job to cancel.
+        x_runner_key (str | None): API key for authentication, extracted from the request header.
+    """
     _authorize(x_runner_key)
     job = _get_job(job_id)
     with job.lock:

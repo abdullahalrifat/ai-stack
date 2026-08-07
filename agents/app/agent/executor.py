@@ -56,6 +56,29 @@ MAX_STEPS = MAX_AGENT_STEPS
 # whenever a request does not have allow_write set.
 WRITE_TOOLS = {"write_file", "edit_file", "run_command", "run_tests"}
 
+# Mutation tools that require an exact old_string anchor against the file's
+# current content. Anchor misses are the most common 8B-model edit failure:
+# the model fabricates a plausible-looking target that does not exist. These
+# need deterministic recovery guidance instead of a generic "tool failed".
+MUTATION_ANCHOR_TOOLS = {"edit_file", "write_file", "apply_patch"}
+
+MUTATION_ANCHOR_RECOVERY = (
+    "The edit/write call failed because the exact old_string you supplied is not present in "
+    "the file. Do not call the same edit again with the same old_string. First locate the real "
+    "text: call search_text or search_code with a distinctive keyword from the region you want "
+    "to change, then re-read the matched lines to see the exact current text. Use the verbatim "
+    "matched text as old_string, or use apply_patch which tolerates a fuzzy match. Only then "
+    "retry the edit."
+)
+
+MUTATION_ANCHOR_REPEATED_RECOVERY = (
+    "The same edit has failed more than once because its old_string does not exist in the file. "
+    "Stop retrying that edit. Run search_text or search_code with the name of the function, "
+    "class, or identifier you intend to change, read the exact matched lines, and base a fresh "
+    "edit on that verbatim content. If you cannot find the text, the behavior may live in a "
+    "different file or may not exist at all; pick a real, concrete anchor instead of guessing."
+)
+
 # Quick requests must fit an 8K local context even after the agent's own
 # prompt and native tool schemas are attached. These cover focused repository
 # review without advertising write/test/web tools that are not needed there.
@@ -656,6 +679,31 @@ def _parallel_read_only_calls(tool_calls, available_tools, tool_result_cache):
     return candidates
 
 
+def _is_mutation_anchor_failure(result) -> bool:
+    """Recognize a mutation whose old_string did not match the file.
+
+    These are deterministic, model-caused errors (a fabricated or stale edit
+    anchor) rather than transient infrastructure problems. They signal that
+    the model must search for the real text instead of retrying the same
+    guess, which is the fixable failure mode for weak edit-calling models.
+    """
+
+    if not isinstance(result, dict):
+        return False
+    error = result.get("error")
+    if not isinstance(error, str):
+        return False
+    lowered = error.casefold()
+    return (
+        "old_string not found" in lowered
+        or "no close match" in lowered
+        or "old_string is not unique" in lowered
+        or "file not found" in lowered
+        or "does not exist" in lowered
+        or "could not be found" in lowered
+    )
+
+
 def _is_transient_tool_failure(result) -> bool:
     """Recognize retryable infrastructure failures from a tool result.
 
@@ -1107,6 +1155,7 @@ tool. Do not provide a final answer before both actions succeed.
     empty_search_count = 0
     unproductive_calls: dict[str, int] = {}
     tool_call_counts: dict[str, int] = {}
+    mutation_anchor_failures: dict[str, int] = {}
     tool_result_cache: dict[str, object] = dict(
         getattr(state, "prefetched_tool_results", {}) or {}
     )
@@ -1336,9 +1385,17 @@ tool. Do not provide a final answer before both actions succeed.
                         unproductive_calls.get(fingerprint, 0) + 1
                     )
                     failed_tools.append(tool_name)
+                    if tool_name in MUTATION_ANCHOR_TOOLS and _is_mutation_anchor_failure(
+                        result
+                    ):
+                        mutation_anchor_failures[fingerprint] = (
+                            mutation_anchor_failures.get(fingerprint, 0) + 1
+                        )
                 else:
                     unproductive_calls.clear()
                     turn_had_success = True
+                    if tool_name in MUTATION_ANCHOR_TOOLS:
+                        mutation_anchor_failures.clear()
 
                 result_text = summarize_tool_result(tool_name, result)
 
@@ -1495,18 +1552,36 @@ tool. Do not provide a final answer before both actions succeed.
 
             if failed_tools:
                 recovery_required = True
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "A tool call failed. Diagnose the returned error and continue toward the "
-                            "requested outcome using a safe alternative or prerequisite check. Do not "
-                            "stop at a future-tense proposal such as 'next I will install or run it'. "
-                            "Only report a blocker after available recovery paths have been exhausted. "
-                            f"Failed tool(s): {', '.join(failed_tools)}."
-                        ),
-                    }
-                )
+                if mutation_anchor_failures:
+                    worst = max(mutation_anchor_failures.values())
+                    guidance = (
+                        MUTATION_ANCHOR_REPEATED_RECOVERY
+                        if worst >= 2
+                        else MUTATION_ANCHOR_RECOVERY
+                    )
+                    on_event(
+                        "mutation_anchor_recovery",
+                        {"repeated": worst >= 2, "failed_mutations": len(mutation_anchor_failures)},
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": guidance,
+                        }
+                    )
+                else:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "A tool call failed. Diagnose the returned error and continue toward the "
+                                "requested outcome using a safe alternative or prerequisite check. Do not "
+                                "stop at a future-tense proposal such as 'next I will install or run it'. "
+                                "Only report a blocker after available recovery paths have been exhausted. "
+                                f"Failed tool(s): {', '.join(failed_tools)}."
+                            ),
+                        }
+                    )
             elif duplicate_tools:
                 recovery_required = False
                 recovery_handoff_count = 0

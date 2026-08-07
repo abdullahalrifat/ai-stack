@@ -245,6 +245,39 @@ def test_search_code_supports_plain_substring_and_case_folding(workspace):
     assert [match["path"] for match in folded["matches"]] == ["a.py", "b.py"]
 
 
+def test_search_code_accepts_file_path_as_directory(workspace):
+    """The model commonly passes a file (not a folder) as directory; that
+    must search the single file instead of silently returning no matches."""
+    (workspace / "src").mkdir()
+    (workspace / "src" / "runner.py").write_text(
+        "def cancel_job(job_id):\n    return job_id\n"
+    )
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.search_code.invoke(
+            {"pattern": "cancel_job", "directory": "src/runner.py"}
+        )
+
+    assert result["truncated"] is False
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["path"] == "src/runner.py"
+    assert result["matches"][0]["text"] == "def cancel_job(job_id):"
+
+
+def test_search_text_accepts_file_path_as_directory(workspace):
+    (workspace / "src").mkdir()
+    (workspace / "src" / "runner.py").write_text(
+        "def cancel_job(job_id):\n    return job_id\n"
+    )
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.search_text.invoke(
+            {"keyword": "cancel_job", "directory": "src/runner.py"}
+        )
+
+    assert result == ["src/runner.py"]
+
+
 def test_search_code_honors_file_glob(workspace):
     (workspace / "one.py").write_text("def target(): pass\n")
     (workspace / "one.txt").write_text("def target(): pass\n")
@@ -686,6 +719,48 @@ def test_apply_patch_rejects_unrelated_text(workspace):
 
     assert "no close match" in result["error"]
     assert (workspace / "a.txt").read_text(encoding="utf-8") == "hello world\n"
+
+
+def test_apply_patch_refuses_to_rename_def_identifier(workspace):
+    """A fuzzy match must never rename a def/class: matching cancel_job onto
+    a similarly worded _watch_job is a corruption, not an edit."""
+    (workspace / "a.txt").write_text(
+        "def _watch_job(job):\n    return job\n", encoding="utf-8"
+    )
+    with _full_write_ctx(workspace):
+        result = filesystem.apply_patch.invoke(
+            {
+                "file_path": "a.txt",
+                "old_string": "def cancel_job(job_id: str) -> None:",
+                "new_string": "    \"\"\"Cancels a running job.\"\"\"\n    def cancel_job(job_id: str) -> None:",
+            }
+        )
+
+    assert result["error"]
+    assert "no close match" in result["error"] or "not found" in result["error"]
+    # The _watch_job function must be untouched.
+    assert "def _watch_job(job):" in (workspace / "a.txt").read_text(encoding="utf-8")
+
+
+def test_apply_patch_fuzzy_match_keeps_same_identifier(workspace):
+    """Signature drift on the same def identifier may still fuzzy-match."""
+    (workspace / "a.txt").write_text(
+        "def cancel_job(job_id):\n    return job_id\n", encoding="utf-8"
+    )
+    with _full_write_ctx(workspace):
+        result = filesystem.apply_patch.invoke(
+            {
+                "file_path": "a.txt",
+                "old_string": "def cancel_job(job_id: str) -> None:",
+                "new_string": "def cancel_job(job_id):\n    \"\"\"Cancels.\"\"\"\n    return job_id",
+            }
+        )
+
+    assert result["status"] == "applied"
+    assert result["match"] == "fuzzy"
+    text = (workspace / "a.txt").read_text(encoding="utf-8")
+    assert "def cancel_job(job_id):" in text
+    assert "Cancels." in text
 
 
 def test_apply_patch_denied_under_read_scope(workspace):
