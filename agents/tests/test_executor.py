@@ -413,6 +413,113 @@ def test_execute_plan_guides_search_after_hallucinated_edit_anchor(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_corrects_absolute_sandbox_path(
+    mock_chat_with_tools, mock_registry
+):
+    """A path denied because it escapes the workspace must trigger path
+    guidance (workspace-relative paths), not the edit-anchor guidance."""
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Implement parallel subagents in the runner"
+    mock_registry.list_tools.return_value = [
+        "edit_file",
+        "write_file",
+        "read_file",
+        "run_tests",
+    ]
+    mock_registry.execute.side_effect = [
+        {"error": "Access outside workspace denied."},
+        {"error": "Access outside workspace denied."},
+        {"path": "agents/app/runner.py", "status": "edited"},
+        {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
+    ]
+    seen_messages = []
+    events = []
+
+    def respond(messages, **kwargs):
+        seen_messages.append([dict(message) for message in messages])
+        if len(seen_messages) == 1:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "edit",
+                        "edit_file",
+                        {
+                            "file_path": "/sandbox/agents/app/runner.py",
+                            "old_string": "def _authorize(x):\n    return True",
+                            "new_string": "def _authorize(x):\n    return True\n\ndef run_subagents():\n    return []",
+                        },
+                    )
+                ]
+            )
+        if len(seen_messages) == 2:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "write",
+                        "write_file",
+                        {
+                            "file_path": "/sandbox/agents/app/runner.py",
+                            "content": "def run_subagents():\n    return []",
+                        },
+                    )
+                ]
+            )
+        if len(seen_messages) == 3:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "edit",
+                        "edit_file",
+                        {
+                            "file_path": "agents/app/runner.py",
+                            "old_string": "def _authorize(x):\n    return True",
+                            "new_string": "def _authorize(x):\n    return True\n\ndef run_subagents():\n    return []",
+                        },
+                    )
+                ]
+            )
+        if len(seen_messages) == 4:
+            return make_message(
+                tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+            )
+        return make_message(
+            content="Implemented parallel subagents in the runner; tests pass."
+        )
+
+    mock_chat_with_tools.side_effect = respond
+
+    assert (
+        execute_plan(
+            state, on_event=lambda kind, payload: events.append((kind, payload))
+        )
+        == "Implemented parallel subagents in the runner; tests pass."
+    )
+
+    path_guidance = [
+        message["content"]
+        for message in seen_messages[1]
+        if message["role"] == "user" and "workspace-relative" in message["content"]
+    ]
+    repeated_guidance = [
+        message["content"]
+        for message in seen_messages[2]
+        if message["role"] == "user" and "workspace-relative" in message["content"]
+    ]
+    assert path_guidance, "path denial must produce workspace-relative guidance"
+    assert "absolute path" in path_guidance[0]
+    assert (
+        "repeated" in repeated_guidance[-1]
+        or "more than once" in repeated_guidance[-1]
+    )
+    assert state.successful_mutation is True
+    assert state.successful_verification is True
+    assert not any(kind == "unproductive_tool_loop" for kind, _ in events)
+    assert sum(1 for kind, _ in events if kind == "path_denial_recovery") >= 2
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_blocks_diff_after_doc_only_mutation(
     mock_chat_with_tools, mock_registry
 ):

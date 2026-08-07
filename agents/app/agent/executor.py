@@ -79,6 +79,28 @@ MUTATION_ANCHOR_REPEATED_RECOVERY = (
     "different file or may not exist at all; pick a real, concrete anchor instead of guessing."
 )
 
+# File tools that write to a path the model supplied. The workspace boundary
+# is enforced in resolve_path: an absolute path that is not under the active
+# sandbox is denied. Weak models repeatedly fabricate absolute container paths
+# (``/sandbox/...``) and repeat them after a generic "tool failed" nudge, so
+# path denials need their own deterministic recovery guidance.
+PATH_TOOLS = {"edit_file", "write_file", "apply_patch", "read_file"}
+
+PATH_DENIAL_RECOVERY = (
+    "A file tool was denied because the path you supplied is outside the workspace. Never use an "
+    "absolute path such as /sandbox/... or /workspace/... -- those are container paths, not tool "
+    "paths. Use only workspace-relative paths (for example agents/app/runner.py or agents/app). "
+    "The list_files, tree, and read_file results above already show the exact relative paths."
+)
+
+PATH_DENIAL_REPEATED_RECOVERY = (
+    "The same path has been denied more than once because it is outside the workspace. Stop using "
+    "that path. Every file tool must receive a workspace-relative path like agents/app/runner.py "
+    "-- never an absolute path. Copy the exact path from a list_files or tree result. If the file "
+    "does not exist, you are targeting the wrong file: find where the code actually lives with "
+    "search_text or search_code before writing anything."
+)
+
 # Quick requests must fit an 8K local context even after the agent's own
 # prompt and native tool schemas are attached. These cover focused repository
 # review without advertising write/test/web tools that are not needed there.
@@ -704,6 +726,27 @@ def _is_mutation_anchor_failure(result) -> bool:
     )
 
 
+def _is_path_denial_failure(result) -> bool:
+    """Recognize a file tool denied because its path escapes the workspace.
+
+    Deterministic and model-caused: the model fabricated an absolute container
+    path instead of a workspace-relative one. Recovery must correct the path,
+    not the edit anchor.
+    """
+
+    if not isinstance(result, dict):
+        return False
+    error = result.get("error")
+    if not isinstance(error, str):
+        return False
+    lowered = error.casefold()
+    return (
+        "outside workspace" in lowered
+        or "outside the workspace" in lowered
+        or "access denied" in lowered
+    )
+
+
 def _is_transient_tool_failure(result) -> bool:
     """Recognize retryable infrastructure failures from a tool result.
 
@@ -1159,6 +1202,7 @@ tool. Do not provide a final answer before both actions succeed.
     tool_result_cache: dict[str, object] = dict(
         getattr(state, "prefetched_tool_results", {}) or {}
     )
+    path_denial_failures: dict[str, int] = {}
     recovery_required = False
     recovery_handoff_count = 0
     fail_streak = 0
@@ -1227,6 +1271,8 @@ tool. Do not provide a final answer before both actions succeed.
             failed_tools: list[str] = []
             duplicate_tools: list[str] = []
             turn_had_success = False
+            turn_path_denials: list[str] = []
+            turn_anchor_failures: list[str] = []
             messages.append(
                 {
                     "role": "assistant",
@@ -1391,11 +1437,25 @@ tool. Do not provide a final answer before both actions succeed.
                         mutation_anchor_failures[fingerprint] = (
                             mutation_anchor_failures.get(fingerprint, 0) + 1
                         )
+                        turn_anchor_failures.append(tool_name)
+                    if tool_name in PATH_TOOLS and _is_path_denial_failure(result):
+                        path = next(
+                            (
+                                args[key]
+                                for key in ("file_path", "path", "directory")
+                                if isinstance(args.get(key), str)
+                            ),
+                            tool_name,
+                        )
+                        path_denial_failures[path] = path_denial_failures.get(path, 0) + 1
+                        turn_path_denials.append(tool_name)
                 else:
                     unproductive_calls.clear()
                     turn_had_success = True
                     if tool_name in MUTATION_ANCHOR_TOOLS:
                         mutation_anchor_failures.clear()
+                    if tool_name in PATH_TOOLS:
+                        path_denial_failures.clear()
 
                 result_text = summarize_tool_result(tool_name, result)
 
@@ -1552,8 +1612,25 @@ tool. Do not provide a final answer before both actions succeed.
 
             if failed_tools:
                 recovery_required = True
-                if mutation_anchor_failures:
-                    worst = max(mutation_anchor_failures.values())
+                if turn_path_denials:
+                    worst = max(path_denial_failures.values(), default=0)
+                    guidance = (
+                        PATH_DENIAL_REPEATED_RECOVERY
+                        if worst >= 2
+                        else PATH_DENIAL_RECOVERY
+                    )
+                    on_event(
+                        "path_denial_recovery",
+                        {"repeated": worst >= 2, "failed_paths": len(path_denial_failures)},
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": guidance,
+                        }
+                    )
+                elif turn_anchor_failures:
+                    worst = max(mutation_anchor_failures.values(), default=0)
                     guidance = (
                         MUTATION_ANCHOR_REPEATED_RECOVERY
                         if worst >= 2
