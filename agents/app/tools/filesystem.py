@@ -1416,6 +1416,17 @@ def run_tests(
         target_file = resolve_path(file_part)
         if not target_file.is_file():
             return {"error": "test_path does not name a file."}
+        if kind == "pytest" and not (
+            target_file.name.startswith("test_")
+            or target_file.name.endswith("_test.py")
+        ):
+            return {
+                "error": (
+                    "pytest test_path must name a test module (test_*.py or "
+                    "*_test.py), not an application source file. Use kind=ruff "
+                    "for source-file static checks or locate the relevant test."
+                )
+            }
         focused_target = relative(target_file)
         if separator:
             focused_target += f"::{node_id}"

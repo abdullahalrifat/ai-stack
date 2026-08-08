@@ -7,6 +7,7 @@ import pytest
 from app.agent.completion import record_tool_progress
 from app.agent.executor import (
     _answer_audit,
+    _copies_roadmap_heading_into_source,
     _prefetch_workspace,
     _semantic_tool_key,
     _synthesize_partial_answer,
@@ -81,6 +82,53 @@ def test_semantic_progress_groups_search_scope_drift_and_rejects_cached_reads():
     )
     assert _tool_result_has_evidence(
         "search_code", {"matches": [{"path": "worker.py"}]}, duplicate=False
+    )
+
+
+def test_semantic_progress_groups_cosmetic_verification_argument_drift():
+    first = _semantic_tool_key(
+        "run_tests",
+        {
+            "kind": "pytest",
+            "directory": ".",
+            "test_path": "agents/tests/test_planner.py",
+        },
+    )
+    second = _semantic_tool_key(
+        "run_tests",
+        {
+            "kind": "pytest",
+            "directory": str(current_workspace()),
+            "test_path": "agents/tests/test_planner.py",
+            "ignore_warnings": True,
+            "max_chars": 100,
+        },
+    )
+
+    assert first == second
+
+
+def test_roadmap_heading_copy_is_not_treated_as_source_implementation():
+    state = DummyState()
+    state.user_message = "Implement Tier 3 from TODO.md"
+
+    assert _copies_roadmap_heading_into_source(
+        state,
+        "edit_file",
+        {
+            "file_path": "agents/app/agent/planner.py",
+            "old_string": "Low-latency plan.",
+            "new_string": "Low-latency plan implementing Tier 3.",
+        },
+    )
+    assert not _copies_roadmap_heading_into_source(
+        state,
+        "edit_file",
+        {
+            "file_path": "agents/app/agent/dispatch.py",
+            "old_string": "def dispatch(tasks): pass",
+            "new_string": "def dispatch(tasks): return run_parallel(tasks)",
+        },
     )
 
 
@@ -342,7 +390,7 @@ def test_execute_plan_forces_verification_before_final_answer_after_edit(
     state = DummyState()
     state.allow_write = True
     state.user_message = "Add a helper function"  # no verify keyword in request
-    mock_registry.list_tools.return_value = ["write_file", "run_tests"]
+    mock_registry.list_tools.return_value = ["write_file", "edit_file", "run_tests"]
     mock_registry.execute.side_effect = [
         {"status": "written", "path": "helpers.py"},
         {"exit_code": 0, "output": "All checks passed!"},
@@ -663,10 +711,11 @@ def test_execute_plan_repairs_failing_verification_before_answering(
     state = DummyState()
     state.allow_write = True
     state.user_message = "Fix the broken test"
-    mock_registry.list_tools.return_value = ["write_file", "run_tests"]
+    mock_registry.list_tools.return_value = ["write_file", "edit_file", "run_tests"]
     mock_registry.execute.side_effect = [
         {"status": "written", "path": "test_broken.py"},
         {"kind": "pytest", "exit_code": 1, "output": "FAILED test_broken.py::test_x"},
+        {"status": "edited", "path": "test_broken.py"},
         {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
     ]
     mock_chat_with_tools.side_effect = [
@@ -684,7 +733,20 @@ def test_execute_plan_repairs_failing_verification_before_answering(
         ),
         make_message(content="I could not fix it; the tests still fail."),
         make_message(
-            tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+            tool_calls=[
+                make_tool_call(
+                    "repair",
+                    "edit_file",
+                    {
+                        "file_path": "test_broken.py",
+                        "old_string": "test",
+                        "new_string": "def test_x(): assert True\n",
+                    },
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[make_tool_call("retest", "run_tests", {"kind": "pytest"})]
         ),
         make_message(content="The failing test was repaired; the suite passes."),
     ]
@@ -693,7 +755,7 @@ def test_execute_plan_repairs_failing_verification_before_answering(
         execute_plan(state)
         == "The failing test was repaired; the suite passes."
     )
-    assert mock_registry.execute.call_count == 3
+    assert mock_registry.execute.call_count == 4
     assert state.successful_mutation is True
     assert state.successful_verification is True
 

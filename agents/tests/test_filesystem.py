@@ -778,6 +778,25 @@ def test_run_tests_rejects_unsafe_focused_target(workspace, monkeypatch):
     assert calls == []
 
 
+def test_run_tests_rejects_application_source_as_pytest_target(workspace, monkeypatch):
+    source_file = workspace / "app" / "worker.py"
+    source_file.parent.mkdir()
+    source_file.write_text("def retry(): pass\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda *args, **kwargs: calls.append(args) or {},
+    )
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.run_tests.invoke(
+            {"kind": "pytest", "test_path": "app/worker.py"}
+        )
+
+    assert "must name a test module" in result["error"]
+    assert calls == []
+
+
 @contextmanager
 def _full_write_ctx(workspace):
     with (
