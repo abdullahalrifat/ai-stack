@@ -398,6 +398,19 @@ def test_answer_audit_requires_verification_after_any_mutation():
     assert _answer_audit(state, "Added the helper function; tests pass.") == []
 
 
+def test_answer_audit_rejects_unsupported_pass_and_partial_completion_claims():
+    state = DummyState()
+    state.successful_verification = False
+    state.partial = True
+
+    failures = _answer_audit(
+        state, "Implemented the feature and the test suite passes."
+    )
+
+    assert "response claims verification passed without a successful check" in failures
+    assert "response claims completion for a partial run" in failures
+
+
 def test_record_tool_progress_tracks_mutated_paths():
     state = DummyState()
 
@@ -2030,10 +2043,26 @@ def test_execute_plan_replans_after_consecutive_failures(
     assert replanned[0]["reason"] == "3 consecutive tool-call steps failed"
     assert replanned[0]["new_plan"] == ["read error log", "fix root cause"]
     assert state.plan == ["read error log", "fix root cause"]
+    escalated = [payload for kind, payload in events if kind == "model_escalated"]
+    assert escalated == [
+        {
+            "from": "test-model",
+            "to": "reasoning",
+            "reason": "3 consecutive tool-call steps failed",
+            "escalation": 1,
+        }
+    ]
+    assert state.model == "reasoning"
+    assert state.model_escalations == 1
 
     last_turn = seen_messages[-1]
     assert any(
         message["role"] == "user" and "Follow this revised plan" in message["content"]
+        for message in last_turn
+    )
+    assert any(
+        message["role"] == "user"
+        and "Reasoning-model escalation handoff" in message["content"]
         for message in last_turn
     )
 

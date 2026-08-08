@@ -101,6 +101,13 @@ ANALYSIS_SYNTHESIS_MAX_TOKENS = int(os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "
 ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
     os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "360")
 )
+# A stronger model is used only after bounded grounded failures; normal coding
+# remains on the selected/default model. Independent change review is likewise
+# risk-based and never overrides a deterministic rejection.
+AGENT_REASONING_MODEL = os.getenv("AGENT_REASONING_MODEL", "reasoning")
+AGENT_MODEL_ESCALATIONS = int(os.getenv("AGENT_MODEL_ESCALATIONS", "1"))
+CHANGE_REVIEW_MODEL = os.getenv("CHANGE_REVIEW_MODEL", "reasoning")
+CHANGE_REVIEW_MODEL_ENABLED = env_flag("CHANGE_REVIEW_MODEL_ENABLED", True)
 # Planning is advisory; a small bounded response avoids wasting the local
 # context window on a plan the executor does not need to execute literally.
 PLANNER_MAX_COMPLETION_TOKENS = int(os.getenv("PLANNER_MAX_COMPLETION_TOKENS", "192"))
@@ -244,6 +251,8 @@ def validate_settings() -> None:
         raise RuntimeError("Re-planning thresholds must be at least 1")
     if REPLAN_MAX_RETRIES < 0:
         raise RuntimeError("REPLAN_MAX_RETRIES cannot be negative")
+    if AGENT_MODEL_ESCALATIONS < 0:
+        raise RuntimeError("AGENT_MODEL_ESCALATIONS cannot be negative")
     if MEMORY_CONTEXT_TOKENS < 128 or DOCUMENT_MAX_BYTES < 1:
         raise RuntimeError("Invalid document retrieval settings")
     if not RUNNER_API_KEY:

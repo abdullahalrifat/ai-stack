@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -159,8 +158,7 @@ def replay_trace(
         }
 
     observed_sequence = [
-        {"tool": item["tool"], "args": item.get("args") or {}}
-        for item in observed
+        {"tool": item["tool"], "args": item.get("args") or {}} for item in observed
     ]
     divergence = _diff_sequences(golden_sequence, observed_sequence)
 
@@ -218,6 +216,9 @@ def replay_trace(
         },
         "answer": observed_answer,
         "partial": bool(getattr(state, "partial", False)),
+        "graph_phase": getattr(state, "graph_phase", "pending"),
+        "graph_history": list(getattr(state, "graph_history", []) or []),
+        "model_escalations": int(getattr(state, "model_escalations", 0)),
         "steps": int(getattr(state, "steps", 0)),
         "events": events,
     }

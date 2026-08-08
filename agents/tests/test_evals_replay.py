@@ -171,6 +171,8 @@ def test_replay_passes_on_matching_read_only_trace(golden_name):
         report = replay_trace(trace, workspace=".")
     assert report["status"] == "PASS", report["reasons"]
     assert report["golden_tool_calls"] == report["observed_tool_calls"]
+    assert report["graph_phase"] == "complete"
+    assert report["graph_history"][0]["to"] == "analyzing"
 
 
 def test_replay_passes_on_matching_write_trace():
@@ -180,6 +182,8 @@ def test_replay_passes_on_matching_write_trace():
         report = replay_trace(trace, workspace=".")
     assert report["status"] == "PASS", report["reasons"]
     assert report["golden_tool_calls"] == report["observed_tool_calls"]
+    assert report["graph_phase"] == "reviewing"
+    assert any(item["to"] == "verifying" for item in report["graph_history"])
 
 
 def test_replay_fails_when_model_script_is_shorter_than_golden():

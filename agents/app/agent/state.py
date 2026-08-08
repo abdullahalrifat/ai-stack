@@ -44,6 +44,16 @@ class AgentState:
 
     active_requirement: str = ""
 
+    graph_phase: str = "pending"
+
+    graph_history: list[dict[str, str]] = field(default_factory=list)
+
+    model_escalations: int = 0
+
+    original_model: str = ""
+
+    diff_review: dict[str, Any] = field(default_factory=dict)
+
     successful_mutation: bool = False
 
     # Workspace-relative paths successfully written/edited this run. Used to

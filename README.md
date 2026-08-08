@@ -314,10 +314,43 @@ observations. A write request cannot be reported complete without an observed
 mutation, requested verification must have succeeded, and failed tool
 categories must be recovered before the final answer is accepted.
 
+The executor follows an explicit, bounded state graph:
+
+```text
+analyzing -> ready -> implementing -> verifying -> reviewing -> complete
+                           ^              |
+                           |              v
+                           +---------- repairing
+```
+
+Every transition is emitted as a durable event and included in evaluation
+replays. Invalid transitions are refused, repair and re-planning are bounded,
+and terminal outcomes distinguish complete, partial, and rejected runs. After
+repeated grounded failures, the executor can make one configurable escalation
+to `AGENT_REASONING_MODEL`, passing a compact evidence handoff instead of the
+entire tool transcript.
+
+Before a write-run diff is exposed for approval, deterministic review checks
+that its paths and implementation evidence match the active requirement and
+that the final response does not claim unobserved mutations or passing tests.
+Broad or security-sensitive accepted diffs receive an additional independent
+review from `CHANGE_REVIEW_MODEL`; a model review may reject a change but can
+never override a deterministic rejection.
+
 At present, one primary expert model executes the complete graph in a single
-tool loop. Per-task workflow annotations establish the contract for future
-multi-expert dispatch, but they do not yet launch separate models. This keeps
-planner development independent from later expert orchestration work.
+tool loop, with bounded stronger-model escalation when recovery requires it.
+Per-task workflow annotations establish the contract for future multi-expert
+dispatch, but they do not yet launch simultaneous models.
+
+The runtime model-loop defaults live in `.env` (created from the tracked
+`.env.example`) and are passed through Compose:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AGENT_REASONING_MODEL` | `reasoning` | Stronger model used after bounded execution failures |
+| `AGENT_MODEL_ESCALATIONS` | `1` | Maximum stronger-model handoffs in one run |
+| `CHANGE_REVIEW_MODEL` | `reasoning` | Independent reviewer for high-risk accepted diffs |
+| `CHANGE_REVIEW_MODEL_ENABLED` | `true` | Enables risk-based independent diff review |
 
 ## Quick start
 

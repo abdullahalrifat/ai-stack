@@ -173,11 +173,36 @@ def _criterion_satisfied(state, criterion: str, answer: str) -> bool:
     return not keywords or any(keyword in answer_lower for keyword in keywords)
 
 
+def _has_successful_verification(state) -> bool:
+    """Return whether state or durable observations prove a check succeeded."""
+
+    if getattr(state, "successful_verification", False):
+        return True
+    for observation in reversed(getattr(state, "observations", []) or []):
+        if not isinstance(observation, dict):
+            continue
+        tool_name = str(observation.get("tool") or "")
+        args = observation.get("args") or {}
+        if _tool_category(tool_name, args) != "verification":
+            continue
+        return not tool_result_failed(observation.get("result"))
+    return False
+
+
 def answer_audit(state, answer: str) -> list[str]:
     """Check observable route requirements before accepting a final answer."""
 
     lowered = answer.casefold()
     failures: list[str] = []
+    if re.search(r"\b(?:tests?|suite|lint|build)\b.{0,40}\bpass", lowered):
+        if not _has_successful_verification(state):
+            failures.append(
+                "response claims verification passed without a successful check"
+            )
+    if getattr(state, "partial", False) and re.search(
+        r"\b(?:implemented|completed|finished)\b", lowered
+    ):
+        failures.append("response claims completion for a partial run")
     missing_entities = [
         entity
         for entity in getattr(state, "routing_entities", [])[:30]

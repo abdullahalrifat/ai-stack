@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 from ..core.cancellation import cancellation_context
 from ..core.config import (
+    AGENT_MODEL_ESCALATIONS,
+    AGENT_REASONING_MODEL,
     ANALYSIS_SYNTHESIS_MAX_TOKENS,
     ANALYSIS_SYNTHESIS_MODEL,
     ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS,
@@ -46,6 +48,7 @@ from .completion import (
     record_tool_progress as _record_tool_progress,
 )
 from .context_budget import estimate_tokens, fit_user_context, summarize_tool_result
+from .graph import transition_graph
 from .parser import parse_tool_arguments
 from .planner import replan
 from .prompts import (
@@ -59,6 +62,30 @@ from .prompts import (
 logger = logging.getLogger(__name__)
 
 MAX_STEPS = MAX_AGENT_STEPS
+
+
+def _escalation_handoff(state) -> str:
+    """Build a compact failure packet for a stronger reasoning model."""
+
+    packet = {
+        "requirement": getattr(state, "active_requirement", "") or state.user_message,
+        "phase": getattr(state, "graph_phase", ""),
+        "evidence": getattr(state, "evidence_ledger", {}),
+        "changed_files": sorted(
+            getattr(state, "successful_mutation_paths", set()) or set()
+        ),
+        "verification_succeeded": getattr(state, "successful_verification", False),
+        "recent_failures": _failure_context(state),
+        "instruction": (
+            "Diagnose the concrete failure. Use existing symbols and exact source; "
+            "do not repeat prior edits or restart broad exploration."
+        ),
+    }
+    return (
+        "Reasoning-model escalation handoff:\n"
+        + json.dumps(packet, default=str)[:8_000]
+    )
+
 
 # Tools that mutate the workspace. Excluded entirely from the tool list
 # whenever a request does not have allow_write set.
@@ -1279,10 +1306,14 @@ def execute_plan(
 
     on_event = on_event or _noop_event
     should_cancel = should_cancel or (lambda: False)
+    if not getattr(state, "original_model", ""):
+        state.original_model = state.model
+    transition_graph(state, "analyzing", reason="execution started", on_event=on_event)
 
     def finalize(answer: str, *, partial: bool = False) -> str:
         """Publish exactly one audited or explicitly partial terminal answer."""
 
+        state.partial = partial
         if partial:
             failures = _answer_audit(state, answer)
             if failures and "Incomplete requirements:" not in answer:
@@ -1292,7 +1323,17 @@ def execute_plan(
             if DOC_ONLY_MUTATION_FAILURE in failures:
                 state.diff_blocked = True
         state.finished = True
-        state.partial = partial
+        transition_graph(
+            state,
+            (
+                "partial"
+                if partial
+                else ("reviewing" if state.allow_write else "complete")
+            ),
+            reason="terminal answer produced",
+            on_event=on_event,
+            force=partial,
+        )
         if on_token is not None:
             on_token(answer)
         payload = {"answer": answer}
@@ -1341,6 +1382,12 @@ def execute_plan(
     tools = schemas_for(available_tools)
     workspace_evidence = _prefetch_workspace(state, available_tools, on_event)
     external_search = _prefetch_external_search(state, available_tools, on_event)
+    transition_graph(
+        state,
+        "ready",
+        reason="initial evidence packet prepared",
+        on_event=on_event,
+    )
 
     useful_prefetch_tools = {
         observation.get("tool")
@@ -1713,6 +1760,20 @@ explicitly instead of marking them complete without code.
                 tool_name = call.function.name
                 raw_args = parse_tool_arguments(call.function.arguments)
                 args = normalize_tool_args(tool_name, raw_args)
+                if tool_name in MUTATION_ANCHOR_TOOLS:
+                    transition_graph(
+                        state,
+                        "implementing",
+                        reason=f"attempting {tool_name}",
+                        on_event=on_event,
+                    )
+                elif tool_name in {"run_tests", "run_command"}:
+                    transition_graph(
+                        state,
+                        "verifying",
+                        reason=f"running {tool_name}",
+                        on_event=on_event,
+                    )
                 noop_mutation = (
                     tool_name in MUTATION_ANCHOR_TOOLS
                     and "old_string" in args
@@ -1997,6 +2058,16 @@ explicitly instead of marking them complete without code.
                     )
                     if failed:
                         failed_tools.append(tool_name)
+                        if tool_name in MUTATION_ANCHOR_TOOLS | {
+                            "run_tests",
+                            "run_command",
+                        }:
+                            transition_graph(
+                                state,
+                                "repairing",
+                                reason=f"{tool_name} failed",
+                                on_event=on_event,
+                            )
                     if noop_mutation:
                         turn_noop_mutations.append(tool_name)
                         source_refresh_required = True
@@ -2072,6 +2143,10 @@ explicitly instead of marking them complete without code.
                             "active_requirement": getattr(
                                 state, "active_requirement", ""
                             ),
+                            "graph_phase": getattr(state, "graph_phase", "pending"),
+                            "graph_history": getattr(state, "graph_history", []),
+                            "model_escalations": getattr(state, "model_escalations", 0),
+                            "original_model": getattr(state, "original_model", ""),
                             "messages": [dict(message) for message in messages[-40:]],
                         }
                     )
@@ -2181,6 +2256,27 @@ explicitly instead of marking them complete without code.
                     replan_count,
                     REPLAN_MAX_RETRIES,
                 )
+                if (
+                    getattr(state, "model_escalations", 0) < AGENT_MODEL_ESCALATIONS
+                    and state.model != AGENT_REASONING_MODEL
+                ):
+                    previous_model = state.model
+                    state.model = AGENT_REASONING_MODEL
+                    state.model_escalations = getattr(state, "model_escalations", 0) + 1
+                    handoff = _escalation_handoff(state)
+                    messages = [
+                        *messages[:2],
+                        {"role": "user", "content": handoff},
+                    ]
+                    on_event(
+                        "model_escalated",
+                        {
+                            "from": previous_model,
+                            "to": state.model,
+                            "reason": replan_reason,
+                            "escalation": state.model_escalations,
+                        },
+                    )
                 messages.append(
                     {
                         "role": "user",

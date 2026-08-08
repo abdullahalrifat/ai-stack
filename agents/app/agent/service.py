@@ -44,7 +44,9 @@ from ..runs.sandbox import (
 from ..runs.store import get_run_store
 from ..tools.filesystem import workspace_context
 from .executor import execute_plan, requires_external_search
+from .graph import transition_graph
 from .planner import create_plan, deterministic_plan
+from .review import review_change
 from .router import route_request
 from .state import AgentState
 
@@ -529,6 +531,10 @@ def execute_run(run_id: str) -> None:
             )
             state.active_roadmap_item = str(checkpoint.get("active_roadmap_item") or "")
             state.active_requirement = str(checkpoint.get("active_requirement") or "")
+            state.graph_phase = str(checkpoint.get("graph_phase") or "pending")
+            state.graph_history = list(checkpoint.get("graph_history") or [])
+            state.model_escalations = int(checkpoint.get("model_escalations") or 0)
+            state.original_model = str(checkpoint.get("original_model") or "")
             state.restored_transcript = list(checkpoint.get("messages") or [])
             on_event(
                 "checkpoint_restored",
@@ -593,6 +599,24 @@ def execute_run(run_id: str) -> None:
 
         with cancellation_context(cancelled):
             diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
+        if diff and diff.strip():
+            transition_graph(
+                state,
+                "reviewing",
+                reason="workspace diff ready for independent review",
+                on_event=on_event,
+            )
+            state.diff_review = review_change(state, diff, answer)
+            on_event("change_reviewed", state.diff_review)
+            if state.diff_review.get("decision") != "accept":
+                state.diff_blocked = True
+                reasons = state.diff_review.get("reasons") or [
+                    "change review rejected the diff"
+                ]
+                if "Incomplete requirements:" not in answer:
+                    answer += "\n\nIncomplete requirements:\n- " + "\n- ".join(
+                        str(reason) for reason in reasons
+                    )
         diff_blocked = bool(getattr(state, "diff_blocked", False))
         unsafe_incomplete_diff = bool(diff and diff.strip()) and (
             state.partial
@@ -622,9 +646,22 @@ def execute_run(run_id: str) -> None:
                 remove_sandbox(str(sandbox.repository), str(sandbox.path))
                 sandbox = None
             store.update_run(run_id, sandbox_path=None)
+            transition_graph(
+                state,
+                "rejected" if diff_blocked else "partial",
+                reason="workspace diff was not safe to expose",
+                on_event=on_event,
+                force=True,
+            )
         has_pending_diff = bool(diff and diff.strip())
         if has_pending_diff:
             on_event("diff_ready", {"diff": diff})
+            transition_graph(
+                state,
+                "complete",
+                reason="change review accepted the verified diff",
+                on_event=on_event,
+            )
 
         save_conversation(conversation_id, "user", task)
         save_conversation(conversation_id, "assistant", answer)

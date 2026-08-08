@@ -309,6 +309,12 @@ services:
       ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3-14b}
       ANALYSIS_SYNTHESIS_MAX_TOKENS: ${ANALYSIS_SYNTHESIS_MAX_TOKENS:-1200}
       ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS: ${ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS:-360}
+      # Escalate only after a bounded failure loop, then independently review
+      # high-risk diffs before exposing them for approval.
+      AGENT_REASONING_MODEL: ${AGENT_REASONING_MODEL:-reasoning}
+      AGENT_MODEL_ESCALATIONS: ${AGENT_MODEL_ESCALATIONS:-1}
+      CHANGE_REVIEW_MODEL: ${CHANGE_REVIEW_MODEL:-reasoning}
+      CHANGE_REVIEW_MODEL_ENABLED: ${CHANGE_REVIEW_MODEL_ENABLED:-true}
       PLANNER_MAX_COMPLETION_TOKENS: ${PLANNER_MAX_COMPLETION_TOKENS:-192}
       # Bound Open WebUI/Continue input before the agent adds tools and its
       # own instructions, preventing an 8K Ollama context overflow.
