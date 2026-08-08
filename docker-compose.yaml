@@ -17,10 +17,10 @@ services:
       OLLAMA_KEEP_ALIVE: 10m
       OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-3}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      # Open WebUI can attach several tool schemas to one request.  4096 is
-      # too small for those prompts; 8192 fits them while remaining practical
-      # with this host's 62 GiB of RAM and one loaded CPU model.
-      OLLAMA_CONTEXT_LENGTH: 8192
+      # Open WebUI can attach several tool schemas to one request. 4096 is
+      # too small for those prompts. 32768 matches the num_ctx each model
+      # advertises through LiteLLM; lower it on memory-constrained hosts.
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-32768}
 
     volumes:
       - ./ollama:/root/.ollama
@@ -204,7 +204,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
       VECTOR_DB: qdrant
       QDRANT_URI: http://qdrant:6333
@@ -252,8 +252,11 @@ services:
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
 
       AGENT_API_KEY: ${AGENT_API_KEY}
+      # Authentication is mandatory unless explicitly disabled for isolated
+      # local development. Never enable this on a reachable host.
+      ALLOW_INSECURE_NO_AUTH: ${ALLOW_INSECURE_NO_AUTH:-false}
       RUNNER_API_KEY: ${RUNNER_API_KEY:-${AGENT_API_KEY}}
-      RUNNER_URL: http://agent-runner:8001
+      RUNNER_URL: ${RUNNER_URL:-http://agent-runner:8001}
 
       # DEFAULT_MODEL is what /chat, /execute, and /runs use unless a request
       # overrides it. AGENT_MODEL_ID is the id the agent advertises at
@@ -266,9 +269,9 @@ services:
       # Semantic routing is a short JSON-only turn before Auto execution.
       ROUTER_MODEL: ${ROUTER_MODEL:-quick}
       ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-coder}
-      ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1024}
-      ROUTER_TIMEOUT_SECONDS: ${ROUTER_TIMEOUT_SECONDS:-120}
-      ROUTER_ESCALATION_TIMEOUT_SECONDS: ${ROUTER_ESCALATION_TIMEOUT_SECONDS:-240}
+      ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1536}
+      ROUTER_TIMEOUT_SECONDS: ${ROUTER_TIMEOUT_SECONDS:-240}
+      ROUTER_ESCALATION_TIMEOUT_SECONDS: ${ROUTER_ESCALATION_TIMEOUT_SECONDS:-480}
       # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-coder}
       # Used for current web/financial research through agent.orchestrator.
@@ -276,13 +279,13 @@ services:
       AGENT_MODEL_ID: ${AGENT_MODEL_ID:-orchestrator}
 
       QDRANT_URL: http://qdrant:6333
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
       # Required for the durable, streamed /runs API (SSE progress, sandbox
       # diff approval). /chat and /execute work without this.
-      POSTGRES_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
 
-      WORKSPACE_DIR: /workspace
+      WORKSPACE_DIR: ${WORKSPACE_DIR:-/workspace}
       # New requests default to this repository instead of scanning the whole
       # parent bind mount. It must be inside WORKSPACE_DIR or WORKSPACE_ROOTS.
       DEFAULT_WORKSPACE_DIR: ${DEFAULT_WORKSPACE_DIR:-/workspace}
@@ -290,7 +293,7 @@ services:
       # pointed at via the `workspace` request field, beyond WORKSPACE_DIR.
       WORKSPACE_ROOTS: ${WORKSPACE_ROOTS:-}
 
-      SANDBOX_ROOT: /sandboxes
+      SANDBOX_ROOT: ${SANDBOX_ROOT:-/sandboxes}
 
       MAX_AGENT_STEPS: ${MAX_AGENT_STEPS:-80}
       MAX_EMPTY_MODEL_TURNS: ${MAX_EMPTY_MODEL_TURNS:-5}
@@ -334,6 +337,23 @@ services:
       FINANCE_LLM_TIMEOUT_SECONDS: ${FINANCE_LLM_TIMEOUT_SECONDS:-600}
       COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-300}
       RUNNER_JOB_LEASE_SECONDS: ${RUNNER_JOB_LEASE_SECONDS:-10}
+      # Every tunable below defaults to the same value as config.py so the
+      # deployed stack can be maintained entirely from .env (see .env.example).
+      MAX_PARALLEL_TOOL_CALLS: ${MAX_PARALLEL_TOOL_CALLS:-6}
+      TOOL_RESULT_SUMMARY_CHARS: ${TOOL_RESULT_SUMMARY_CHARS:-6000}
+      TOOL_RESULT_SUMMARY_ITEMS: ${TOOL_RESULT_SUMMARY_ITEMS:-6}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-3}
+      LLM_RETRY_BACKOFF_SECONDS: ${LLM_RETRY_BACKOFF_SECONDS:-2}
+      REPLAN_MAX_COMPLETION_TOKENS: ${REPLAN_MAX_COMPLETION_TOKENS:-512}
+      REPLAN_FAIL_STREAK: ${REPLAN_FAIL_STREAK:-5}
+      REPLAN_STUCK_STEPS: ${REPLAN_STUCK_STEPS:-12}
+      REPLAN_MAX_RETRIES: ${REPLAN_MAX_RETRIES:-3}
+      RUN_WORKER_LEASE_SECONDS: ${RUN_WORKER_LEASE_SECONDS:-60}
+      WEB_SEARCH_URL: ${WEB_SEARCH_URL:-http://searxng:8080/search}
+      WEB_SEARCH_TIMEOUT_SECONDS: ${WEB_SEARCH_TIMEOUT_SECONDS:-15}
+      # Retained for backwards compatibility; no longer the compaction trigger.
+      CONTEXT_COMPACT_EVERY_STEPS: ${CONTEXT_COMPACT_EVERY_STEPS:-6}
+      CONTEXT_COMPACT_KEEP_RECENT: ${CONTEXT_COMPACT_KEEP_RECENT:-4}
 
       # Executables the run_command tool may invoke (no shell metacharacters
       # are permitted regardless of this list).
@@ -364,7 +384,6 @@ services:
       RUN_EVENT_BATCH_SECONDS: ${RUN_EVENT_BATCH_SECONDS:-0.50}
 
       WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-true}
-      WEB_SEARCH_URL: http://searxng:8080/search
       # 8 MB accommodates typical audited annual-report PDFs. Lower this on
       # constrained networks or raise it for unusually large filings.
       WEB_FETCH_MAX_BYTES: ${WEB_FETCH_MAX_BYTES:-8000000}
@@ -424,7 +443,7 @@ services:
     command: ["uvicorn", "app.runner:app", "--host", "0.0.0.0", "--port", "8001"]
     environment:
       RUNNER_API_KEY: ${RUNNER_API_KEY:-${AGENT_API_KEY}}
-      SANDBOX_ROOT: /sandboxes
+      SANDBOX_ROOT: ${SANDBOX_ROOT:-/sandboxes}
       COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-300}
       RUNNER_CPU_SECONDS: ${RUNNER_CPU_SECONDS:-300}
       RUNNER_MEMORY_MB: ${RUNNER_MEMORY_MB:-4096}

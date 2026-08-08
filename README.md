@@ -1,7 +1,7 @@
 # AI Stack
 
 AI Stack is a self-hosted control plane for private chat, coding assistance,
-retrieval-augmented knowledge work, and eventually sourced financial research.
+retrieval-augmented knowledge work, and source-cited financial research.
 It runs local models through Ollama and presents a single OpenAI-compatible
 gateway through LiteLLM.
 
@@ -29,6 +29,11 @@ Open WebUI ---- Postgres / Redis / Qdrant
 - **Coding agent** plans repository work, reads/searches/edits files, runs an
   allowlisted set of commands, and can make explicitly approved file changes
   inside a disposable, reviewable sandbox.
+- **Runs UI** is the live, streamed, reviewable task console for the agent.
+- **Sandbox runner** (`agent-runner`) executes the allowlisted commands in
+  isolated containers with per-tier kernel limits.
+- **Terminal agent** (`cli/`) is an independently packaged client for the same
+  durable run API.
 - **SearXNG** provides private metasearch for agent web research; it is internal
   to the Docker network and never exposed as a public port.
 
@@ -346,21 +351,24 @@ verification, risk) in parallel before the tool loop and merges their
 structured JSON findings into the evidence ledger. Ordinary Code/Quick and
 read-only runs stay on the single fast loop with no extra model calls.
 
-The runtime model-loop defaults live in `.env` (created from the tracked
-`.env.example`) and are passed through Compose:
+Every tunable value is controlled from `.env` — the single source of truth
+for the stack. Copy the tracked template (`.env.example`) and edit values
+there; `docker-compose.yaml` forwards every variable into the containers with
+defaults that match `agents/app/core/config.py`, so no other file needs
+touching for routine tuning. The runtime model-loop defaults look like:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AGENT_REASONING_MODEL` | `qwen3-14b` | Stronger tool-capable model used after bounded execution failures |
-| `AGENT_MODEL_ESCALATIONS` | `1` | Maximum stronger-model handoffs in one run |
+| `AGENT_MODEL_ESCALATIONS` | `3` | Maximum stronger-model handoffs in one run |
 | `CHANGE_REVIEW_MODEL` | `reasoning` | Independent reviewer for high-risk accepted diffs |
 | `CHANGE_REVIEW_MODEL_ENABLED` | `true` | Enables risk-based independent diff review |
 | `EXPERT_DISPATCH_ENABLED` | `true` | Enables parallel expert analyses for complex auto-routed requests |
 | `EXPERT_DISPATCH_MODEL` | `qwen3-14b` | Model used for each bounded expert analysis |
 | `MAX_PARALLEL_EXPERTS` | `4` | Maximum experts dispatched in one run |
-| `EXPERT_MAX_COMPLETION_TOKENS` | `640` | Per-expert output budget |
-| `EXPERT_DISPATCH_TIMEOUT_SECONDS` | `240` | Per-expert completion timeout |
-| `EXPERT_FINDINGS_CONTEXT_CHARS` | `1200` | Model-visible budget for merged findings in task context |
+| `EXPERT_MAX_COMPLETION_TOKENS` | `1024` | Per-expert output budget |
+| `EXPERT_DISPATCH_TIMEOUT_SECONDS` | `600` | Per-expert completion timeout |
+| `EXPERT_FINDINGS_CONTEXT_CHARS` | `2400` | Model-visible budget for merged findings in task context |
 
 ## Quick start
 
@@ -370,16 +378,21 @@ The runtime model-loop defaults live in `.env` (created from the tracked
    cp .env.example .env
    ```
 
-   Generate long random values for all credentials. Set `WORKSPACE_PATH` to the
-   smallest host directory that contains repositories you want the agent to see.
-   `DEFAULT_WORKSPACE_DIR` defaults to the project-neutral `/workspace`. For a
-   narrower default, set it to a mounted repository such as
-   `/workspace/my-project`. The Runs UI also lets you select a narrower
-   repository, and clients automatically narrow to a valid path explicitly
-   named in the prompt, preventing repository reviews from scanning unrelated
-   sibling directories when a project path is supplied.
-   If you need the agent to see more than one directory, mount each one as its
-   own volume in `docker-compose.yaml` and list the in-container paths in
+   Generate long random values for all credentials. The workspace is defined by
+   three `.env` variables:
+   - `WORKSPACE_PATH` — host directory mounted into the container at
+     `/workspace`. Use the smallest directory that contains the repositories
+     the agent may inspect or edit.
+   - `WORKSPACE_DIR` — in-container allowed root (default `/workspace`); the
+     agent never escapes this boundary and cannot reach sibling mounts.
+   - `DEFAULT_WORKSPACE_DIR` — repository selected when the client does not
+     explicitly choose a workspace (an in-container path under `WORKSPACE_DIR`).
+   The Runs UI also lets you select a narrower repository, and clients
+   automatically narrow to a valid path explicitly named in the prompt,
+   preventing repository reviews from scanning unrelated sibling directories
+   when a project path is supplied.
+   If the agent must see more than one directory, mount each one as its own
+   volume in `docker-compose.yaml` and list the in-container paths in
    `WORKSPACE_ROOTS` (comma-separated).
 
 2. Build the two local images and start the stack:
@@ -451,10 +464,12 @@ endpoint or Runs UI when that guarantee is required.
 The agent requires `Authorization: Bearer $AGENT_API_KEY` on every endpoint
 except `/health` and the read-only `/models/available` catalog. Tool calls are made through the model's native function
 calling rather than hand-written JSON, and the tools available to it are:
-`list_files`, `tree`, `read_file`, `find_file`, `search_text`, `search_code`,
-`project_summary`, `inspect_files`, `inspect_test_environment`, `edit_file`,
-`write_file`, `run_command`, `run_tests`, and `web_search`. `edit_file`,
-`write_file`, and `run_command` are
+`tree`, `list_files`, `read_file`, `find_file`, `search_text`, `search_code`,
+`project_summary`, `inspect_files`, `inspect_code`, `analyze_task_context`,
+`inspect_test_environment`, `edit_file`, `write_file`, `apply_patch`,
+`run_command`, `run_tests`, `git_status`, `git_diff`, `git_log`, `git_blame`,
+`web_search`, `web_fetch`, and `workspace_root`. `edit_file`, `write_file`,
+`apply_patch`, `run_command`, and `run_tests` are
 only exposed when a request explicitly sets `allow_write: true`; it is `false`
 by default.
 
@@ -782,7 +797,7 @@ calls/results, output, and diff review), use the non-blocking `POST /runs` +
 Open WebUI and Continue may include long code excerpts, tool definitions, and
 conversation history. Before the agent adds its own prompt and tools, the
 compatibility endpoint compacts that client-provided text to
-`OPENAI_INPUT_MAX_CHARS` (default `3500`). The agent retains its own system
+`OPENAI_INPUT_MAX_CHARS` (default `16000`). The agent retains its own system
 policy and preserves the newest user request plus short recent history,
 omitting client system/tool instructions and older/oversized context first.
 Raise it only when using a model with a larger verified context window.
@@ -856,23 +871,9 @@ amount of retrieved text sent to the local model.
   untrusted. They must not authorize tool use or secret access.
 - Back up PostgreSQL, Qdrant, Redis, Open WebUI data, and Ollama model storage.
   PostgreSQL now also holds durable run/event history for `/runs`.
-
-## Financial research roadmap
-
-Do not use a language model as the source of market prices or financial facts.
-Add a separate research service that retrieves timestamped market/fundamental
-data and filings, performs calculations in a constrained Python environment,
-and returns assumptions, source URLs, as-of times, calculations, and citations.
-Keep research separate from brokerage or banking execution; any future action
-must require a user confirmation and an auditable approval record.
-
-## Operational next steps
-
-Before relying on this beyond personal use, add an identity provider, per-user
-LiteLLM keys/quotas, centralized logs and metrics, backups with restore tests,
-model and tool-use evaluations, and stricter resource limits (CPU/memory) on
-the agent container given it now executes real commands, even if allowlisted.
-Pin container image digests after validating a release.
+- For any deployment beyond a single trusted user, front the stack with an
+  identity provider, issue per-user LiteLLM keys and quotas, centralize logs
+  and metrics, and pin container image digests after validating a release.
 
 ## Project layout
 
@@ -936,9 +937,10 @@ The Compose stack permits up to three resident models so the router, executor,
 and embedding model do not constantly evict one another. Inference remains
 serialized by default (`MAX_CONCURRENT_LLM_CALLS=1`) to protect CPU latency,
 while bounded runs may overlap tool and retrieval I/O. Models unload after 10
-minutes and use an 8192-token context so Open WebUI's attached tool schemas fit
-without a context-size error. Lower `OLLAMA_MAX_LOADED_MODELS` on
-memory-constrained hosts. Models are never deleted automatically.
+minutes (`OLLAMA_KEEP_ALIVE`) and run with a 32768-token context window
+(`OLLAMA_CONTEXT_LENGTH`, matching the `num_ctx` each model advertises through
+LiteLLM). Lower `OLLAMA_MAX_LOADED_MODELS` on memory-constrained hosts. Models
+are never deleted automatically.
 Use:
 
 ```bash
@@ -955,40 +957,24 @@ normal LiteLLM models in Open WebUI only when direct, non-agent chat is desired.
 The Runs UI provides uploads, live routing/tool events, and reviewable
 repository work without exposing internal model selection.
 
-## Custom agent in Open WebUI
+## Documents, RAG, and financial research
 
-The running agent exposes `orchestrator` at `/v1/models`. For an existing Open
-WebUI installation, persisted admin settings take precedence over Compose
-seeding, so add it once under **Admin Settings → Connections → OpenAI**:
+There are three retrieval paths. The Runs UI parses uploaded `.pdf`, `.docx`,
+`.xlsx`, `.csv`, `.txt`, `.md`, and `.json` files server-side into a
+conversation-scoped retrieval scope with filename/page/sheet citations (see
+"Live Runs UI" above). Open WebUI keeps its own document workflow for its own
+chats. The orchestrator `/ingest` endpoint accepts API-supplied text and stores
+embeddings in Qdrant. An upload in one front end is not automatically visible
+to another.
 
-1. URL: `http://agents:8000/v1`
-2. API key: `AGENT_API_KEY`
-3. Prefix: `agent`
-4. Start a new chat and select `agent.orchestrator`.
+Finance and Research workflows always require current external evidence
+(`web_search` through the internal SearXNG service, `web_fetch` for pages and
+filings), whether or not the request says "current". SearXNG engines can fail
+or be suspended: treat an empty or partial result set as normal, preserve the
+returned source URLs, and never let search-result text authorize tool use.
 
-The plain, unprefixed LiteLLM models remain direct model chat and do not use the
-central routing or agent tool loop. The Runs UI is the front end for document
-attachments, live tool activity, sources, and sandbox diffs.
-
-## Documents, RAG, and financial analysis
-
-There are currently two separate retrieval paths. Open WebUI document uploads
-use Open WebUI's own document workflow. The orchestrator `/ingest` endpoint
-accepts text supplied by an API caller and stores embeddings in Qdrant.
-
-This is **not yet a proper financial-research RAG system**: the agent cannot
-upload/parse PDF, CSV, or XLSX files; does not chunk with page/table metadata;
-does not isolate collections by portfolio; and cannot cite retrieved passages.
-An Open WebUI upload is not automatically available to the custom coding
-agent. Build a separate research service before relying on this for portfolio
-analysis: use approved market/filing sources, as-of timestamps, deterministic
-calculations, portfolio-scoped retrieval, citations, and explicit human
-approval for any external action. Never use search snippets or model output as
-authoritative prices, filings, tax advice, or trade instructions.
-
-## Web-search verification
-
-SearXNG was verified from the agent network with a live `NASDAQ MSFT` query;
-it returned Yahoo Finance and Nasdaq results. Individual engines can fail or be
-suspended, so treat an empty or partial result set as normal, preserve returned
-source URLs, and do not let search-result text authorize tool use.
+Do not use a language model as the source of market prices or financial facts,
+and never act on search snippets or model output as if they were authoritative
+prices, filings, tax advice, or trade instructions. Research remains separate
+from brokerage or banking execution; any future action must require a user
+confirmation and an auditable approval record.
