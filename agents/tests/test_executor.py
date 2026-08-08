@@ -7,6 +7,7 @@ import pytest
 from app.agent.completion import record_tool_progress
 from app.agent.executor import (
     _answer_audit,
+    _compact_history,
     _copies_roadmap_heading_into_source,
     _implementation_readiness_failures,
     _invalidate_read_cache_after_mutation,
@@ -189,11 +190,16 @@ def test_mutation_cache_invalidation_is_scoped_but_drops_derived_analysis():
         'read_file:{"file_path": "README.md"}': "keep",
         'inspect_code:{"requests": [{"path": "agents/app/agent/executor.py"}]}': "old",
         'analyze_task_context:{"requirement": "dispatch"}': "derived",
+        'search_code:{"directory": ".", "pattern": "execute_plan"}': "stale",
+        'web_search:{"query": "current Python release"}': "keep external",
     }
 
     _invalidate_read_cache_after_mutation(cache, "agents/app/agent/executor.py")
 
-    assert list(cache) == ['read_file:{"file_path": "README.md"}']
+    assert list(cache) == [
+        'read_file:{"file_path": "README.md"}',
+        'web_search:{"query": "current Python release"}',
+    ]
 
 
 @patch("app.agent.executor.registry")
@@ -1021,6 +1027,44 @@ def test_normalize_tool_args_read_file():
     result = normalize_tool_args("read_file", args)
 
     assert result == {"file_path": "README.md"}
+
+
+def test_context_compaction_is_deterministic_and_preserves_tool_evidence():
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "implement feature"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "read",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": '{"file_path":"app.py"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "name": "read_file",
+            "content": "def execute(): return 1",
+        },
+        {"role": "user", "content": "repair the failing implementation"},
+        {"role": "assistant", "content": "working"},
+        {"role": "user", "content": "verify next"},
+        {"role": "assistant", "content": "running verification"},
+        {"role": "user", "content": "continue"},
+    ]
+
+    compacted = _compact_history(messages, "unused-model", goal="implement feature")
+
+    assert len(compacted) < len(messages)
+    assert "read_file" in compacted[2]["content"]
+    assert "app.py" in compacted[2]["content"]
+    assert "def execute" in compacted[2]["content"]
 
 
 def test_normalize_tool_args_tree():

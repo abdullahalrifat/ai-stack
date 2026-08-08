@@ -610,6 +610,17 @@ identical tool calls and synthesizes a partial answer from evidence already
 collected. Directory scans and multi-file inspection are capped so a broad
 workspace cannot crowd out the actual repository context.
 
+Broad repository traversal merges the root `.gitignore` with the optional
+root `.aistackignore`. Git-style negation patterns in `.aistackignore` can
+restore safe files that should remain searchable. Ignored files do not enter
+trees, searches, summaries, or automatic code analysis, but a task may still
+read a safe ignored file explicitly when it is relevant (for example a
+lockfile during dependency debugging). Credentials, private keys, archives,
+databases, and model-weight formats such as GGUF, SafeTensors, ONNX, PyTorch,
+and checkpoint files are hard exclusions and cannot be restored by a negation
+rule. Large source files remain accessible through bounded `start_line` and
+`end_line` reads instead of failing solely because of total file size.
+
 Durable run events are published through Redis Pub/Sub and retained in
 PostgreSQL for replay. The agent reuses a small PostgreSQL connection pool and
 queues run workers instead of starting an unbounded thread for every request.

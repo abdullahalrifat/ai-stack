@@ -9,7 +9,7 @@ from typing import Any
 
 from langchain.tools import tool
 
-from .filesystem import ignored, relative, resolve_path
+from .filesystem import relative, resolve_path, sensitive, walk_files
 
 MAX_SOURCE_FILES = 400
 MAX_FILE_BYTES = 250_000
@@ -48,10 +48,10 @@ def _python_files(directory: str = ".") -> list[Path]:
     if not root.is_dir():
         return []
     files = []
-    for path in root.rglob("*.py"):
+    for path in walk_files(root):
         if len(files) >= MAX_SOURCE_FILES:
             break
-        if ignored(path) or not path.is_file() or path.stat().st_size > MAX_FILE_BYTES:
+        if path.suffix != ".py" or path.stat().st_size > MAX_FILE_BYTES:
             continue
         files.append(path)
     return files
@@ -253,7 +253,7 @@ def inspect_code(requests: list[dict[str, Any]]):
     for request in selected_requests:
         try:
             path = resolve_path(str(request.get("path", "")))
-            if not path.is_file() or ignored(path):
+            if not path.is_file() or sensitive(path):
                 result = {
                     "error": "Path is not an inspectable file.",
                     "path": str(path),

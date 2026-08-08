@@ -203,7 +203,11 @@ def test_repository_tools_hide_secrets_but_allow_env_templates(workspace):
     assert ".env.local" not in names
     assert "private.pem" not in names
     assert ".env.example" in names
-    assert denied == {"error": "Reading sensitive files is not allowed."}
+    assert denied == {
+        "error": "Reading excluded files is not allowed.",
+        "excluded": True,
+        "reason": "credential or secret",
+    }
     assert template == "SECRET=placeholder"
 
 
@@ -319,6 +323,57 @@ def test_inspect_files_bounds_requested_paths(workspace, monkeypatch):
 
     assert result["truncated"] is True
     assert [item["path"] for item in result["items"]] == ["file-0.txt", "file-1.txt"]
+
+
+def test_walk_files_prunes_ignored_subtrees_and_is_deterministic(workspace):
+    (workspace / "src").mkdir()
+    (workspace / "src" / "z.py").write_text("z")
+    (workspace / "src" / "a.py").write_text("a")
+    (workspace / "node_modules" / "package").mkdir(parents=True)
+    (workspace / "node_modules" / "package" / "hidden.py").write_text("hidden")
+
+    with filesystem.workspace_context(str(workspace)):
+        paths = [filesystem.relative(path) for path in filesystem.walk_files(workspace)]
+
+    assert paths == ["src/a.py", "src/z.py"]
+
+
+def test_repository_ignore_prunes_scans_but_allows_explicit_safe_reads(workspace):
+    (workspace / ".aistackignore").write_text("generated/\n*.lock\n")
+    (workspace / "generated").mkdir()
+    (workspace / "generated" / "client.py").write_text("generated client")
+    (workspace / "dependencies.lock").write_text("safe dependency snapshot")
+    (workspace / "src.py").write_text("source")
+
+    with filesystem.workspace_context(str(workspace)):
+        scanned = [
+            filesystem.relative(path) for path in filesystem.walk_files(workspace)
+        ]
+        generated = filesystem.read_file.invoke({"file_path": "generated/client.py"})
+        lockfile = filesystem.read_file.invoke({"file_path": "dependencies.lock"})
+        lock_search = filesystem.search_code.invoke(
+            {"directory": "dependencies.lock", "pattern": "snapshot"}
+        )
+
+    assert scanned == [".aistackignore", "src.py"]
+    assert generated == "generated client"
+    assert lockfile == "safe dependency snapshot"
+    assert lock_search["matches"][0]["path"] == "dependencies.lock"
+
+
+def test_model_artifacts_are_hard_blocked_despite_ignore_negation(workspace):
+    (workspace / ".gitignore").write_text("models/\n")
+    (workspace / ".aistackignore").write_text("!models/\n!models/**\n")
+    (workspace / "models").mkdir()
+    (workspace / "models" / "local.gguf").write_bytes(b"not-a-real-model")
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.read_file.invoke({"file_path": "models/local.gguf"})
+        scanned = list(filesystem.walk_files(workspace))
+
+    assert result["excluded"] is True
+    assert result["reason"] == "model artifact"
+    assert all(path.name != "local.gguf" for path in scanned)
 
 
 def test_inspect_files_balances_content_across_large_files(workspace, monkeypatch):
@@ -713,6 +768,24 @@ def test_read_file_supports_targeted_line_range(workspace):
         )
 
     assert result == "two\nthree\n"
+
+
+def test_read_file_streams_ranges_from_large_source_files(workspace):
+    target = workspace / "large.py"
+    target.write_text(
+        "".join(f"line_{index}\n" for index in range(20_000)), encoding="utf-8"
+    )
+    assert target.stat().st_size > filesystem.MAX_FILE_SIZE
+
+    with filesystem.workspace_context(str(workspace)):
+        preview = filesystem.read_file.invoke({"file_path": "large.py"})
+        targeted = filesystem.read_file.invoke(
+            {"file_path": "large.py", "start_line": 19_999, "end_line": 20_000}
+        )
+
+    assert "large file preview" in preview
+    assert "continue with start_line=" in preview
+    assert targeted == "line_19998\nline_19999\n"
 
 
 def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):

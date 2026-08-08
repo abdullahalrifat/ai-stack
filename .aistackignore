@@ -1,0 +1,48 @@
+# AI Stack repository scan exclusions.
+#
+# Syntax follows .gitignore. These patterns reduce broad-search and indexing
+# cost; safe ignored files can still be read explicitly. Credentials, keys,
+# archives, databases, and model artifacts remain hard-blocked by the agent.
+
+# Dependencies and virtual environments
+node_modules/
+vendor/
+.venv/
+venv/
+
+# Generated build and coverage output
+dist/
+build/
+out/
+target/
+coverage/
+.next/
+.nuxt/
+generated/
+generated-sources/
+
+# Runtime caches
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.log
+*.tmp
+
+# This repository keeps inference artifacts outside application source. In
+# projects where models/ contains ORM or domain source, omit this pattern.
+models/
+
+# Bundled or machine-generated files
+*.min.js
+*.bundle.js
+*.map
+*.ipynb.raw.html
+
+# Dependency snapshots are available through explicit reads when needed.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+Cargo.lock
+go.sum

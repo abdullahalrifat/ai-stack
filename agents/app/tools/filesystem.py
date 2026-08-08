@@ -9,6 +9,7 @@ import shutil
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import lru_cache
 from pathlib import Path
 
 import requests
@@ -29,6 +30,7 @@ from app.core.config import (
 from app.core.exceptions import RunCancelled
 from app.core.permissions import active_policy
 from langchain.tools import tool
+from pathspec import PathSpec
 
 # ============================================================
 # Configuration
@@ -68,6 +70,25 @@ IGNORE_DIRS = {
     "redis",
     "cache",
 }
+
+# These paths are not useful source context and can contain multi-gigabyte
+# artifacts. Unlike repository ignore patterns, mandatory exclusions cannot be
+# negated by .aistackignore and cannot be read explicitly.
+# Avoid a blanket `models/` hard block: Django and other applications commonly
+# keep real source there. Repositories may scan-exclude it in .aistackignore,
+# while actual weight suffixes remain blocked everywhere.
+MODEL_DIRS = {"checkpoints", "model_weights", "weights"}
+MODEL_SUFFIXES = {
+    ".bin",
+    ".ckpt",
+    ".gguf",
+    ".onnx",
+    ".pt",
+    ".pth",
+    ".safetensors",
+}
+ARCHIVE_SUFFIXES = {".7z", ".bz2", ".gz", ".rar", ".tar", ".tgz", ".xz", ".zip"}
+DATABASE_SUFFIXES = {".db", ".dump", ".sqlite", ".sqlite3"}
 
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 SENSITIVE_FILE_NAMES = {
@@ -400,19 +421,89 @@ def resolve_path(path: str, *, unique_basename: bool = True) -> Path:
     return p
 
 
-def sensitive(path: Path) -> bool:
+def read_exclusion_reason(path: Path) -> str:
+    """Return a non-overridable reason a path cannot enter model context."""
+
     name = path.name.lower()
-    return bool(
-        (name == ".env" or (name.startswith(".env.") and name not in SAFE_ENV_FILES))
+    suffix = path.suffix.lower()
+    if suffix in MODEL_SUFFIXES or any(
+        part.casefold() in MODEL_DIRS for part in path.parts
+    ):
+        return "model artifact"
+    if suffix in ARCHIVE_SUFFIXES:
+        return "archive"
+    if suffix in DATABASE_SUFFIXES:
+        return "database artifact"
+    if (
+        name == ".env"
+        or (name.startswith(".env.") and name not in SAFE_ENV_FILES)
         or name in SENSITIVE_FILE_NAMES
-        or path.suffix.lower() in {".key", ".pem", ".p12", ".pfx"}
+        or suffix in {".key", ".pem", ".p12", ".pfx"}
+    ):
+        return "credential or secret"
+    return ""
+
+
+def sensitive(path: Path) -> bool:
+    return bool(read_exclusion_reason(path))
+
+
+def _ignore_signature(root: Path) -> tuple[tuple[str, int, int], ...]:
+    signature = []
+    for name in (".gitignore", ".aistackignore"):
+        path = root / name
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        signature.append((name, stat.st_mtime_ns, stat.st_size))
+    return tuple(signature)
+
+
+@lru_cache(maxsize=64)
+def _repository_ignore_spec(
+    root_text: str, signature: tuple[tuple[str, int, int], ...]
+) -> PathSpec:
+    """Compile root ignore files, refreshing automatically when they change."""
+
+    root = Path(root_text)
+    patterns = []
+    for name, _, _ in signature:
+        try:
+            patterns.extend((root / name).read_text(encoding="utf-8").splitlines())
+        except (OSError, UnicodeError):
+            continue
+    return PathSpec.from_lines("gitignore", patterns)
+
+
+def repository_ignored(path: Path) -> bool:
+    """Return whether root .gitignore/.aistackignore excludes a path from scans."""
+
+    root = current_workspace()
+    try:
+        relative_path = path.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    if path.is_dir() and relative_path:
+        relative_path += "/"
+    signature = _ignore_signature(root)
+    return bool(
+        signature
+        and _repository_ignore_spec(str(root), signature).match_file(relative_path)
     )
 
 
 def ignored(path: Path) -> bool:
-    if any(
-        part in IGNORE_DIRS or part.endswith(".egg-info") for part in path.parts
-    ) or sensitive(path):
+    if (
+        any(
+            part in IGNORE_DIRS
+            or part.casefold() in MODEL_DIRS
+            or part.endswith(".egg-info")
+            for part in path.parts
+        )
+        or sensitive(path)
+        or repository_ignored(path)
+    ):
         return True
     # The Compose-managed Open WebUI directory is persistent runtime data,
     # not this repository's frontend source (that lives in runs-ui). Detect
@@ -638,17 +729,47 @@ def read_file(
                 "workspace": str(current_workspace()),
             }
 
-        if sensitive(path):
+        exclusion_reason = read_exclusion_reason(path)
+        if exclusion_reason:
             logger.debug("read_file: Attempt to read sensitive file: %s", path)
-            return {"error": "Reading sensitive files is not allowed."}
+            return {
+                "error": "Reading excluded files is not allowed.",
+                "excluded": True,
+                "reason": exclusion_reason,
+            }
 
-        if path.stat().st_size > MAX_FILE_SIZE:
-            logger.debug(
-                "read_file: File exceeds max size: %s size=%d",
-                path,
-                path.stat().st_size,
-            )
-            return {"error": "File exceeds maximum size."}
+        file_size = path.stat().st_size
+        if file_size > MAX_FILE_SIZE:
+            # Do not turn a known large source path into a dead end. Stream an
+            # explicit line range, or return a bounded first slice with a
+            # machine-readable continuation hint instead of loading the file.
+            start = max(1, int(start_line))
+            end = max(start, int(end_line)) if end_line else None
+            selected = []
+            selected_chars = 0
+            truncated = False
+            preview_limit = min(MAX_FILE_SIZE, MAX_TOOL_OUTPUT_CHARS)
+            with path.open("r", encoding="utf-8", errors="ignore") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if line_number < start:
+                        continue
+                    if end is not None and line_number > end:
+                        break
+                    if "\x00" in line:
+                        return {"error": "Binary files are not supported."}
+                    if selected_chars + len(line) > preview_limit:
+                        truncated = True
+                        break
+                    selected.append(line)
+                    selected_chars += len(line)
+            text = "".join(selected)
+            if truncated or end is None:
+                next_line = start + len(selected)
+                text += (
+                    f"\n...[large file preview: {file_size} bytes; "
+                    f"continue with start_line={next_line} and a bounded end_line]"
+                )
+            return text
 
         text = _read_utf8_text(path)
         if start_line != 1 or end_line:
@@ -683,11 +804,9 @@ def find_file(
     try:
         matches = []
 
-        for index, file in enumerate(current_workspace().rglob("*")):
+        for index, file in enumerate(walk_files(current_workspace())):
             if index >= MAX_SCAN_FILES:
                 break
-            if ignored(file):
-                continue
 
             if filename.lower() in file.name.lower():
                 matches.append(relative(file))
@@ -705,18 +824,30 @@ def find_file(
 # ============================================================
 
 
-def _search_files(root: Path) -> list[Path]:
-    """Yield text files under a search root.
+def walk_files(root: Path):
+    """Yield files deterministically while pruning ignored subtrees.
 
     The model often passes the file it is investigating as ``directory``
     (``agents/app/runner.py``) instead of its parent folder. Treat a file
     path as a single-file search rather than silently returning no matches,
     which previously made weak edit-calling models conclude the symbol does
-    not exist anywhere.
+    not exist anywhere. Unlike ``Path.rglob``, this does not descend through
+    dependency, cache, database, or model-storage directories before ignoring
+    their results.
     """
     if root.is_file():
-        return [root]
-    return [file for file in sorted(root.rglob("*")) if file.is_file()]
+        # A direct file argument is an explicit, narrow request. Permit safe
+        # repository-ignored files while retaining mandatory read exclusions.
+        if not sensitive(root):
+            yield root
+        return
+    for directory, dirnames, filenames in os.walk(root, followlinks=False):
+        parent = Path(directory)
+        dirnames[:] = sorted(name for name in dirnames if not ignored(parent / name))
+        for name in sorted(filenames):
+            path = parent / name
+            if not ignored(path):
+                yield path
 
 
 @tool
@@ -733,7 +864,7 @@ def search_text(
 
         matches = []
 
-        for index, file in enumerate(_search_files(root)):
+        for index, file in enumerate(walk_files(root)):
             if index >= MAX_SCAN_FILES:
                 break
             if root.is_file() is False and ignored(file):
@@ -795,7 +926,7 @@ def search_code(
         context_lines = max(0, min(int(context_lines), MAX_CODE_SEARCH_CONTEXT_LINES))
         matches = []
 
-        for index, file in enumerate(_search_files(root)):
+        for index, file in enumerate(walk_files(root)):
             if index >= MAX_SCAN_FILES:
                 break
             if root.is_file() is False and (ignored(file) or not file.is_file()):
@@ -851,11 +982,9 @@ def project_summary():
     important = []
 
     try:
-        for index, file in enumerate(current_workspace().rglob("*")):
+        for index, file in enumerate(walk_files(current_workspace())):
             if index >= MAX_SCAN_FILES:
                 break
-            if ignored(file) or not file.is_file():
-                continue
 
             ext = file.suffix.lower()
             extensions[ext] = extensions.get(ext, 0) + 1
@@ -1018,9 +1147,15 @@ def inspect_files(
                 results.append({"path": item, "error": "Not found"})
                 continue
 
-            if sensitive(path):
+            exclusion_reason = read_exclusion_reason(path)
+            if exclusion_reason:
                 results.append(
-                    {"path": item, "error": "Reading sensitive files is not allowed."}
+                    {
+                        "path": item,
+                        "error": "Reading excluded files is not allowed.",
+                        "excluded": True,
+                        "reason": exclusion_reason,
+                    }
                 )
                 continue
 

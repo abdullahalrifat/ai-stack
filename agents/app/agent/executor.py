@@ -52,7 +52,6 @@ from .graph import transition_graph
 from .parser import parse_tool_arguments
 from .planner import replan
 from .prompts import (
-    COMPACTION_PROMPT,
     PARTIAL_SYNTHESIS_PROMPT,
     REFLECTION_PROMPT,
     UNTRUSTED_TOOL_RESULT_HEADER,
@@ -381,11 +380,23 @@ def _implementation_readiness_failures(state, file_path: str = "") -> list[str]:
 def _invalidate_read_cache_after_mutation(
     cache: dict[str, object], file_path: str
 ) -> None:
-    """Invalidate stale reads for one file and derived repository analyses."""
+    """Invalidate repository evidence made stale by a workspace mutation."""
 
     normalized = str(file_path).strip().lstrip("./")
     for key in list(cache):
-        derived = key.startswith(("analyze_task_context:", "project_summary:"))
+        derived = key.startswith(
+            (
+                "analyze_task_context:",
+                "find_file:",
+                "inspect_code:",
+                "inspect_files:",
+                "list_files:",
+                "project_summary:",
+                "search_code:",
+                "search_text:",
+                "tree:",
+            )
+        )
         touches_file = bool(normalized and normalized in key)
         if derived or touches_file:
             cache.pop(key, None)
@@ -1081,15 +1092,12 @@ def _bounded_context(value, limit: int) -> str:
 
 
 def _compact_history(messages: list, model: str, goal: str = "") -> list:
-    """Summarize older tool exchanges once the transcript grows large.
+    """Deterministically compact older tool exchanges once context grows large.
 
     Keeps the system prompt, the original task message, and the most recent
     CONTEXT_COMPACT_KEEP_RECENT messages verbatim; folds everything else into
-    a single summary message. The original task and current plan are passed to
-    the summarizer so the compressed record keeps goal-relevant facts. This
-    lets the loop keep running for many steps without unbounded context
-    growth. If summarization itself fails, the full history is kept rather
-    than losing information silently.
+    a single summary message. The record keeps paths, tool names, arguments,
+    and bounded results without adding another model call and its latency.
     """
 
     head_len = 2  # system prompt + initial task message
@@ -1100,30 +1108,27 @@ def _compact_history(messages: list, model: str, goal: str = "") -> list:
     recent = messages[-CONTEXT_COMPACT_KEEP_RECENT:]
     middle = messages[head_len : len(messages) - CONTEXT_COMPACT_KEEP_RECENT]
 
-    transcript = json.dumps(
-        [
-            {"role": m.get("role"), "content": str(m.get("content"))[:2000]}
-            for m in middle
-        ],
-        indent=2,
-        default=str,
-    )
-    user = (
-        f"Original task:\n{_bounded_context(goal, 1_200)}\n\n"
-        f"Transcript of earlier steps:\n{transcript}"
-    )
-
-    try:
-        summary = chat(
-            [
-                {"role": "system", "content": COMPACTION_PROMPT},
-                {"role": "user", "content": user},
-            ],
-            model=model,
+    records = []
+    for message in middle:
+        record = {
+            "role": message.get("role"),
+            "name": message.get("name"),
+            "content": str(message.get("content") or "")[:1_200],
+        }
+        if message.get("tool_calls"):
+            record["tool_calls"] = message["tool_calls"]
+        records.append(record)
+    transcript = json.dumps(records, ensure_ascii=False, default=str)
+    if len(transcript) > 8_000:
+        transcript = (
+            transcript[:5_000]
+            + "\n...[older compacted records omitted]...\n"
+            + transcript[-3_000:]
         )
-    except Exception:
-        logger.exception("Context compaction failed; keeping full history")
-        return messages
+    summary = (
+        f"Goal: {_bounded_context(goal, 1_200)}\n"
+        f"Earlier bounded tool record: {transcript}"
+    )
 
     return [
         *head,
