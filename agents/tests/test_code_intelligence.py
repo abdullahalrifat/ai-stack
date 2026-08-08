@@ -57,3 +57,33 @@ def test_inspect_code_batches_symbol_pattern_and_range_requests(tmp_path, monkey
     assert "return first()" in result["items"][0]["content"]
     assert result["items"][1]["matches"][0]["line"] == 7
     assert result["items"][2]["content"].startswith("import os")
+
+
+def test_inspect_code_fairly_budgets_large_first_symbol(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(filesystem, "WORKSPACE_ROOTS", [tmp_path])
+    source = workspace / "large.py"
+    source.write_text(
+        "def huge():\n"
+        + "".join(f"    value_{index} = {index}\n" for index in range(2_000))
+        + "    return value_1999\n\n"
+        + "def focused():\n    return 42\n",
+        encoding="utf-8",
+    )
+
+    with workspace_context(str(workspace)):
+        result = code_intelligence.inspect_code.invoke(
+            {
+                "requests": [
+                    {"path": "large.py", "symbol": "huge"},
+                    {"path": "large.py", "symbol": "focused"},
+                ]
+            }
+        )
+
+    assert len(result["items"]) == 2
+    assert result["items"][0]["symbol"] == "huge"
+    assert result["items"][0]["truncated"] is True
+    assert result["items"][1]["symbol"] == "focused"
+    assert "return 42" in result["items"][1]["content"]

@@ -683,6 +683,26 @@ def test_edit_file_refuses_identical_old_and_new_text(workspace):
     assert target.read_text(encoding="utf-8") == "def run(): pass\n"
 
 
+def test_edit_file_supports_exact_edits_in_large_source_files(workspace):
+    target = workspace / "large.py"
+    target.write_text(
+        "# padding\n" * 15_000 + "def target(): return 1\n", encoding="utf-8"
+    )
+    assert target.stat().st_size > filesystem.MAX_FILE_SIZE
+
+    with _full_write_ctx(workspace):
+        result = filesystem.edit_file.invoke(
+            {
+                "file_path": "large.py",
+                "old_string": "def target(): return 1",
+                "new_string": "def target(): return 2",
+            }
+        )
+
+    assert result["status"] == "edited"
+    assert target.read_text(encoding="utf-8").endswith("def target(): return 2\n")
+
+
 def test_read_file_supports_targeted_line_range(workspace):
     target = workspace / "worker.py"
     target.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")

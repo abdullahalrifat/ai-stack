@@ -218,13 +218,39 @@ def _symbol_excerpt(path: Path, symbol_name: str) -> dict[str, Any]:
     }
 
 
+def _bound_result(result: dict[str, Any], budget: int) -> dict[str, Any]:
+    """Bound one batch item without dropping its path/symbol metadata."""
+
+    content = result.get("content")
+    if isinstance(content, str) and len(content) > budget:
+        head = max(200, budget * 2 // 3)
+        tail = max(100, budget - head)
+        result = {
+            **result,
+            "content": (
+                content[:head]
+                + f"\n...[{len(content) - head - tail} chars omitted]...\n"
+                + content[-tail:]
+            ),
+            "truncated": True,
+        }
+    encoded = str(result)
+    if len(encoded) <= budget:
+        return result
+    metadata = {
+        key: value for key, value in result.items() if key not in {"content", "matches"}
+    }
+    return {**metadata, "preview": encoded[:budget], "truncated": True}
+
+
 @tool
 def inspect_code(requests: list[dict[str, Any]]):
     """Inspect several source symbols, patterns, or line ranges in one bounded call."""
 
+    selected_requests = requests[:MAX_REQUESTS]
     results = []
-    remaining = MAX_RESULT_CHARS
-    for request in requests[:MAX_REQUESTS]:
+    per_request_budget = max(1_000, MAX_RESULT_CHARS // max(1, len(selected_requests)))
+    for request in selected_requests:
         try:
             path = resolve_path(str(request.get("path", "")))
             if not path.is_file() or ignored(path):
@@ -272,15 +298,10 @@ def inspect_code(requests: list[dict[str, Any]]):
                     }
         except (OSError, ValueError, TypeError, re.error) as exc:
             result = {"error": str(exc), "request": request}
-        encoded = str(result)
-        if len(encoded) > remaining:
-            result = {"truncated": True, "preview": encoded[: max(0, remaining)]}
-        remaining -= min(len(encoded), remaining)
-        results.append(result)
-        if remaining <= 0:
-            break
+        results.append(_bound_result(result, per_request_budget))
     return {
         "items": results,
         "requests": len(requests),
-        "truncated": len(results) < len(requests),
+        "truncated": len(results) < len(requests)
+        or any(item.get("truncated") for item in results),
     }

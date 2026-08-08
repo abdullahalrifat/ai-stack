@@ -589,7 +589,7 @@ def test_execute_plan_guides_search_after_hallucinated_edit_anchor(
                         {
                             "file_path": "agents/app/runner.py",
                             "old_string": "def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):",
-                            "new_string": "def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):",
+                            "new_string": "def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):\n    # Dispatch work through the runner.",
                         },
                     )
                 ]

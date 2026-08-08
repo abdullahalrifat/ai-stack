@@ -79,6 +79,7 @@ SENSITIVE_FILE_NAMES = {
 
 
 MAX_FILE_SIZE = 100_000
+MAX_EDIT_FILE_SIZE = 2_000_000
 MAX_SCAN_FILES = 5_000
 MAX_SEARCH_FILE_SIZE = 512_000
 MAX_INSPECT_PATHS = 20
@@ -89,9 +90,7 @@ RUNNER_POLL_SECONDS = 0.20
 RUNNER_REQUEST_TIMEOUT_SECONDS = 5
 
 
-def _run_in_isolated_runner(
-    command: str, cwd: Path, tier: str = "isolated"
-) -> dict:
+def _run_in_isolated_runner(command: str, cwd: Path, tier: str = "isolated") -> dict:
     if SANDBOX_ROOT not in cwd.parents:
         return {"error": "Commands may run only inside a disposable sandbox worktree."}
     job_id: str | None = None
@@ -365,7 +364,10 @@ def resolve_path(path: str, *, unique_basename: bool = True) -> Path:
             candidate = candidates[0]
             # Only accept candidate if it's a sensible substitute under the
             # current workspace and the original request had a short path.
-            if current_workspace() in candidate.parents or candidate == current_workspace():
+            if (
+                current_workspace() in candidate.parents
+                or candidate == current_workspace()
+            ):
                 logger.debug(
                     "resolve_path: mapped short path '%s' to '%s' inside workspace",
                     path,
@@ -578,8 +580,13 @@ def list_files(
             return [{"name": path.name, "path": relative(path), "type": "file"}]
 
         if not path.exists():
-            logger.debug("list_files: Directory not found: %s (resolved: %s)", directory, path)
-            return {"error": f"Directory not found: {directory}", "attempted_path": str(path)}
+            logger.debug(
+                "list_files: Directory not found: %s (resolved: %s)", directory, path
+            )
+            return {
+                "error": f"Directory not found: {directory}",
+                "attempted_path": str(path),
+            }
 
         files = []
 
@@ -622,22 +629,36 @@ def read_file(
         path = resolve_path(file_path)
 
         if not path.exists():
-            logger.debug("read_file: File not found: %s (resolved: %s)", file_path, path)
-            return {"error": "File not found", "attempted_path": str(path), "workspace": str(current_workspace())}
+            logger.debug(
+                "read_file: File not found: %s (resolved: %s)", file_path, path
+            )
+            return {
+                "error": "File not found",
+                "attempted_path": str(path),
+                "workspace": str(current_workspace()),
+            }
 
         if sensitive(path):
             logger.debug("read_file: Attempt to read sensitive file: %s", path)
             return {"error": "Reading sensitive files is not allowed."}
 
         if path.stat().st_size > MAX_FILE_SIZE:
-            logger.debug("read_file: File exceeds max size: %s size=%d", path, path.stat().st_size)
+            logger.debug(
+                "read_file: File exceeds max size: %s size=%d",
+                path,
+                path.stat().st_size,
+            )
             return {"error": "File exceeds maximum size."}
 
         text = _read_utf8_text(path)
         if start_line != 1 or end_line:
             lines = text.splitlines(keepends=True)
             start = max(1, int(start_line))
-            end = len(lines) if not end_line else min(len(lines), max(start, int(end_line)))
+            end = (
+                len(lines)
+                if not end_line
+                else min(len(lines), max(start, int(end_line)))
+            )
             return "".join(lines[start - 1 : end])
         return text
 
@@ -1042,7 +1063,9 @@ def inspect_files(
 
 
 @tool
-def write_file(file_path: str, content: str, overwrite: bool = False, dry_run: bool = False):
+def write_file(
+    file_path: str, content: str, overwrite: bool = False, dry_run: bool = False
+):
     """Create a UTF-8 text file in the active workspace.
 
     This tool is deliberately small: it cannot access paths outside the
@@ -1062,7 +1085,11 @@ def write_file(file_path: str, content: str, overwrite: bool = False, dry_run: b
 
         if dry_run:
             # Do not modify filesystem; return a preview of the intended action.
-            logger.debug("write_file dry_run: would write %s (%d bytes)", path, len(content.encode("utf-8")))
+            logger.debug(
+                "write_file dry_run: would write %s (%d bytes)",
+                path,
+                len(content.encode("utf-8")),
+            )
             return {
                 "status": "dry_run",
                 "action": "write",
@@ -1104,9 +1131,6 @@ def edit_file(
         if not path.exists():
             return {"error": "File not found"}
 
-        if path.stat().st_size > MAX_FILE_SIZE:
-            return {"error": "File exceeds maximum size."}
-
         if old_string == new_string:
             return {
                 "error": (
@@ -1114,6 +1138,9 @@ def edit_file(
                     "Make a real code change based on the current file contents."
                 )
             }
+
+        if path.stat().st_size > MAX_EDIT_FILE_SIZE:
+            return {"error": "File exceeds maximum editable size."}
 
         text = path.read_text(encoding="utf-8", errors="ignore")
         count = text.count(old_string)
@@ -1268,8 +1295,16 @@ def apply_patch(
         if not path.exists():
             return {"error": "File not found"}
 
-        if path.stat().st_size > MAX_FILE_SIZE:
-            return {"error": "File exceeds maximum size."}
+        if old_string == new_string:
+            return {
+                "error": (
+                    "No-op patch refused: old_string and new_string are identical. "
+                    "Make a real code change based on the current file contents."
+                )
+            }
+
+        if path.stat().st_size > MAX_EDIT_FILE_SIZE:
+            return {"error": "File exceeds maximum editable size."}
 
         text = path.read_text(encoding="utf-8", errors="ignore")
         count = text.count(old_string)
@@ -1307,7 +1342,11 @@ def apply_patch(
                 # without leading whitespace.
                 first = keepends[located["start"]]
                 indent = first[: len(first) - len(first.lstrip())]
-                first_repl = replacement.splitlines()[0] if replacement.splitlines() else replacement
+                first_repl = (
+                    replacement.splitlines()[0]
+                    if replacement.splitlines()
+                    else replacement
+                )
                 if indent and not first_repl[:1].isspace():
                     replacement = indent + replacement
             if (
@@ -1412,13 +1451,17 @@ def run_tests(
     }
     if test_path:
         if kind not in {"pytest", "ruff"}:
-            return {"error": "test_path is supported only for kind=pytest or kind=ruff."}
+            return {
+                "error": "test_path is supported only for kind=pytest or kind=ruff."
+            }
         normalized_target = test_path.strip()
         if not re.fullmatch(r"[A-Za-z0-9_./:\[\]-]+", normalized_target):
             return {"error": "test_path contains unsupported characters."}
         file_part, separator, node_id = normalized_target.partition("::")
         if kind == "ruff" and separator:
-            return {"error": "ruff test_path must name a Python file, not a pytest node."}
+            return {
+                "error": "ruff test_path must name a Python file, not a pytest node."
+            }
         if not file_part or file_part.startswith("-"):
             return {"error": "test_path must name a workspace test file."}
         target_file = resolve_path(file_part)
@@ -1488,11 +1531,21 @@ async def read_file_async(file_path: str):
     return await asyncio.to_thread(read_file, file_path)
 
 
-async def write_file_async(file_path: str, content: str, overwrite: bool = False, dry_run: bool = False):
+async def write_file_async(
+    file_path: str, content: str, overwrite: bool = False, dry_run: bool = False
+):
     """Async wrapper around `write_file`."""
     return await asyncio.to_thread(write_file, file_path, content, overwrite, dry_run)
 
 
-async def edit_file_async(file_path: str, old_string: str, new_string: str, replace_all: bool = False, dry_run: bool = False):
+async def edit_file_async(
+    file_path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+    dry_run: bool = False,
+):
     """Async wrapper around `edit_file`."""
-    return await asyncio.to_thread(edit_file, file_path, old_string, new_string, replace_all, dry_run)
+    return await asyncio.to_thread(
+        edit_file, file_path, old_string, new_string, replace_all, dry_run
+    )

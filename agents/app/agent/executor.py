@@ -140,6 +140,13 @@ ROADMAP_MARKER_MUTATION_RECOVERY = (
     "authoritative TODO/roadmap section, select an actual unchecked item, inspect the "
     "existing symbols that own that behavior, and implement that behavior with tests."
 )
+NOOP_MUTATION_RECOVERY = (
+    "The mutation was refused because old_string and new_string are identical; "
+    "it cannot change the workspace. Do not retry or slightly corrupt invented "
+    "code. Use inspect_code on a real owning symbol or search_code for an exact "
+    "extension point. Then make a genuinely different replacement. If the owning "
+    "function is very large, prefer a small new module plus a narrow integration hook."
+)
 HYBRID_RESEARCH_TOOLS = QUICK_WORKSPACE_TOOLS | {"web_search", "web_fetch"}
 CACHEABLE_READ_TOOLS = HYBRID_RESEARCH_TOOLS | {
     "inspect_test_environment",
@@ -1552,6 +1559,13 @@ explicitly instead of marking them complete without code.
             and state.steps >= 7
         )
         turn_available_tools = list(available_tools)
+        if (getattr(state, "evidence_ledger", {}) or {}).get("relevant_files"):
+            # The deterministic packet is already in the prompt and cache.
+            # Re-running repository-wide analysis wastes a model turn and can
+            # only return the same workspace-state evidence.
+            turn_available_tools = [
+                name for name in turn_available_tools if name != "analyze_task_context"
+            ]
         if implementation_phase:
             broad_survey_tools = {
                 "find_file",
@@ -1630,6 +1644,7 @@ explicitly instead of marking them complete without code.
             turn_had_success = False
             turn_path_denials: list[str] = []
             turn_anchor_failures: list[str] = []
+            turn_noop_mutations: list[str] = []
             messages.append(
                 {
                     "role": "assistant",
@@ -1698,6 +1713,11 @@ explicitly instead of marking them complete without code.
                 tool_name = call.function.name
                 raw_args = parse_tool_arguments(call.function.arguments)
                 args = normalize_tool_args(tool_name, raw_args)
+                noop_mutation = (
+                    tool_name in MUTATION_ANCHOR_TOOLS
+                    and "old_string" in args
+                    and args.get("old_string") == args.get("new_string")
+                )
                 automatic_python_path = None
                 if (
                     tool_name in MUTATION_ANCHOR_TOOLS
@@ -1776,6 +1796,8 @@ explicitly instead of marking them complete without code.
                     )
                     if blocks_doc_shortcut:
                         result = {"error": DOC_MUTATION_RECOVERY}
+                    elif noop_mutation:
+                        result = {"error": NOOP_MUTATION_RECOVERY}
                     elif readiness_failures:
                         result = {
                             "error": (
@@ -1975,6 +1997,9 @@ explicitly instead of marking them complete without code.
                     )
                     if failed:
                         failed_tools.append(tool_name)
+                    if noop_mutation:
+                        turn_noop_mutations.append(tool_name)
+                        source_refresh_required = True
                     if (
                         tool_name in MUTATION_ANCHOR_TOOLS
                         and _is_mutation_anchor_failure(result)
@@ -2191,6 +2216,17 @@ explicitly instead of marking them complete without code.
                         {
                             "role": "user",
                             "content": guidance,
+                        }
+                    )
+                elif turn_noop_mutations:
+                    on_event(
+                        "noop_mutation_recovery",
+                        {"failed_mutations": len(turn_noop_mutations)},
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": NOOP_MUTATION_RECOVERY,
                         }
                     )
                 elif turn_anchor_failures:
