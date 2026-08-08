@@ -61,7 +61,19 @@ TOOL_SCHEMAS = [
             "description": "Read a UTF-8 text file.",
             "parameters": {
                 "type": "object",
-                "properties": {"file_path": {"type": "string"}},
+                "properties": {
+                    "file_path": {"type": "string"},
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Optional first line to read (1-based).",
+                        "default": 1,
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Optional inclusive last line; 0 reads to EOF.",
+                        "default": 0,
+                    },
+                },
                 "required": ["file_path"],
             },
         },

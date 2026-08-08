@@ -896,6 +896,9 @@ def test_write_flag_works_before_or_after_run_subcommand():
     assert parser.parse_args(["--write", "run", "task"]).write is True
     assert parser.parse_args(["run", "--write", "task"]).write is True
     assert parser.parse_args(["run", "--allow-edits", "task"]).write is True
+    assert parser.parse_args(["run", "task"]).write is True
+    assert parser.parse_args(["--read-only", "run", "task"]).write is False
+    assert parser.parse_args(["run", "--read-only", "task"]).write is False
 
 
 def test_interactive_edit_permission_is_scoped_to_one_task(monkeypatch, capsys):
@@ -1011,7 +1014,7 @@ def test_main_shorthand_starts_run_with_mapped_workspace(
     assert capsys.readouterr().err == ""
 
 
-def test_main_shorthand_asks_for_one_task_edit_permission(monkeypatch, tmp_path):
+def test_main_shorthand_automatically_allows_requested_edit(monkeypatch, tmp_path):
     calls = []
 
     class FakeClient:
@@ -1032,7 +1035,12 @@ def test_main_shorthand_asks_for_one_task_edit_permission(monkeypatch, tmp_path)
     monkeypatch.setattr("aistack_cli.main.AgentClient", FakeClient)
     monkeypatch.setattr("aistack_cli.main.run_task", fake_run_task)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: (_ for _ in ()).throw(
+            AssertionError("edit tasks must not prompt for permission")
+        ),
+    )
 
     assert main(["fix", "the tests"]) == 0
     assert calls[0]["allow_write"] is True
@@ -1079,12 +1087,11 @@ def test_main_handles_broken_pipe_without_traceback(monkeypatch):
     assert main(["list"]) == 0
 
 
-def test_interactive_shell_requests_edit_permission_for_each_task(monkeypatch, capsys):
+def test_interactive_shell_automatically_allows_edit_tasks(monkeypatch, capsys):
     tasks = []
     commands = iter(
         [
             "fix the tests",
-            "yes",
             "/detach",
             "/status",
             "/foreground",
@@ -1121,14 +1128,14 @@ def test_interactive_shell_requests_edit_permission_for_each_task(monkeypatch, c
             FakeClient(),
             workspace="/workspace/example",
             project_id=None,
-            allow_write=False,
+            allow_write=True,
         )
         == 0
     )
     assert tasks[0][1] == "fix the tests"
     assert tasks[0][2]["allow_write"] is True
     output = capsys.readouterr().out
-    assert "edit permission: ask before each task" in output
+    assert "edit permission: automatic for change requests" in output
     assert "lifecycle: detached" in output
     assert "Foreground mode enabled" in output
     assert "run-123" in output

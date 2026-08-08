@@ -248,26 +248,17 @@ bounded by its configured HTTP timeout.
 
 ## Edit approval workflow
 
-In an interactive terminal, enter the task normally. Reviews and explanations
-start immediately; change requests ask you to approve sandbox edits for that
-task:
+In an interactive terminal, enter the task normally. Change requests are
+automatically authorized and their completed sandbox diff is applied directly
+to the checkout:
 
 ```text
 aistack> fix the failing tests and verify the result
-Allow this task to edit files in a reviewable sandbox? [y/N]: y
 ```
 
-Declining runs that task without edit or command tools. After an approved task
-creates changes, the CLI shows the diff and separately asks whether to apply it
-to the real checkout:
-
-```text
-Apply pending changes? [a]pprove/[d]iscard/[l]ater:
-```
-
-- `approve` applies the reviewed diff to the original repository;
-- `discard` removes the sandbox without applying it; and
-- `later` leaves the run in `awaiting_approval`.
+Use `--read-only` to disable edit and command tools. Use `--no-review` to keep
+the completed diff pending instead of applying it automatically. Pending runs
+can be applied with `approve` or removed with `discard`.
 
 Review a pending run later:
 
@@ -276,9 +267,9 @@ aistack resume RUN_ID
 aistack approve RUN_ID
 ```
 
-Non-interactive processes never approve a diff automatically.
-Use `--allow-edits` (or the backward-compatible `--write` alias) when a
-headless task needs sandbox edit tools:
+Text-mode commands apply completed changes automatically. Machine-readable
+JSON modes leave diffs pending. `--allow-edits` and `--write` remain accepted
+as backward-compatible aliases for the default behavior:
 
 ```bash
 aistack run --allow-edits --no-review "prepare a reviewable patch"

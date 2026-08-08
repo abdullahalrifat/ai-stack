@@ -666,6 +666,18 @@ def test_edit_file_does_not_fall_back_to_same_basename_existing_file(workspace):
     ).read_text(encoding="utf-8") == "def run(): pass\n"
 
 
+def test_read_file_supports_targeted_line_range(workspace):
+    target = workspace / "worker.py"
+    target.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.read_file.invoke(
+            {"file_path": "worker.py", "start_line": 2, "end_line": 3}
+        )
+
+    assert result == "two\nthree\n"
+
+
 def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):
     monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
     monkeypatch.setattr(filesystem, "ALLOWED_COMMANDS", ["echo", "git"])

@@ -2,8 +2,6 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from openai import APITimeoutError
-
 from app.agent.parser import ParserError
 from app.agent.router import (
     _bounded_router_message,
@@ -11,6 +9,7 @@ from app.agent.router import (
     _requires_router_escalation,
     route_request,
 )
+from openai import APITimeoutError
 
 
 @pytest.mark.parametrize(
@@ -256,6 +255,7 @@ def test_change_request_keeps_graph_that_already_edits(mock_chat, mock_extract_j
     route = route_request("Implement Tier 3 autoscaling from the TODO list")
 
     assert route.workflow == "code"
+    assert route.complexity == "complex"
     assert route.tasks[-1].id == "implement_worker_pool"
     assert len(route.tasks) == 1
 

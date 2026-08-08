@@ -8,7 +8,9 @@ from app.agent.completion import record_tool_progress
 from app.agent.executor import (
     _answer_audit,
     _prefetch_workspace,
+    _semantic_tool_key,
     _synthesize_partial_answer,
+    _tool_result_has_evidence,
     execute_plan,
     explicit_workspace_paths,
     financial_document_excerpt,
@@ -59,6 +61,26 @@ def make_tool_call(call_id: str, name: str, arguments: dict):
 def make_message(content=None, tool_calls=None):
     """Build a stand-in for the OpenAI SDK's response message object."""
     return SimpleNamespace(content=content, tool_calls=tool_calls)
+
+
+def test_semantic_progress_groups_search_scope_drift_and_rejects_cached_reads():
+    first = _semantic_tool_key(
+        "search_code", {"pattern": "multi_expert_dispatch", "directory": "agents/app"}
+    )
+    second = _semantic_tool_key(
+        "search_code", {"pattern": "multi_expert_dispatch", "directory": "."}
+    )
+
+    assert first == second
+    assert not _tool_result_has_evidence(
+        "search_code", {"matches": []}, duplicate=False
+    )
+    assert not _tool_result_has_evidence(
+        "read_file", "existing source", duplicate=True
+    )
+    assert _tool_result_has_evidence(
+        "search_code", {"matches": [{"path": "worker.py"}]}, duplicate=False
+    )
 
 
 @patch("app.agent.executor.registry")

@@ -454,7 +454,7 @@ def run_task(
     return review_run(
         client,
         run,
-        auto_approve=review and output == "text" and sys.stdin.isatty(),
+        auto_approve=review and output == "text",
     )
 
 
@@ -520,9 +520,7 @@ def interactive_shell(
             continue
         if not line.startswith("/"):
             try:
-                task_allow_write = allow_write or (
-                    task_requests_edits(line) and request_edit_permission()
-                )
+                task_allow_write = allow_write and task_requests_edits(line)
                 active_run = run_task(
                     client,
                     line,
@@ -563,9 +561,9 @@ def interactive_shell(
             elif command == "/status":
                 print(f"workspace: {workspace}")
                 permission = (
-                    "pre-approved for each task"
+                    "automatic for change requests"
                     if allow_write
-                    else "ask before each task"
+                    else "read-only"
                 )
                 print(f"edit permission: {permission}")
                 print(f"lifecycle: {'detached' if detached else 'foreground'}")
@@ -631,7 +629,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--write",
         dest="write",
         action="store_true",
-        help="Pre-authorize reviewable sandbox edits (required for headless use)",
+        default=True,
+        help="Automatically apply edits (default)",
+    )
+    parser.add_argument(
+        "--read-only",
+        dest="write",
+        action="store_false",
+        help="Disable workspace edits",
     )
     parser.add_argument(
         "--detach",
@@ -673,7 +678,14 @@ def build_parser() -> argparse.ArgumentParser:
         dest="write",
         action="store_true",
         default=argparse.SUPPRESS,
-        help="Pre-authorize reviewable sandbox edits (required for headless use)",
+        help="Automatically apply edits (default)",
+    )
+    run.add_argument(
+        "--read-only",
+        dest="write",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="Disable workspace edits",
     )
     run.add_argument(
         "--detach",
@@ -800,15 +812,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.continue_session
                 else args.conversation or str(uuid.uuid4())
             )
-            allow_write = args.write
-            if (
-                not allow_write
-                and task_requests_edits(task)
-                and args.output == "text"
-                and args.task != ["-"]
-                and sys.stdin.isatty()
-            ):
-                allow_write = request_edit_permission()
+            allow_write = args.write and task_requests_edits(task)
             run = run_task(
                 client,
                 task,

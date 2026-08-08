@@ -170,7 +170,7 @@ def _fallback_route(message: str) -> RouteDecision:
         workflow=workflow,
         translated_task=message.strip(),
         requires_external_evidence=external,
-        complexity="moderate",
+        complexity=_policy_complexity(message, workflow, "moderate"),
         tasks=[task],
         source="fallback",
     )
@@ -246,6 +246,18 @@ def _policy_workflow(message: str, attachment_text: str, proposed: str) -> str:
     ):
         return "deep"
     return proposed if proposed in WORKFLOWS else "quick"
+
+
+def _policy_complexity(message: str, workflow: str, proposed: str) -> str:
+    """Escalate roadmap implementations that inherently span capabilities."""
+
+    if (
+        workflow == "code"
+        and _CHANGE_INTENT.search(message)
+        and re.search(r"\b(?:todo|roadmap|tier)\b", message, re.IGNORECASE)
+    ):
+        return "complex"
+    return proposed if proposed in COMPLEXITIES else "moderate"
 
 
 def _bounded_strings(value, *, limit: int, chars: int) -> list[str]:
@@ -487,8 +499,7 @@ def route_request(
     translated = f"{translated}\n\nOriginal user requirements: {message.strip()}"[
         :2_400
     ]
-    if complexity not in COMPLEXITIES:
-        complexity = "moderate"
+    complexity = _policy_complexity(message, workflow, complexity)
 
     entities = _bounded_strings(data.get("entities"), limit=30, chars=160)
     constraints = _bounded_strings(data.get("constraints"), limit=12, chars=240)

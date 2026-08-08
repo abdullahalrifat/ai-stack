@@ -611,6 +611,8 @@ def list_files(
 @tool
 def read_file(
     file_path: str,
+    start_line: int = 1,
+    end_line: int = 0,
 ):
     """
     Read a UTF-8 text file.
@@ -631,7 +633,13 @@ def read_file(
             logger.debug("read_file: File exceeds max size: %s size=%d", path, path.stat().st_size)
             return {"error": "File exceeds maximum size."}
 
-        return _read_utf8_text(path)
+        text = _read_utf8_text(path)
+        if start_line != 1 or end_line:
+            lines = text.splitlines(keepends=True)
+            start = max(1, int(start_line))
+            end = len(lines) if not end_line else min(len(lines), max(start, int(end_line)))
+            return "".join(lines[start - 1 : end])
+        return text
 
     except Exception as e:
         logger.exception("read_file: unexpected error reading %s", file_path)

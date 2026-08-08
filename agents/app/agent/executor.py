@@ -206,6 +206,31 @@ def _tool_fingerprint(tool_name: str, args: dict) -> str:
     return f"{tool_name}:{json.dumps(canonical, sort_keys=True, default=str)}"
 
 
+def _semantic_tool_key(tool_name: str, args: dict) -> str:
+    """Group calls that pursue the same action despite cosmetic argument drift."""
+
+    if tool_name in {"search_code", "search_text"}:
+        query = str(args.get("pattern") or args.get("keyword") or "")
+        return f"search:{query.casefold().strip()}"
+    if tool_name in MUTATION_ANCHOR_TOOLS:
+        path = str(args.get("file_path") or "").strip().lstrip("./").casefold()
+        anchor = " ".join(str(args.get("old_string") or "").casefold().split())
+        return f"mutation:{path}:{anchor}"
+    return _tool_fingerprint(tool_name, args)
+
+
+def _tool_result_has_evidence(tool_name: str, result, *, duplicate: bool) -> bool:
+    """Return whether a tool call added useful information or completed work."""
+
+    if duplicate or tool_result_failed(result):
+        return False
+    if tool_name == "search_code" and isinstance(result, dict):
+        return bool(result.get("matches"))
+    if tool_name in {"search_text", "list_files", "find_file"}:
+        return bool(result)
+    return bool(result)
+
+
 _LEAKED_TOOL_CALL_TAIL = re.compile(r"(\[.*\]|\{.*\})\s*\Z", re.DOTALL)
 
 # How many times a model may leak a tool call as text before the loop gives
@@ -1228,6 +1253,16 @@ This request is not satisfied by a review, plan, or recommendations. Use the
 mutation tools to change workspace files, then run the relevant verification
 tool. Do not provide a final answer before both actions succeed.
 """
+    if re.search(r"\b(?:todo|roadmap|tier)\b", state.user_message, re.IGNORECASE):
+        task_context += """
+Roadmap execution contract:
+Treat checklist entries as ordered, independently verifiable implementation
+subtasks. First compare each entry with existing source and tests; do not search
+for the prose heading inside code and do not invent feature flags. Implement the
+first genuinely missing capability against real existing symbols, verify it,
+then continue to the next item while budget remains. Report remaining items
+explicitly instead of marking them complete without code.
+"""
     restored_observations = getattr(state, "observations", [])
     if restored_observations:
         task_context += (
@@ -1258,6 +1293,7 @@ tool. Do not provide a final answer before both actions succeed.
     empty_search_count = 0
     unproductive_calls: dict[str, int] = {}
     tool_call_counts: dict[str, int] = {}
+    semantic_call_counts: dict[str, int] = {}
     mutation_anchor_failures: dict[str, int] = {}
     tool_result_cache: dict[str, object] = dict(
         getattr(state, "prefetched_tool_results", {}) or {}
@@ -1269,6 +1305,8 @@ tool. Do not provide a final answer before both actions succeed.
     stuck_steps = 0
     replan_count = 0
     grounded_guard_count = 0
+    source_refresh_required = False
+    phase_notice_sent = False
 
     permissions = getattr(state, "permissions", None) or policy_for(
         state.allow_write,
@@ -1289,6 +1327,14 @@ tool. Do not provide a final answer before both actions succeed.
         if should_cancel():
             on_event("run_cancelling", {})
             raise RunCancelled()
+        source_mutation_paths = {
+            path
+            for path in getattr(state, "successful_mutation_paths", set())
+            if not is_documentation_path(path)
+        }
+        step_limit = min(MAX_STEPS, 15 + 5 * len(source_mutation_paths))
+        if state.steps >= step_limit:
+            break
         state.steps += 1
         on_event("step_started", {"step": state.steps})
 
@@ -1305,7 +1351,46 @@ tool. Do not provide a final answer before both actions succeed.
         # Keep requiring tools through post-mutation verification.
         tool_choice = "required" if change_incomplete and state.steps >= 4 else "auto"
 
-        if _needs_compaction(messages, system_prompt, tools):
+        implementation_phase = (
+            change_incomplete
+            and not getattr(state, "successful_mutation", False)
+            and state.steps >= 7
+        )
+        turn_available_tools = list(available_tools)
+        if implementation_phase:
+            broad_survey_tools = {
+                "find_file",
+                "inspect_files",
+                "list_files",
+                "project_summary",
+                "search_text",
+                "tree",
+                "web_fetch",
+                "web_search",
+            }
+            turn_available_tools = [
+                name for name in turn_available_tools if name not in broad_survey_tools
+            ]
+            if not phase_notice_sent:
+                phase_notice_sent = True
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Inspection phase is complete. Enter implementation phase now. "
+                            "Do not search for TODO wording and do not survey more directories. "
+                            "Use search_code for a real existing identifier, read its exact source "
+                            "range, implement one concrete checklist capability, then verify it."
+                        ),
+                    }
+                )
+        if source_refresh_required:
+            turn_available_tools = [
+                name for name in turn_available_tools if name not in MUTATION_ANCHOR_TOOLS
+            ]
+        turn_tools = schemas_for(turn_available_tools)
+
+        if _needs_compaction(messages, system_prompt, turn_tools):
             before = len(messages)
             messages = _compact_history(
                 messages,
@@ -1321,7 +1406,7 @@ tool. Do not provide a final answer before both actions succeed.
         message = (
             _stream_message(
                 messages,
-                tools,
+                turn_tools,
                 state.model,
                 getattr(state, "max_completion_tokens", None),
                 getattr(state, "timeout_seconds", None),
@@ -1331,7 +1416,7 @@ tool. Do not provide a final answer before both actions succeed.
             if on_token is not None
             else chat_with_tools(
                 messages,
-                tools=tools,
+                tools=turn_tools,
                 model=state.model,
                 max_tokens=getattr(state, "max_completion_tokens", None),
                 timeout_seconds=getattr(state, "timeout_seconds", None),
@@ -1369,7 +1454,7 @@ tool. Do not provide a final answer before both actions succeed.
             parallel_results = {}
             if len(tool_calls) > 1:
                 candidates = _parallel_read_only_calls(
-                    tool_calls, available_tools, tool_result_cache
+                    tool_calls, turn_available_tools, tool_result_cache
                 )
                 if len(candidates) >= 2:
                     logger.info(
@@ -1419,7 +1504,12 @@ tool. Do not provide a final answer before both actions succeed.
                 raw_args = parse_tool_arguments(call.function.arguments)
                 args = normalize_tool_args(tool_name, raw_args)
                 fingerprint = _tool_fingerprint(tool_name, args)
+                semantic_key = _semantic_tool_key(tool_name, args)
                 tool_call_counts[fingerprint] = tool_call_counts.get(fingerprint, 0) + 1
+                semantic_call_counts[semantic_key] = (
+                    semantic_call_counts.get(semantic_key, 0) + 1
+                )
+                semantic_repeat = semantic_call_counts[semantic_key] > 1
                 duplicate = (
                     tool_name in CACHEABLE_READ_TOOLS
                     and fingerprint in tool_result_cache
@@ -1428,7 +1518,7 @@ tool. Do not provide a final answer before both actions succeed.
                 on_event("tool_call", {"tool": tool_name, "args": args})
                 logger.info("Executing tool %s with args=%s", tool_name, args)
 
-                if tool_name not in available_tools:
+                if tool_name not in turn_available_tools:
                     result = {
                         "error": f"Tool '{tool_name}' is unavailable for this request."
                     }
@@ -1505,26 +1595,37 @@ tool. Do not provide a final answer before both actions succeed.
                         },
                     )
                 failed = tool_result_failed(result)
+                added_evidence = _tool_result_has_evidence(
+                    tool_name, result, duplicate=duplicate
+                )
                 if not failed and not duplicate and tool_name in CACHEABLE_READ_TOOLS:
                     tool_result_cache[fingerprint] = result
-                if tool_name in {"search_text", "search_code"} and not result:
+                empty_search = (
+                    tool_name == "search_code"
+                    and isinstance(result, dict)
+                    and not result.get("matches")
+                ) or (tool_name == "search_text" and not result)
+                if empty_search:
                     empty_search_count += 1
-                elif not failed:
+                elif added_evidence:
                     empty_search_count = 0
 
-                unproductive = failed
+                unproductive = failed or duplicate or semantic_repeat or not added_evidence
                 if unproductive:
-                    unproductive_calls[fingerprint] = (
-                        unproductive_calls.get(fingerprint, 0) + 1
+                    unproductive_calls[semantic_key] = (
+                        unproductive_calls.get(semantic_key, 0) + 1
                     )
-                    failed_tools.append(tool_name)
+                    if failed:
+                        failed_tools.append(tool_name)
                     if tool_name in MUTATION_ANCHOR_TOOLS and _is_mutation_anchor_failure(
                         result
                     ):
-                        mutation_anchor_failures[fingerprint] = (
-                            mutation_anchor_failures.get(fingerprint, 0) + 1
+                        mutation_anchor_failures[semantic_key] = (
+                            mutation_anchor_failures.get(semantic_key, 0) + 1
                         )
                         turn_anchor_failures.append(tool_name)
+                        if mutation_anchor_failures[semantic_key] >= 2:
+                            source_refresh_required = True
                     if tool_name in PATH_TOOLS and _is_path_denial_failure(result):
                         path = next(
                             (
@@ -1537,10 +1638,9 @@ tool. Do not provide a final answer before both actions succeed.
                         path_denial_failures[path] = path_denial_failures.get(path, 0) + 1
                         turn_path_denials.append(tool_name)
                 else:
-                    unproductive_calls.clear()
                     turn_had_success = True
-                    if tool_name in MUTATION_ANCHOR_TOOLS:
-                        mutation_anchor_failures.clear()
+                    if tool_name in {"read_file", "search_code"}:
+                        source_refresh_required = False
                     if tool_name in PATH_TOOLS:
                         path_denial_failures.clear()
 
@@ -1580,7 +1680,15 @@ tool. Do not provide a final answer before both actions succeed.
                         }
                     )
 
-            if empty_search_count >= MAX_EMPTY_SEARCH_RESULTS:
+            pending_workspace_edit = (
+                state.allow_write
+                and requires_workspace_change(state.user_message)
+                and not getattr(state, "successful_mutation", False)
+            )
+            if (
+                empty_search_count >= MAX_EMPTY_SEARCH_RESULTS
+                and not pending_workspace_edit
+            ):
                 answer = _synthesize_partial_answer(state)
                 on_event(
                     "unproductive_search_loop",
@@ -1589,7 +1697,7 @@ tool. Do not provide a final answer before both actions succeed.
                 return finalize(answer, partial=True)
 
             repeated = max(unproductive_calls.values(), default=0)
-            if repeated >= MAX_UNPRODUCTIVE_TOOL_CALLS:
+            if repeated >= MAX_UNPRODUCTIVE_TOOL_CALLS and not pending_workspace_edit:
                 answer = _synthesize_partial_answer(state)
                 on_event("unproductive_tool_loop", {"repeated_calls": repeated})
                 return finalize(answer, partial=True)
@@ -1601,11 +1709,6 @@ tool. Do not provide a final answer before both actions succeed.
                     if fingerprint in tool_result_cache
                 ),
                 default=0,
-            )
-            pending_workspace_edit = (
-                state.allow_write
-                and requires_workspace_change(state.user_message)
-                and not getattr(state, "successful_mutation", False)
             )
             if (
                 duplicate_repeats >= 2
@@ -1653,12 +1756,12 @@ tool. Do not provide a final answer before both actions succeed.
 
             replan_reason = ""
             if replan_count < REPLAN_MAX_RETRIES:
-                if stuck_steps >= REPLAN_STUCK_STEPS:
+                if fail_streak >= REPLAN_FAIL_STREAK:
+                    replan_reason = f"{fail_streak} consecutive tool-call steps failed"
+                elif stuck_steps >= min(REPLAN_STUCK_STEPS, 3):
                     replan_reason = (
                         f"{stuck_steps} consecutive steps produced no new useful evidence"
                     )
-                elif fail_streak >= REPLAN_FAIL_STREAK:
-                    replan_reason = f"{fail_streak} consecutive tool-call steps failed"
 
             if replan_reason:
                 old_plan = list(state.plan or [])

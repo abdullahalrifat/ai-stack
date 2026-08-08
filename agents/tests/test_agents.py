@@ -3,9 +3,9 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.agent.service import ingest_documents, run_agent
 from app.agent import service as agent
 from app.agent.router import PlannedTask, RouteDecision
+from app.agent.service import ingest_documents, run_agent
 from app.agent.state import AgentState
 
 
