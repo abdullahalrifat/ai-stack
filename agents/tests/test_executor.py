@@ -1402,6 +1402,10 @@ def test_edit_task_breaks_repeated_read_loop_and_performs_change(
         for call in mock_chat_with_tools.call_args_list
         for message in call.args[0]
     )
+    choices = [call.kwargs["tool_choice"] for call in mock_chat_with_tools.call_args_list]
+    assert choices[:3] == ["auto", "auto", "auto"]
+    assert choices[3:5] == ["required", "required"]
+    assert choices[-1] == "auto"
 
 
 @patch("app.agent.executor.chat", return_value="Complete comparison report.")

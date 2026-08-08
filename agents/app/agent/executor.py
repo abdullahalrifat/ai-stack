@@ -578,10 +578,7 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
         # TODO checkbox for the implementation itself.
         if "tree" in available_tools:
             prefetch_tools.append(("tree", {"directory": ".", "depth": 2}))
-    if (
-        "inspect_files" in available_tools
-        and roadmap_implementation
-    ):
+    if "inspect_files" in available_tools and roadmap_implementation:
         prefetch_tools.append(
             (
                 "inspect_files",
@@ -594,6 +591,12 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
                         "package.json",
                         "docker-compose.yml",
                         "docker-compose.yaml",
+                        "agents/app/agent/service.py",
+                        "agents/app/agent/executor.py",
+                        "agents/app/runs/sandbox.py",
+                        "agents/app/memory/memory.py",
+                        "agents/app/tools/register.py",
+                        "agents/app/tools/schemas.py",
                     ]
                 },
             )
@@ -993,6 +996,7 @@ def _stream_message(
     max_tokens: int | None = None,
     timeout_seconds: int | None = None,
     should_cancel=None,
+    tool_choice: str = "auto",
 ) -> SimpleNamespace:
     """Collect one streamed model turn without publishing unaudited answer text.
 
@@ -1012,6 +1016,7 @@ def _stream_message(
         max_tokens=max_tokens,
         timeout_seconds=timeout_seconds,
         should_cancel=should_cancel,
+        tool_choice=tool_choice,
     ):
         choices = getattr(chunk, "choices", None) or []
         if not choices:
@@ -1287,6 +1292,19 @@ tool. Do not provide a final answer before both actions succeed.
         state.steps += 1
         on_event("step_started", {"step": state.steps})
 
+        change_incomplete = (
+            state.allow_write
+            and requires_workspace_change(state.user_message)
+            and (
+                not getattr(state, "successful_mutation", False)
+                or not getattr(state, "successful_verification", False)
+            )
+        )
+        # After a bounded inspection window, prevent a reasoning-heavy local
+        # model from exhausting its response on thought tokens without acting.
+        # Keep requiring tools through post-mutation verification.
+        tool_choice = "required" if change_incomplete and state.steps >= 4 else "auto"
+
         if _needs_compaction(messages, system_prompt, tools):
             before = len(messages)
             messages = _compact_history(
@@ -1308,6 +1326,7 @@ tool. Do not provide a final answer before both actions succeed.
                 getattr(state, "max_completion_tokens", None),
                 getattr(state, "timeout_seconds", None),
                 should_cancel,
+                tool_choice,
             )
             if on_token is not None
             else chat_with_tools(
@@ -1316,6 +1335,7 @@ tool. Do not provide a final answer before both actions succeed.
                 model=state.model,
                 max_tokens=getattr(state, "max_completion_tokens", None),
                 timeout_seconds=getattr(state, "timeout_seconds", None),
+                tool_choice=tool_choice,
             )
         )
 
