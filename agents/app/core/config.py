@@ -24,10 +24,10 @@ FAST_MODEL = os.getenv("FAST_MODEL", "quick")
 # validated workflow contract. It does not answer the user's request.
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", FAST_MODEL)
 ROUTER_ESCALATION_MODEL = os.getenv("ROUTER_ESCALATION_MODEL", DEFAULT_MODEL)
-ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "1024"))
-ROUTER_TIMEOUT_SECONDS = int(os.getenv("ROUTER_TIMEOUT_SECONDS", "120"))
+ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "1536"))
+ROUTER_TIMEOUT_SECONDS = int(os.getenv("ROUTER_TIMEOUT_SECONDS", "240"))
 ROUTER_ESCALATION_TIMEOUT_SECONDS = int(
-    os.getenv("ROUTER_ESCALATION_TIMEOUT_SECONDS", "240")
+    os.getenv("ROUTER_ESCALATION_TIMEOUT_SECONDS", "480")
 )
 FINANCE_MODEL = os.getenv("FINANCE_MODEL", DEFAULT_MODEL)
 # Used by the Open WebUI orchestrator for current web/financial research when
@@ -63,78 +63,95 @@ DEFAULT_WORKSPACE = Path(
     os.getenv("DEFAULT_WORKSPACE_DIR", str(WORKSPACE_ROOT))
 ).resolve()
 
-MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "40"))
+MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "80"))
 # Independent read-only tool calls in one model turn run concurrently instead
 # of sequentially. Write tools are never parallelized.
-MAX_PARALLEL_TOOL_CALLS = int(os.getenv("MAX_PARALLEL_TOOL_CALLS", "4"))
+MAX_PARALLEL_TOOL_CALLS = int(os.getenv("MAX_PARALLEL_TOOL_CALLS", "6"))
 # Stop a weak tool-calling model from spending the entire run repeatedly
 # returning an empty assistant turn. The executor synthesizes its collected
 # evidence once this threshold is reached.
-MAX_EMPTY_MODEL_TURNS = int(os.getenv("MAX_EMPTY_MODEL_TURNS", "3"))
+MAX_EMPTY_MODEL_TURNS = int(os.getenv("MAX_EMPTY_MODEL_TURNS", "5"))
 # A sequence of empty repository content searches is an agent-planning loop,
 # not useful new evidence. Synthesize from earlier findings instead.
-MAX_EMPTY_SEARCH_RESULTS = int(os.getenv("MAX_EMPTY_SEARCH_RESULTS", "3"))
-MAX_UNPRODUCTIVE_TOOL_CALLS = int(os.getenv("MAX_UNPRODUCTIVE_TOOL_CALLS", "3"))
+MAX_EMPTY_SEARCH_RESULTS = int(os.getenv("MAX_EMPTY_SEARCH_RESULTS", "5"))
+MAX_UNPRODUCTIVE_TOOL_CALLS = int(os.getenv("MAX_UNPRODUCTIVE_TOOL_CALLS", "5"))
 # A local 8B model has a finite context window.  Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
-MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
+MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "16000"))
 # Model-visible budget for a single tool result once structured summarization
 # kicks in. Smaller than MAX_TOOL_OUTPUT_CHARS because it is the token budget
 # for the transcript, not the raw tool payload. The full result is always
 # retained in the run's observations.
-TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "3000"))
+TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "6000"))
 # Head/tail items preserved when a list-shaped tool result exceeds the summary
 # budget (search matches, directory listings, file items).
-TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "3"))
-LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "360"))
-LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "1536"))
+TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "6"))
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "3072"))
 # Transient gateway errors (connection refused while Ollama reloads a model,
 # 5xx, rate limits) are retried with exponential backoff before a run fails.
 # Stream-setup failures are retried; errors after output has begun are not.
-LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
 LLM_RETRY_BACKOFF_SECONDS = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2"))
 # Evidence-rich cross-domain comparisons use a stronger model for the one
 # synthesis turn only. If it is unavailable, the executor falls back to the
 # active workflow model without losing the collected evidence.
 ANALYSIS_SYNTHESIS_MODEL = os.getenv("ANALYSIS_SYNTHESIS_MODEL", "qwen3-14b")
-ANALYSIS_SYNTHESIS_MAX_TOKENS = int(os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "1200"))
+ANALYSIS_SYNTHESIS_MAX_TOKENS = int(os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "2048"))
 ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
-    os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "360")
+    os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "600")
 )
 # A stronger model is used only after bounded grounded failures; normal coding
 # remains on the selected/default model. Independent change review is likewise
 # risk-based and never overrides a deterministic rejection.
 AGENT_REASONING_MODEL = os.getenv("AGENT_REASONING_MODEL", "qwen3-14b")
-AGENT_MODEL_ESCALATIONS = int(os.getenv("AGENT_MODEL_ESCALATIONS", "1"))
+AGENT_MODEL_ESCALATIONS = int(os.getenv("AGENT_MODEL_ESCALATIONS", "3"))
 CHANGE_REVIEW_MODEL = os.getenv("CHANGE_REVIEW_MODEL", "reasoning")
 CHANGE_REVIEW_MODEL_ENABLED = env_flag("CHANGE_REVIEW_MODEL_ENABLED", True)
+# Tier 3 multi-expert dispatch. For complex auto-routed work the executor
+# dispatches several bounded expert analyses in parallel (plain completions,
+# no tools); each returns structured JSON findings that are merged into the
+# evidence ledger before the tool loop starts. Gated by both the flag and the
+# per-run state.expert_dispatch marker set by the service layer for complex or
+# multi-workflow requests, so ordinary Code/Quick runs and all read-only
+# analyses are unaffected.
+EXPERT_DISPATCH_ENABLED = env_flag("EXPERT_DISPATCH_ENABLED", True)
+EXPERT_DISPATCH_MODEL = os.getenv("EXPERT_DISPATCH_MODEL", "qwen3-14b")
+MAX_PARALLEL_EXPERTS = int(os.getenv("MAX_PARALLEL_EXPERTS", "4"))
+EXPERT_MAX_COMPLETION_TOKENS = int(os.getenv("EXPERT_MAX_COMPLETION_TOKENS", "1024"))
+EXPERT_DISPATCH_TIMEOUT_SECONDS = int(
+    os.getenv("EXPERT_DISPATCH_TIMEOUT_SECONDS", "600")
+)
+# Bounded model-visible budget for each expert's structured findings when they
+# are injected into the task context (per expert, not total).
+EXPERT_FINDINGS_CONTEXT_CHARS = int(os.getenv("EXPERT_FINDINGS_CONTEXT_CHARS", "2400"))
 # Planning is advisory; a small bounded response avoids wasting the local
 # context window on a plan the executor does not need to execute literally.
-PLANNER_MAX_COMPLETION_TOKENS = int(os.getenv("PLANNER_MAX_COMPLETION_TOKENS", "192"))
-REPLAN_MAX_COMPLETION_TOKENS = int(os.getenv("REPLAN_MAX_COMPLETION_TOKENS", "256"))
+PLANNER_MAX_COMPLETION_TOKENS = int(os.getenv("PLANNER_MAX_COMPLETION_TOKENS", "384"))
+REPLAN_MAX_COMPLETION_TOKENS = int(os.getenv("REPLAN_MAX_COMPLETION_TOKENS", "512"))
 # Re-planning policy: revise the plan when this many consecutive tool-failing
 # steps occur, or when this many steps produce no new useful evidence.
-REPLAN_FAIL_STREAK = int(os.getenv("REPLAN_FAIL_STREAK", "3"))
-REPLAN_STUCK_STEPS = int(os.getenv("REPLAN_STUCK_STEPS", "6"))
+REPLAN_FAIL_STREAK = int(os.getenv("REPLAN_FAIL_STREAK", "5"))
+REPLAN_STUCK_STEPS = int(os.getenv("REPLAN_STUCK_STEPS", "12"))
 # Hard cap so a pathological loop cannot re-plan forever; after this many
 # revisions the executor falls back to its normal recovery behavior.
-REPLAN_MAX_RETRIES = int(os.getenv("REPLAN_MAX_RETRIES", "2"))
+REPLAN_MAX_RETRIES = int(os.getenv("REPLAN_MAX_RETRIES", "3"))
 # OpenAI-compatible clients often attach long histories, IDE excerpts, and
 # tool instructions. This bounds only their *incoming* text before the agent
 # adds its own prompt and tool schemas for the model context budget.
-OPENAI_INPUT_MAX_CHARS = int(os.getenv("OPENAI_INPUT_MAX_CHARS", "8000"))
+OPENAI_INPUT_MAX_CHARS = int(os.getenv("OPENAI_INPUT_MAX_CHARS", "16000"))
 CONTEXT_TOKEN_LIMIT = int(os.getenv("CONTEXT_TOKEN_LIMIT", "32768"))
-CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "768"))
+CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "4096"))
 # Finance answers need room for a compact evidence summary plus scenarios.
 # Kept separate so normal Code/Quick responses remain fast on CPU.
-FINANCE_MAX_COMPLETION_TOKENS = int(os.getenv("FINANCE_MAX_COMPLETION_TOKENS", "1024"))
-FINANCE_LLM_TIMEOUT_SECONDS = int(os.getenv("FINANCE_LLM_TIMEOUT_SECONDS", "300"))
-COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "120"))
+FINANCE_MAX_COMPLETION_TOKENS = int(os.getenv("FINANCE_MAX_COMPLETION_TOKENS", "1536"))
+FINANCE_LLM_TIMEOUT_SECONDS = int(os.getenv("FINANCE_LLM_TIMEOUT_SECONDS", "600"))
+COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "300"))
 POSTGRES_URL = os.getenv("POSTGRES_URL")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 SANDBOX_ROOT = Path(os.getenv("SANDBOX_ROOT", "/tmp/agent-sandboxes")).resolve()
-RUNNER_CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "90"))
-RUNNER_MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "2048"))
+RUNNER_CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "300"))
+RUNNER_MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "4096"))
 RUNNER_MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
 RUN_EVENT_BATCH_CHARS = int(os.getenv("RUN_EVENT_BATCH_CHARS", "2048"))
 RUN_EVENT_BATCH_SECONDS = float(os.getenv("RUN_EVENT_BATCH_SECONDS", "0.50"))
@@ -177,7 +194,7 @@ CONTEXT_COMPACT_KEEP_RECENT = int(os.getenv("CONTEXT_COMPACT_KEEP_RECENT", "4"))
 # model context budget. The old step-count setting is retained for backwards
 # compatible configuration but is no longer the trigger.
 CONTEXT_COMPACT_THRESHOLD_TOKENS = int(
-    os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "28000")
+    os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "24000")
 )
 
 # Embeddings are useful for explicit RAG workflows but expensive on a host
@@ -187,7 +204,7 @@ MEMORY_FOR_CODE_RUNS = env_flag("MEMORY_FOR_CODE_RUNS", False)
 # Model-generated answers are not trusted source material by default. Persist
 # them only when an operator explicitly accepts the feedback-loop risk.
 GENERATED_MEMORY_ENABLED = env_flag("GENERATED_MEMORY_ENABLED", False)
-MEMORY_CONTEXT_TOKENS = int(os.getenv("MEMORY_CONTEXT_TOKENS", "1200"))
+MEMORY_CONTEXT_TOKENS = int(os.getenv("MEMORY_CONTEXT_TOKENS", "2400"))
 DOCUMENT_MAX_BYTES = int(os.getenv("DOCUMENT_MAX_BYTES", "10000000"))
 
 # Authentication is mandatory unless a developer explicitly opts into an
@@ -253,6 +270,10 @@ def validate_settings() -> None:
         raise RuntimeError("REPLAN_MAX_RETRIES cannot be negative")
     if AGENT_MODEL_ESCALATIONS < 0:
         raise RuntimeError("AGENT_MODEL_ESCALATIONS cannot be negative")
+    if MAX_PARALLEL_EXPERTS < 1:
+        raise RuntimeError("MAX_PARALLEL_EXPERTS must be at least 1")
+    if EXPERT_MAX_COMPLETION_TOKENS < 64 or EXPERT_DISPATCH_TIMEOUT_SECONDS < 1:
+        raise RuntimeError("Expert dispatch bounds must be positive")
     if MEMORY_CONTEXT_TOKENS < 128 or DOCUMENT_MAX_BYTES < 1:
         raise RuntimeError("Invalid document retrieval settings")
     if not RUNNER_API_KEY:

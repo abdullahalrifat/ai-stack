@@ -86,6 +86,17 @@ class AgentState:
 
     route_tasks: list[dict[str, Any]] = field(default_factory=list)
 
+    # When True the executor dispatches several bounded expert analyses in
+    # parallel before the tool loop and merges their structured findings into
+    # the evidence ledger. Set by the service layer for complex or
+    # multi-workflow auto-routed requests, never inferred from message text.
+    expert_dispatch: bool = False
+
+    # Validated structured findings from the multi-expert dispatch, one item
+    # per expert role (see dispatch.py). Each carries findings/open_questions/
+    # recommended_focus and is bounded before it reaches model context.
+    expert_findings: list[dict[str, Any]] = field(default_factory=list)
+
     task_progress: dict[str, str] = field(default_factory=dict)
 
     requires_external_evidence: bool = False

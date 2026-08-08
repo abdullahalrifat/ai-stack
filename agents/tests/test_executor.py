@@ -750,6 +750,147 @@ def test_execute_plan_corrects_absolute_sandbox_path(
     assert sum(1 for kind, _ in events if kind == "path_denial_recovery") >= 2
 
 
+@patch("app.agent.executor.dispatch_experts")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_injects_expert_findings_when_dispatch_requested(
+    mock_chat_with_tools, mock_registry, mock_dispatch
+):
+    """A request marked for expert dispatch runs the bounded expert analyses
+    before the tool loop and merges their structured findings into the task
+    context and evidence ledger."""
+    canned = [
+        {
+            "expert": "architecture",
+            "findings": [
+                {
+                    "claim": "runner owns the parallel loop",
+                    "evidence": ["agents/app/runner.py"],
+                    "confidence": "high",
+                }
+            ],
+            "open_questions": [],
+            "recommended_focus": ["agents/app/runner.py"],
+        }
+    ]
+    mock_dispatch.return_value = canned
+    state = DummyState()
+    state.allow_write = True
+    state.expert_dispatch = True
+    state.user_message = "Implement parallel subagents in the runner"
+    state.evidence_ledger = {
+        "requirements": [],
+        "relevant_files": [],
+        "owning_symbols": [],
+        "test_targets": [],
+        "dependencies": {},
+        "confirmed_existing": [],
+        "confirmed_missing": [],
+        "open_questions": [],
+    }
+    mock_registry.list_tools.return_value = [
+        "edit_file",
+        "write_file",
+        "read_file",
+        "run_tests",
+    ]
+    mock_registry.execute.side_effect = [
+        {"path": "agents/app/runner.py", "status": "edited"},
+        {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
+    ]
+    seen_messages = []
+
+    def respond(messages, **kwargs):
+        seen_messages.append([dict(message) for message in messages])
+        if len(seen_messages) == 1:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "edit",
+                        "edit_file",
+                        {
+                            "file_path": "agents/app/runner.py",
+                            "old_string": "def _loop():\n    pass",
+                            "new_string": "def _loop():\n    return dispatch()",
+                        },
+                    )
+                ]
+            )
+        if len(seen_messages) == 2:
+            return make_message(
+                tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+            )
+        return make_message(content="Implemented parallel subagents; tests pass.")
+
+    mock_chat_with_tools.side_effect = respond
+
+    assert execute_plan(state) == "Implemented parallel subagents; tests pass."
+
+    mock_dispatch.assert_called_once()
+    assert state.expert_findings == canned
+    assert state.evidence_ledger["expert_findings"] == canned
+    first_user = seen_messages[0][1]["content"]
+    assert "Multi-expert structured findings" in first_user
+    assert "runner owns the parallel loop" in first_user
+
+
+@patch("app.agent.executor.dispatch_experts")
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_execute_plan_skips_expert_dispatch_without_marker(
+    mock_chat_with_tools, mock_registry, mock_dispatch
+):
+    """Ordinary requests never launch expert analyses; the marker must be set
+    explicitly by the service layer, so existing fast loops stay unchanged."""
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Implement parallel subagents in the runner"
+    mock_registry.list_tools.return_value = [
+        "edit_file",
+        "write_file",
+        "read_file",
+        "run_tests",
+    ]
+    mock_registry.execute.side_effect = [
+        {"path": "agents/app/runner.py", "status": "edited"},
+        {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
+    ]
+    seen_messages = []
+
+    def respond(messages, **kwargs):
+        seen_messages.append(messages)
+        if len(seen_messages) == 1:
+            return make_message(
+                tool_calls=[
+                    make_tool_call(
+                        "edit",
+                        "edit_file",
+                        {
+                            "file_path": "agents/app/runner.py",
+                            "old_string": "old",
+                            "new_string": "new",
+                        },
+                    )
+                ]
+            )
+        if len(seen_messages) == 2:
+            return make_message(
+                tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+            )
+        return make_message(content="Implemented parallel subagents; tests pass.")
+
+    mock_chat_with_tools.side_effect = respond
+
+    assert execute_plan(state) == "Implemented parallel subagents; tests pass."
+
+    mock_dispatch.assert_not_called()
+    assert getattr(state, "expert_findings", []) == []
+    assert not any(
+        "Multi-expert structured findings" in message["content"]
+        for message in seen_messages[0]
+    )
+
+
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_refuses_doc_shortcut_before_it_changes_workspace(
@@ -2056,6 +2197,7 @@ def test_execute_plan_empty_content_retries(
     "app.agent.executor._synthesize_partial_answer",
     return_value="Partial evidence-based answer",
 )
+@patch("app.agent.executor.MAX_EMPTY_MODEL_TURNS", 3)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_synthesizes_after_repeated_empty_turns(
@@ -2082,6 +2224,7 @@ def test_execute_plan_synthesizes_after_repeated_empty_turns(
     "app.agent.executor._synthesize_partial_answer",
     return_value="Useful partial answer",
 )
+@patch("app.agent.executor.MAX_EMPTY_SEARCH_RESULTS", 3)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_stops_after_repeated_empty_searches(
@@ -2113,6 +2256,7 @@ def test_execute_plan_stops_after_repeated_empty_searches(
     "app.agent.executor._synthesize_partial_answer",
     return_value="Useful partial answer",
 )
+@patch("app.agent.executor.MAX_UNPRODUCTIVE_TOOL_CALLS", 3)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_stops_after_repeated_failed_tool_calls(
@@ -2141,6 +2285,7 @@ def test_execute_plan_stops_after_repeated_failed_tool_calls(
 
 
 @patch("app.agent.executor.replan", return_value=["read error log", "fix root cause"])
+@patch("app.agent.executor.REPLAN_FAIL_STREAK", 3)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_replans_after_consecutive_failures(

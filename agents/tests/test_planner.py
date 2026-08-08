@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from app.agent.parser import ParserError
 from app.agent.planner import create_plan, replan
+from app.core.config import PLANNER_MAX_COMPLETION_TOKENS, REPLAN_MAX_COMPLETION_TOKENS
 
 
 class DummyState:
@@ -26,7 +27,7 @@ def test_replan_returns_revised_plan(mock_chat, mock_extract_json):
     assert len(messages) == 2
     assert "Current plan" in messages[1]["content"]
     assert "run_tests failed: exit 1" in messages[1]["content"]
-    assert mock_chat.call_args.kwargs["max_tokens"] == 256
+    assert mock_chat.call_args.kwargs["max_tokens"] == REPLAN_MAX_COMPLETION_TOKENS
 
 
 @patch("app.agent.planner.extract_json")
@@ -72,7 +73,6 @@ def test_replan_caps_plan_to_five_steps(mock_chat, mock_extract_json):
     assert plan == ["a", "b", "c", "d", "e"]
 
 
-
 @patch("app.agent.planner.extract_json")
 @patch("app.agent.planner.chat")
 def test_create_plan_success(
@@ -111,7 +111,7 @@ def test_create_plan_success(
     ]
 
     mock_chat.assert_called_once()
-    assert mock_chat.call_args.kwargs["max_tokens"] == 192
+    assert mock_chat.call_args.kwargs["max_tokens"] == PLANNER_MAX_COMPLETION_TOKENS
     mock_extract_json.assert_called_once_with(mock_chat.return_value)
 
 

@@ -339,8 +339,12 @@ never override a deterministic rejection.
 
 At present, one primary expert model executes the complete graph in a single
 tool loop, with bounded stronger-model escalation when recovery requires it.
-Per-task workflow annotations establish the contract for future multi-expert
-dispatch, but they do not yet launch simultaneous models.
+Per-task workflow annotations establish the contract for multi-expert
+dispatch: for complex or multi-workflow auto-routed requests the executor
+launches several bounded expert analyses (architecture, implementation,
+verification, risk) in parallel before the tool loop and merges their
+structured JSON findings into the evidence ledger. Ordinary Code/Quick and
+read-only runs stay on the single fast loop with no extra model calls.
 
 The runtime model-loop defaults live in `.env` (created from the tracked
 `.env.example`) and are passed through Compose:
@@ -351,6 +355,12 @@ The runtime model-loop defaults live in `.env` (created from the tracked
 | `AGENT_MODEL_ESCALATIONS` | `1` | Maximum stronger-model handoffs in one run |
 | `CHANGE_REVIEW_MODEL` | `reasoning` | Independent reviewer for high-risk accepted diffs |
 | `CHANGE_REVIEW_MODEL_ENABLED` | `true` | Enables risk-based independent diff review |
+| `EXPERT_DISPATCH_ENABLED` | `true` | Enables parallel expert analyses for complex auto-routed requests |
+| `EXPERT_DISPATCH_MODEL` | `qwen3-14b` | Model used for each bounded expert analysis |
+| `MAX_PARALLEL_EXPERTS` | `4` | Maximum experts dispatched in one run |
+| `EXPERT_MAX_COMPLETION_TOKENS` | `640` | Per-expert output budget |
+| `EXPERT_DISPATCH_TIMEOUT_SECONDS` | `240` | Per-expert completion timeout |
+| `EXPERT_FINDINGS_CONTEXT_CHARS` | `1200` | Model-visible budget for merged findings in task context |
 
 ## Quick start
 

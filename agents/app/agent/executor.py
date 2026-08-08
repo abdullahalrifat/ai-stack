@@ -16,6 +16,8 @@ from ..core.config import (
     CONTEXT_COMPACT_KEEP_RECENT,
     CONTEXT_COMPACT_THRESHOLD_TOKENS,
     EDIT_ALLOWED_PATHS,
+    EXPERT_DISPATCH_ENABLED,
+    EXPERT_FINDINGS_CONTEXT_CHARS,
     MAX_AGENT_STEPS,
     MAX_EMPTY_MODEL_TURNS,
     MAX_EMPTY_SEARCH_RESULTS,
@@ -48,6 +50,7 @@ from .completion import (
     record_tool_progress as _record_tool_progress,
 )
 from .context_budget import estimate_tokens, fit_user_context, summarize_tool_result
+from .dispatch import dispatch_experts, findings_context
 from .graph import transition_graph
 from .parser import parse_tool_arguments
 from .planner import replan
@@ -1457,6 +1460,18 @@ def execute_plan(
         )
         return finalize(answer)
 
+    expert_findings = []
+    if EXPERT_DISPATCH_ENABLED and getattr(state, "expert_dispatch", False):
+        # Bounded parallel expert analyses produce structured findings that are
+        # merged into the evidence ledger and injected into the task context
+        # before the tool loop starts. Findings are advisory reference data;
+        # the model must still verify every claim it relies on.
+        expert_findings = dispatch_experts(state, on_event=on_event)
+        state.expert_findings = expert_findings
+        ledger = getattr(state, "evidence_ledger", None)
+        if isinstance(ledger, dict):
+            ledger["expert_findings"] = expert_findings
+
     workspace_context = ""
     if workspace_evidence is not None:
         roadmap_evidence = workspace_evidence.get("authoritative_roadmap")
@@ -1502,6 +1517,15 @@ Structured document evidence and provenance ledger:
 """
     ledger_context = _bounded_context(getattr(state, "evidence_ledger", {}), 5_000)
 
+    expert_context = ""
+    if expert_findings:
+        rendered = findings_context(expert_findings)
+        if rendered.strip():
+            expert_context = f"""
+Multi-expert structured findings (parallel bounded subagent analyses; verify any claim before relying on it):
+{_bounded_context(rendered, EXPERT_FINDINGS_CONTEXT_CHARS)}
+"""
+
     task_context = f"""
 Workspace:
 {state.workspace}
@@ -1527,6 +1551,7 @@ Plan:
 Structured task evidence ledger (confirmed deterministic repository analysis;
 use this instead of repeating broad directory exploration):
 {ledger_context}
+{expert_context}
 """
     if state.allow_write and requires_workspace_change(state.user_message):
         task_context += """

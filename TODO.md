@@ -29,7 +29,7 @@
 
 ## Tier 3 - Autonomy & scale
 
-- [ ] Multi-expert dispatch / parallel subagents with structured findings
+- [x] Multi-expert dispatch / parallel subagents with structured findings
 - [ ] Git branch-per-task + diff review + PR workflow
 - [ ] Persistent cross-run agent memory (learned project knowledge, user preferences)
 - [ ] MCP tool ecosystem support

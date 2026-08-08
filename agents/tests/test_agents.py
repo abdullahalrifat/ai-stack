@@ -267,7 +267,9 @@ def test_execute_read_only_run_persists_answer_and_events(
 
 
 @patch("app.agent.service.remove_sandbox")
-@patch("app.agent.service.sandbox_diff", return_value="diff --git a/TODO.md b/TODO.md\n")
+@patch(
+    "app.agent.service.sandbox_diff", return_value="diff --git a/TODO.md b/TODO.md\n"
+)
 @patch("app.agent.service.create_sandbox")
 @patch("app.agent.service.workspace_context", return_value=nullcontext())
 @patch("app.agent.service.save_memory")
@@ -524,8 +526,35 @@ def test_auto_route_hands_full_planning_contract_to_executor(monkeypatch):
     assert "Known missing inputs" in state.execution_brief
     assert "completion_criteria: Dated evidence is cited" in state.execution_brief
     assert state.plan == ["[research_holding/finance] Research the named holding"]
+    assert state.expert_dispatch is True
     assert events[0][1]["task_count"] == 1
     assert events[0][1]["task_workflows"] == ["finance"]
+
+
+def test_auto_route_simple_request_skips_expert_dispatch(monkeypatch):
+    decision = RouteDecision(
+        workflow="code",
+        translated_task="Add a docstring to this function.",
+        requires_external_evidence=False,
+        complexity="simple",
+        tasks=[
+            PlannedTask(
+                id="edit_docstring",
+                objective="Add the docstring",
+                workflow="code",
+            )
+        ],
+    )
+    monkeypatch.setattr(agent, "route_request", lambda *_args: decision)
+    state = AgentState(
+        conversation_id="conversation",
+        user_message="Add a docstring to this function.",
+        prompt_mode="auto",
+    )
+
+    agent._apply_auto_route(state)
+
+    assert state.expert_dispatch is False
 
 
 def test_auto_route_removes_entities_found_only_in_excluded_sections(monkeypatch):

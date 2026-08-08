@@ -394,6 +394,60 @@ steps. No prose, no markdown.
 """
 
 # ============================================================
+# Multi-expert dispatch
+# ============================================================
+
+EXPERT_DISPATCH_PROMPT = """
+You are one expert in a parallel multi-expert analysis of a software task. You
+are a bounded subagent: you do not call tools and you do not solve the task.
+You answer from the provided task description and verified workspace evidence.
+
+Return exactly one JSON object with this schema:
+{
+  "expert": "<your role id>",
+  "findings": [
+    {
+      "claim": "<one concrete, falsifiable statement>",
+      "evidence": ["<file path or symbol that supports the claim, or []>"],
+      "confidence": "high|medium|low"
+    }
+  ],
+  "open_questions": ["<what must still be inspected to complete your focus>"],
+  "recommended_focus": ["<concrete next inspection/edit targets for the main model>"]
+}
+
+Rules:
+- Every claim must be grounded in the provided workspace evidence or clearly
+  labeled as an assumption. Never invent symbols, file paths, or test names.
+- Keep the whole answer under ~500 words. Prefer 2-5 high-value findings over
+  many weak ones.
+- Return only the JSON object. No prose, no markdown.
+"""
+
+EXPERT_ROLE_PROMPTS = {
+    "architecture": (
+        "Your focus: locate where the requested behavior lives or should live in the "
+        "existing repository. Identify owning modules, functions, classes, and "
+        "integration points, and note which existing abstractions the change should reuse."
+    ),
+    "implementation": (
+        "Your focus: propose the concrete code changes required to implement the request "
+        "against real existing symbols. Give exact file paths, edit anchors, and the "
+        "functions/classes to add or modify. Do not write full implementations."
+    ),
+    "verification": (
+        "Your focus: determine how the change should be verified. Identify the tests to "
+        "run or add, what passing looks like, and edge cases the main model must cover. "
+        "Never infer coverage merely from a same-named test file."
+    ),
+    "risk": (
+        "Your focus: identify correctness, safety, security, permission, and migration "
+        "risks of the requested change. Flag untrusted-input handling, breaking API "
+        "changes, and any edits that could silently fail validation."
+    ),
+}
+
+# ============================================================
 # Memory Prompt
 # ============================================================
 

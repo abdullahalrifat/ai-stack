@@ -153,6 +153,11 @@ def _apply_auto_route(state, on_event=None) -> None:
         for task in decision.tasks
     ]
     state.task_progress = {task.id: "pending" for task in decision.tasks}
+    # Complex or multi-workflow contracts benefit from several bounded expert
+    # analyses (architecture/implementation/verification/risk) feeding structured
+    # findings into the executor's evidence ledger. Ordinary single-path requests
+    # keep the fast single-loop execution with no extra model calls.
+    state.expert_dispatch = decision.complexity == "complex" or len(decision.tasks) >= 2
     brief_parts = [f"Translated objective:\n{decision.translated_task}"]
     if state.routing_entities:
         brief_parts.append(
