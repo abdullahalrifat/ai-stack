@@ -22,6 +22,7 @@ from ..core.config import (
     REPLAN_FAIL_STREAK,
     REPLAN_MAX_RETRIES,
     REPLAN_STUCK_STEPS,
+    SANDBOX_ROOT,
 )
 from ..core.evidence import evidence_prompt
 from ..core.exceptions import RunCancelled
@@ -1307,6 +1308,10 @@ explicitly instead of marking them complete without code.
     grounded_guard_count = 0
     source_refresh_required = False
     phase_notice_sent = False
+    # Newly-created Python modules are especially prone to plausible but
+    # unusable imports/symbols. Validate them immediately without spending
+    # another model turn, so the next turn receives concrete diagnostics.
+    automatic_python_validation_paths: set[str] = set()
 
     permissions = getattr(state, "permissions", None) or policy_for(
         state.allow_write,
@@ -1503,6 +1508,26 @@ explicitly instead of marking them complete without code.
                 tool_name = call.function.name
                 raw_args = parse_tool_arguments(call.function.arguments)
                 args = normalize_tool_args(tool_name, raw_args)
+                automatic_python_path = None
+                if (
+                    tool_name in MUTATION_ANCHOR_TOOLS
+                    and SANDBOX_ROOT in current_workspace().parents
+                ):
+                    candidate = str(args.get("file_path", "")).strip()
+                    if candidate.endswith(".py"):
+                        try:
+                            target = resolve_path(candidate)
+                            relative_target = target.relative_to(
+                                current_workspace()
+                            ).as_posix()
+                            if (
+                                tool_name == "write_file" and not target.exists()
+                            ) or relative_target in automatic_python_validation_paths:
+                                automatic_python_path = relative_target
+                        except (OSError, ValueError):
+                            # The write tool will return the authoritative path
+                            # error; do not obscure it with validation setup.
+                            automatic_python_path = None
                 fingerprint = _tool_fingerprint(tool_name, args)
                 semantic_key = _semantic_tool_key(tool_name, args)
                 tool_call_counts[fingerprint] = tool_call_counts.get(fingerprint, 0) + 1
@@ -1577,6 +1602,66 @@ explicitly instead of marking them complete without code.
                         except Exception as e:
                             logger.exception("Tool %s raised on retry", tool_name)
                             result = {"error": str(e)}
+
+                    if (
+                        automatic_python_path
+                        and not tool_result_failed(result)
+                        and "run_tests" in turn_available_tools
+                    ):
+                        validation_args = {
+                            "kind": "ruff",
+                            "directory": ".",
+                            "test_path": automatic_python_path,
+                        }
+                        on_event(
+                            "tool_call",
+                            {
+                                "tool": "run_tests",
+                                "args": validation_args,
+                                "automatic": True,
+                            },
+                        )
+                        try:
+                            with cancellation_context(
+                                should_cancel
+                            ), permissions_context(permissions):
+                                validation = registry.execute(
+                                    "run_tests", validation_args
+                                )
+                        except RunCancelled:
+                            raise
+                        except Exception as e:
+                            logger.exception(
+                                "Automatic Python validation raised unexpectedly"
+                            )
+                            validation = {"error": str(e)}
+                        on_event(
+                            "tool_result",
+                            {
+                                "tool": "run_tests",
+                                "result": validation,
+                                "automatic": True,
+                            },
+                        )
+                        if tool_result_failed(validation):
+                            automatic_python_validation_paths.add(
+                                automatic_python_path
+                            )
+                            result = {
+                                "error": (
+                                    "The new Python file was written, but automatic "
+                                    "focused ruff validation failed. Repair the file "
+                                    "using the diagnostics below before continuing."
+                                ),
+                                "mutation_applied": True,
+                                "validation": validation,
+                            }
+                        else:
+                            automatic_python_validation_paths.discard(
+                                automatic_python_path
+                            )
+                            if isinstance(result, dict):
+                                result = {**result, "static_validation": validation}
 
                 if not duplicate:
                     state.add_tool(tool_name, result)

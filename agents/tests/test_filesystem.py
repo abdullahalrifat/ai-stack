@@ -741,6 +741,27 @@ def test_run_tests_supports_focused_pytest_node(workspace, monkeypatch):
     ]
 
 
+def test_run_tests_supports_focused_ruff_file(workspace, monkeypatch):
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    source_file = workspace / "app" / "worker.py"
+    source_file.parent.mkdir()
+    source_file.write_text("def retry(): pass\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda command, cwd, tier="isolated": calls.append((command, cwd))
+        or {"exit_code": 0, "output": "All checks passed!"},
+    )
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.run_tests.invoke(
+            {"kind": "ruff", "test_path": "app/worker.py"}
+        )
+
+    assert result["exit_code"] == 0
+    assert calls == [("ruff check app/worker.py", workspace)]
+
+
 def test_run_tests_rejects_unsafe_focused_target(workspace, monkeypatch):
     calls = []
     monkeypatch.setattr(

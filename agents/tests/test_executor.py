@@ -24,6 +24,7 @@ from app.agent.executor import (
 )
 from app.agent.prompts import UNTRUSTED_TOOL_RESULT_HEADER, executor_prompt
 from app.core.permissions import FULL_WRITE, SCOPED_WRITE, PermissionPolicy
+from app.tools.filesystem import current_workspace
 
 
 class DummyState:
@@ -344,6 +345,7 @@ def test_execute_plan_forces_verification_before_final_answer_after_edit(
     mock_registry.list_tools.return_value = ["write_file", "run_tests"]
     mock_registry.execute.side_effect = [
         {"status": "written", "path": "helpers.py"},
+        {"exit_code": 0, "output": "All checks passed!"},
         {"exit_code": 0, "output": "1 passed"},
     ]
     mock_chat_with_tools.side_effect = [
@@ -363,8 +365,18 @@ def test_execute_plan_forces_verification_before_final_answer_after_edit(
         make_message(content="Added the helper function; the test suite passes."),
     ]
 
-    assert execute_plan(state) == "Added the helper function; the test suite passes."
-    assert mock_registry.execute.call_count == 2
+    with patch(
+        "app.agent.executor.SANDBOX_ROOT", current_workspace().parent
+    ):
+        assert (
+            execute_plan(state)
+            == "Added the helper function; the test suite passes."
+        )
+    assert mock_registry.execute.call_count == 3
+    assert mock_registry.execute.call_args_list[1].args == (
+        "run_tests",
+        {"kind": "ruff", "directory": ".", "test_path": "helpers.py"},
+    )
     transcript = mock_chat_with_tools.call_args_list[1].args[0]
     repair_messages = [
         message["content"]

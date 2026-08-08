@@ -588,11 +588,30 @@ def execute_run(run_id: str) -> None:
         with cancellation_context(cancelled):
             diff = sandbox_diff(str(sandbox.path)) if sandbox is not None else None
         diff_blocked = bool(getattr(state, "diff_blocked", False))
-        if diff_blocked:
-            # The run was rejected because its only change is documentation
-            # marker files (checklist-gaming). Do not offer a pending diff for
-            # approval and do not keep a sandbox open for review.
+        unsafe_incomplete_diff = bool(diff and diff.strip()) and (
+            state.partial
+            or not getattr(state, "successful_mutation", False)
+            or not getattr(state, "successful_verification", False)
+            or bool(getattr(state, "pending_failure_categories", set()))
+        )
+        if diff_blocked or unsafe_incomplete_diff:
+            # Never offer changes from a run that failed its completion audit.
+            # This covers checklist-gaming as well as partial, unverified, or
+            # otherwise unresolved mutations. A plausible diff is not proof
+            # that the requested implementation is safe to apply.
             diff = None
+            if unsafe_incomplete_diff:
+                on_event(
+                    "diff_rejected",
+                    {
+                        "partial": state.partial,
+                        "successful_mutation": state.successful_mutation,
+                        "successful_verification": state.successful_verification,
+                        "pending_failure_categories": sorted(
+                            state.pending_failure_categories
+                        ),
+                    },
+                )
             if sandbox is not None:
                 remove_sandbox(str(sandbox.repository), str(sandbox.path))
                 sandbox = None

@@ -319,9 +319,9 @@ TOOL_SCHEMAS = [
                     "test_path": {
                         "type": "string",
                         "description": (
-                            "Optional focused pytest file or node id, such as "
-                            "tests/test_worker.py::test_retry. Use after a localized "
-                            "change instead of running the entire suite."
+                            "Optional focused pytest file/node id or Python file for "
+                            "ruff. Use after a localized change instead of running "
+                            "the entire suite."
                         ),
                     },
                     "coverage_target": {

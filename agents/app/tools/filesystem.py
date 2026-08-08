@@ -1403,12 +1403,14 @@ def run_tests(
         "ruff": ["ruff", "check", "."],
     }
     if test_path:
-        if kind != "pytest":
-            return {"error": "test_path is supported only for kind=pytest."}
+        if kind not in {"pytest", "ruff"}:
+            return {"error": "test_path is supported only for kind=pytest or kind=ruff."}
         normalized_target = test_path.strip()
         if not re.fullmatch(r"[A-Za-z0-9_./:\[\]-]+", normalized_target):
             return {"error": "test_path contains unsupported characters."}
         file_part, separator, node_id = normalized_target.partition("::")
+        if kind == "ruff" and separator:
+            return {"error": "ruff test_path must name a Python file, not a pytest node."}
         if not file_part or file_part.startswith("-"):
             return {"error": "test_path must name a workspace test file."}
         target_file = resolve_path(file_part)
@@ -1417,7 +1419,12 @@ def run_tests(
         focused_target = relative(target_file)
         if separator:
             focused_target += f"::{node_id}"
-        commands["pytest"] = ["pytest", "-q", focused_target]
+        if kind == "pytest":
+            commands["pytest"] = ["pytest", "-q", focused_target]
+        else:
+            if target_file.suffix != ".py":
+                return {"error": "ruff test_path must name a Python file."}
+            commands["ruff"] = ["ruff", "check", focused_target]
     if kind == "pytest_coverage":
         target = coverage_target.strip()
         if not target:

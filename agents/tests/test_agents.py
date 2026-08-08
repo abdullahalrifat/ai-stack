@@ -325,6 +325,7 @@ def test_write_run_with_blocked_diff_is_not_offered_for_approval(
         "/workspace/project", "/sandboxes/project-run-1"
     )
     assert "diff_ready" not in [event for event, _ in store.events]
+    assert "diff_rejected" in [event for event, _ in store.events]
     assert store.run["status"] != "awaiting_approval"
 
 
