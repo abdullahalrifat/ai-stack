@@ -1107,6 +1107,14 @@ def edit_file(
         if path.stat().st_size > MAX_FILE_SIZE:
             return {"error": "File exceeds maximum size."}
 
+        if old_string == new_string:
+            return {
+                "error": (
+                    "No-op edit refused: old_string and new_string are identical. "
+                    "Make a real code change based on the current file contents."
+                )
+            }
+
         text = path.read_text(encoding="utf-8", errors="ignore")
         count = text.count(old_string)
 

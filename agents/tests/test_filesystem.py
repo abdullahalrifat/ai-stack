@@ -637,9 +637,9 @@ def test_write_file_does_not_clobber_same_basename_existing_file(workspace):
     assert result["path"] == "src/executor.py"
     assert (workspace / "src" / "executor.py").read_text(encoding="utf-8") == "stub"
     # The pre-existing same-basename file must be untouched.
-    assert (
-        workspace / "src" / "deep" / "executor.py"
-    ).read_text(encoding="utf-8") == "REAL IMPLEMENTATION\n"
+    assert (workspace / "src" / "deep" / "executor.py").read_text(
+        encoding="utf-8"
+    ) == "REAL IMPLEMENTATION\n"
 
 
 def test_edit_file_does_not_fall_back_to_same_basename_existing_file(workspace):
@@ -661,9 +661,26 @@ def test_edit_file_does_not_fall_back_to_same_basename_existing_file(workspace):
         )
 
     assert "File not found" in result["error"]
-    assert (
-        workspace / "src" / "deep" / "executor.py"
-    ).read_text(encoding="utf-8") == "def run(): pass\n"
+    assert (workspace / "src" / "deep" / "executor.py").read_text(
+        encoding="utf-8"
+    ) == "def run(): pass\n"
+
+
+def test_edit_file_refuses_identical_old_and_new_text(workspace):
+    target = workspace / "worker.py"
+    target.write_text("def run(): pass\n", encoding="utf-8")
+
+    with _full_write_ctx(workspace):
+        result = filesystem.edit_file.invoke(
+            {
+                "file_path": "worker.py",
+                "old_string": "def run(): pass",
+                "new_string": "def run(): pass",
+            }
+        )
+
+    assert "No-op edit refused" in result["error"]
+    assert target.read_text(encoding="utf-8") == "def run(): pass\n"
 
 
 def test_read_file_supports_targeted_line_range(workspace):
@@ -819,13 +836,15 @@ def test_apply_patch_exact_match(workspace):
 
 
 def test_apply_patch_fuzzy_whitespace_drift(workspace):
-    (workspace / "a.txt").write_text(
-        "def f():\n    print('hello')\n", encoding="utf-8"
-    )
+    (workspace / "a.txt").write_text("def f():\n    print('hello')\n", encoding="utf-8")
     with _full_write_ctx(workspace):
         # Model guesses a similar-but-not-identical line.
         result = filesystem.apply_patch.invoke(
-            {"file_path": "a.txt", "old_string": "print('hell')", "new_string": "print('bye')"}
+            {
+                "file_path": "a.txt",
+                "old_string": "print('hell')",
+                "new_string": "print('bye')",
+            }
         )
 
     assert result["status"] == "applied"
@@ -877,7 +896,7 @@ def test_apply_patch_refuses_to_rename_def_identifier(workspace):
             {
                 "file_path": "a.txt",
                 "old_string": "def cancel_job(job_id: str) -> None:",
-                "new_string": "    \"\"\"Cancels a running job.\"\"\"\n    def cancel_job(job_id: str) -> None:",
+                "new_string": '    """Cancels a running job."""\n    def cancel_job(job_id: str) -> None:',
             }
         )
 
@@ -897,7 +916,7 @@ def test_apply_patch_fuzzy_match_keeps_same_identifier(workspace):
             {
                 "file_path": "a.txt",
                 "old_string": "def cancel_job(job_id: str) -> None:",
-                "new_string": "def cancel_job(job_id):\n    \"\"\"Cancels.\"\"\"\n    return job_id",
+                "new_string": 'def cancel_job(job_id):\n    """Cancels."""\n    return job_id',
             }
         )
 
@@ -924,7 +943,12 @@ def test_apply_patch_dry_run_does_not_modify(workspace):
     (workspace / "a.txt").write_text("keep me\n", encoding="utf-8")
     with _full_write_ctx(workspace):
         result = filesystem.apply_patch.invoke(
-            {"file_path": "a.txt", "old_string": "keep me", "new_string": "gone", "dry_run": True}
+            {
+                "file_path": "a.txt",
+                "old_string": "keep me",
+                "new_string": "gone",
+                "dry_run": True,
+            }
         )
 
     assert result["status"] == "dry_run"

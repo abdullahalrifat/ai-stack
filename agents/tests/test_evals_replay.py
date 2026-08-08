@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 from unittest import mock
 
+import app.tools.register  # noqa: F401  (registers tools into the real registry)
 import pytest
-
-from evals import traces as traces_module
+from app.tools.registry import registry as real_registry
 from evals.replay import replay_trace
 from evals.traces import (
     model_turns_from_transcript,
@@ -12,10 +12,6 @@ from evals.traces import (
     trace_from_transcript,
     validate,
 )
-
-from app.tools.registry import registry as real_registry
-
-import app.tools.register  # noqa: F401  (registers tools into the real registry)
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "evals" / "golden"
 
@@ -75,7 +71,7 @@ def test_transcript_reconstruction_round_trips():
         plan=trace["plan"],
         answer=trace["answer"],
         steps=trace["steps"],
-        prefetch_calls=trace["tool_sequence"][:3],
+        prefetch_calls=trace["tool_sequence"][:4],
     )
     assert reconstructed["tool_sequence"] == trace["tool_sequence"]
     assert reconstructed["model_turns"] == trace["model_turns"]
@@ -134,17 +130,30 @@ def test_model_turns_exclude_rejected_drafts():
         {"role": "user", "content": "repair: make the edit"},
         {"role": "assistant", "content": "final accepted"},
     ]
-    assert model_turns_from_transcript(messages) == [
-        {"content": "final accepted"}
-    ]
+    assert model_turns_from_transcript(messages) == [{"content": "final accepted"}]
 
 
 def test_tool_sequence_pairs_parallel_calls_by_id():
     messages = [
-        {"role": "assistant", "tool_calls": [
-            {"id": "a", "function": {"name": "read_file", "arguments": '{"file_path": "a.py"}'}},
-            {"id": "b", "function": {"name": "read_file", "arguments": '{"file_path": "b.py"}'}},
-        ]},
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "a",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": '{"file_path": "a.py"}',
+                    },
+                },
+                {
+                    "id": "b",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": '{"file_path": "b.py"}',
+                    },
+                },
+            ],
+        },
         {"role": "tool", "tool_call_id": "b", "content": '{"path": "b.py"}'},
         {"role": "tool", "tool_call_id": "a", "content": '{"path": "a.py"}'},
     ]

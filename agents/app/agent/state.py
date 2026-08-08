@@ -22,6 +22,28 @@ class AgentState:
 
     observations: list = field(default_factory=list)
 
+    # Structured task evidence survives prompt compaction and lets the
+    # executor reason about what is confirmed, missing, and still open without
+    # replaying every raw file read to the model.
+    evidence_ledger: dict[str, Any] = field(
+        default_factory=lambda: {
+            "requirements": [],
+            "relevant_files": [],
+            "owning_symbols": [],
+            "test_targets": [],
+            "dependencies": {},
+            "confirmed_existing": [],
+            "confirmed_missing": [],
+            "open_questions": [],
+        }
+    )
+
+    roadmap_requirements: list[str] = field(default_factory=list)
+
+    active_roadmap_item: str = ""
+
+    active_requirement: str = ""
+
     successful_mutation: bool = False
 
     # Workspace-relative paths successfully written/edited this run. Used to

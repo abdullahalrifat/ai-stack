@@ -26,6 +26,20 @@
       ]
     },
     {
+      "tool": "analyze_task_context",
+      "args": {"requirement": "Fix the flaky helper in src/utils.py of this repository and run the test suite."},
+      "result": {
+        "requirement": "Fix the flaky helper in src/utils.py of this repository and run the test suite.",
+        "relevant_files": ["src/utils.py"],
+        "owning_symbols": [{"path": "src/utils.py", "name": "helper", "kind": "function", "start_line": 1, "end_line": 2}],
+        "test_targets": ["tests/test_utils.py"],
+        "dependencies": {"src/utils.py": []},
+        "evidence_requirements": ["failing path", "owning symbol", "relevant tests"],
+        "verification_strategy": {"kind": "pytest", "test_path": "tests/test_utils.py"},
+        "open_questions": []
+      }
+    },
+    {
       "tool": "inspect_files",
       "args": {"paths": ["src/utils.py"]},
       "result": [

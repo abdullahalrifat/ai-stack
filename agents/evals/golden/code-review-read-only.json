@@ -24,6 +24,20 @@
       ]
     },
     {
+      "tool": "analyze_task_context",
+      "args": {"requirement": "Review this repository for reliability issues. Inspect the project before answering."},
+      "result": {
+        "requirement": "Review this repository for reliability issues. Inspect the project before answering.",
+        "relevant_files": ["README.md"],
+        "owning_symbols": [],
+        "test_targets": [],
+        "dependencies": {},
+        "evidence_requirements": ["architecture", "relevant symbols", "tests", "configuration"],
+        "verification_strategy": {"kind": "project_default", "test_path": ""},
+        "open_questions": []
+      }
+    },
+    {
       "tool": "read_file",
       "args": {"file_path": "README.md"},
       "result": {

@@ -8,10 +8,14 @@ from app.agent.completion import record_tool_progress
 from app.agent.executor import (
     _answer_audit,
     _copies_roadmap_heading_into_source,
+    _implementation_readiness_failures,
+    _invalidate_read_cache_after_mutation,
     _prefetch_workspace,
+    _requested_roadmap_section,
     _semantic_tool_key,
     _synthesize_partial_answer,
     _tool_result_has_evidence,
+    _unchecked_roadmap_items,
     execute_plan,
     explicit_workspace_paths,
     financial_document_excerpt,
@@ -77,9 +81,7 @@ def test_semantic_progress_groups_search_scope_drift_and_rejects_cached_reads():
     assert not _tool_result_has_evidence(
         "search_code", {"matches": []}, duplicate=False
     )
-    assert not _tool_result_has_evidence(
-        "read_file", "existing source", duplicate=True
-    )
+    assert not _tool_result_has_evidence("read_file", "existing source", duplicate=True)
     assert _tool_result_has_evidence(
         "search_code", {"matches": [{"path": "worker.py"}]}, duplicate=False
     )
@@ -132,6 +134,68 @@ def test_roadmap_heading_copy_is_not_treated_as_source_implementation():
     )
 
 
+def test_requested_roadmap_section_excludes_other_tiers_and_selects_first_item():
+    contents = """# TODO
+
+## Agent core (completed)
+- [x] Streaming responses
+
+## Tier 3 - Autonomy & scale
+- [ ] Multi-expert dispatch / parallel subagents
+- [ ] MCP tool ecosystem support
+
+## Tier 4 - UX
+- [ ] Interactive TUI
+"""
+
+    section = _requested_roadmap_section("Implement Tier 3 from TODO", contents)
+
+    assert section.startswith("## Tier 3 - Autonomy & scale")
+    assert "Multi-expert dispatch" in section
+    assert "Streaming responses" not in section
+    assert "Interactive TUI" not in section
+    assert _unchecked_roadmap_items(section) == [
+        "Multi-expert dispatch / parallel subagents",
+        "MCP tool ecosystem support",
+    ]
+
+
+def test_roadmap_implementation_readiness_requires_source_symbols_and_tests():
+    state = DummyState()
+    state.active_roadmap_item = "Multi-expert dispatch"
+    state.evidence_ledger = {
+        "relevant_files": ["agents/app/agent/executor.py"],
+        "owning_symbols": [],
+        "test_targets": [],
+    }
+
+    assert _implementation_readiness_failures(state) == [
+        "owning symbols",
+        "verification strategy",
+    ]
+
+    state.evidence_ledger["owning_symbols"] = [{"name": "execute_plan"}]
+    state.evidence_ledger["test_targets"] = ["agents/tests/test_executor.py"]
+    state.evidence_ledger["verification_strategy"] = {
+        "kind": "pytest",
+        "test_path": "agents/tests/test_executor.py",
+    }
+    assert _implementation_readiness_failures(state) == []
+
+
+def test_mutation_cache_invalidation_is_scoped_but_drops_derived_analysis():
+    cache = {
+        'read_file:{"file_path": "agents/app/agent/executor.py"}': "old",
+        'read_file:{"file_path": "README.md"}': "keep",
+        'inspect_code:{"requests": [{"path": "agents/app/agent/executor.py"}]}': "old",
+        'analyze_task_context:{"requirement": "dispatch"}': "derived",
+    }
+
+    _invalidate_read_cache_after_mutation(cache, "agents/app/agent/executor.py")
+
+    assert list(cache) == ['read_file:{"file_path": "README.md"}']
+
+
 @patch("app.agent.executor.registry")
 def test_coverage_edit_prefetches_real_package_baselines(mock_registry):
     state = DummyState()
@@ -166,6 +230,39 @@ def test_coverage_edit_prefetches_real_package_baselines(mock_registry):
         "agents",
         "cli",
     ]
+
+
+@patch("app.agent.executor.registry")
+def test_roadmap_prefetch_sets_exact_active_unchecked_item(mock_registry):
+    state = DummyState()
+    state.user_message = "Implement Tier 3 from TODO list"
+    state.allow_write = True
+    todo = """## Agent core (completed)
+- [x] Streaming
+## Tier 3 - Autonomy & scale
+- [ ] Multi-expert dispatch
+- [ ] MCP support
+## Tier 4 - UX
+- [ ] TUI
+"""
+
+    def execute(tool, args):
+        if tool == "read_file" and args.get("file_path") == "TODO.md":
+            return todo
+        return {"status": "ok"}
+
+    mock_registry.execute.side_effect = execute
+    evidence = _prefetch_workspace(
+        state,
+        ["list_files", "project_summary", "tree", "inspect_files", "read_file"],
+        lambda *_args: None,
+    )
+
+    assert evidence["authoritative_roadmap"].startswith("## Tier 3 - Autonomy & scale")
+    assert "Streaming" not in evidence["authoritative_roadmap"]
+    assert "TUI" not in evidence["authoritative_roadmap"]
+    assert state.roadmap_requirements == ["Multi-expert dispatch", "MCP support"]
+    assert state.active_roadmap_item == "Multi-expert dispatch"
 
 
 @pytest.mark.parametrize(
@@ -363,8 +460,7 @@ def test_answer_audit_rejects_todo_only_mutation_for_implementation():
     failures = _answer_audit(state, "Implemented Tier 3.")
 
     assert any(
-        "only modified documentation/marker files" in failure
-        for failure in failures
+        "only modified documentation/marker files" in failure for failure in failures
     )
 
     state.successful_mutation_paths = {"TODO.md", "agents/app/executor.py"}
@@ -413,12 +509,9 @@ def test_execute_plan_forces_verification_before_final_answer_after_edit(
         make_message(content="Added the helper function; the test suite passes."),
     ]
 
-    with patch(
-        "app.agent.executor.SANDBOX_ROOT", current_workspace().parent
-    ):
+    with patch("app.agent.executor.SANDBOX_ROOT", current_workspace().parent):
         assert (
-            execute_plan(state)
-            == "Added the helper function; the test suite passes."
+            execute_plan(state) == "Added the helper function; the test suite passes."
         )
     assert mock_registry.execute.call_count == 3
     assert mock_registry.execute.call_args_list[1].args == (
@@ -429,10 +522,11 @@ def test_execute_plan_forces_verification_before_final_answer_after_edit(
     repair_messages = [
         message["content"]
         for message in transcript
-        if message["role"] == "user"
-        and "read the failure output" in message["content"]
+        if message["role"] == "user" and "read the failure output" in message["content"]
     ]
-    assert repair_messages, "draft without verification must be rejected with a repair loop"
+    assert (
+        repair_messages
+    ), "draft without verification must be rejected with a repair loop"
 
 
 @patch("app.agent.executor.registry")
@@ -628,8 +722,7 @@ def test_execute_plan_corrects_absolute_sandbox_path(
     assert path_guidance, "path denial must produce workspace-relative guidance"
     assert "absolute path" in path_guidance[0]
     assert (
-        "repeated" in repeated_guidance[-1]
-        or "more than once" in repeated_guidance[-1]
+        "repeated" in repeated_guidance[-1] or "more than once" in repeated_guidance[-1]
     )
     assert state.successful_mutation is True
     assert state.successful_verification is True
@@ -653,7 +746,9 @@ def test_execute_plan_refuses_doc_shortcut_before_it_changes_workspace(
     mock_chat_with_tools.side_effect = [
         make_message(tool_calls=[todo_write]),
         make_message(content="Implemented Tier 3."),
-        make_message(tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]),
+        make_message(
+            tool_calls=[make_tool_call("test", "run_tests", {"kind": "pytest"})]
+        ),
         make_message(content="Implemented Tier 3."),
         make_message(tool_calls=[todo_write]),
         make_message(content="Implemented Tier 3."),
@@ -672,7 +767,9 @@ def test_execute_plan_refuses_doc_shortcut_before_it_changes_workspace(
 
 
 @patch("app.agent.executor.MAX_EMPTY_MODEL_TURNS", 1)
-@patch("app.agent.executor._synthesize_partial_answer", return_value="Partial synthesis.")
+@patch(
+    "app.agent.executor._synthesize_partial_answer", return_value="Partial synthesis."
+)
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_partial_finalize_after_refused_doc_shortcut_has_no_diff(
@@ -689,7 +786,9 @@ def test_execute_plan_partial_finalize_after_refused_doc_shortcut_has_no_diff(
         make_message(
             tool_calls=[
                 make_tool_call(
-                    "write", "write_file", {"file_path": "TODO.md", "content": "- [x]\n"}
+                    "write",
+                    "write_file",
+                    {"file_path": "TODO.md", "content": "- [x]\n"},
                 )
             ]
         ),
@@ -751,10 +850,7 @@ def test_execute_plan_repairs_failing_verification_before_answering(
         make_message(content="The failing test was repaired; the suite passes."),
     ]
 
-    assert (
-        execute_plan(state)
-        == "The failing test was repaired; the suite passes."
-    )
+    assert execute_plan(state) == "The failing test was repaired; the suite passes."
     assert mock_registry.execute.call_count == 4
     assert state.successful_mutation is True
     assert state.successful_verification is True
@@ -786,7 +882,8 @@ def test_execute_plan_reflects_before_accepting_unevidenced_answer(
     assert [kind for kind, _ in events].count("reflection_required") == 1
     transcript = mock_chat_with_tools.call_args_list[1].args[0]
     assert any(
-        message["role"] == "user" and "reviewing your previous reasoning" in message["content"]
+        message["role"] == "user"
+        and "reviewing your previous reasoning" in message["content"]
         for message in transcript
     )
 
@@ -814,7 +911,9 @@ def test_execute_plan_reflection_runs_at_most_once(mock_chat_with_tools, mock_re
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_retries_transient_tool_error_once(mock_chat_with_tools, mock_registry):
+def test_execute_plan_retries_transient_tool_error_once(
+    mock_chat_with_tools, mock_registry
+):
     state = DummyState()
     state.user_message = "Fetch the current contents of this URL"
     mock_registry.list_tools.return_value = ["web_fetch"]
@@ -831,11 +930,11 @@ def test_execute_plan_retries_transient_tool_error_once(mock_chat_with_tools, mo
     events = []
 
     assert (
-            execute_plan(
-                state,
-                on_event=lambda kind, payload: events.append((kind, payload)),
-                force_research=True,
-            )
+        execute_plan(
+            state,
+            on_event=lambda kind, payload: events.append((kind, payload)),
+            force_research=True,
+        )
         == "Done"
     )
     assert mock_registry.execute.call_count == 2
@@ -861,11 +960,11 @@ def test_execute_plan_does_not_retry_deterministic_tool_failure(
     events = []
 
     assert (
-            execute_plan(
-                state,
-                on_event=lambda kind, payload: events.append((kind, payload)),
-                force_research=True,
-            )
+        execute_plan(
+            state,
+            on_event=lambda kind, payload: events.append((kind, payload)),
+            force_research=True,
+        )
         == "Done"
     )
     mock_registry.execute.assert_called_once()
@@ -1141,7 +1240,9 @@ def test_execute_plan_prefers_state_permissions_over_allow_write(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_full_write_policy_from_allow_write(mock_chat_with_tools, mock_registry):
+def test_execute_plan_full_write_policy_from_allow_write(
+    mock_chat_with_tools, mock_registry
+):
     state = DummyState()
     state.allow_write = True
 
@@ -1251,7 +1352,9 @@ def test_execute_plan_checkpoints_tool_progress(mock_chat_with_tools, mock_regis
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_resumes_from_restored_transcript(mock_chat_with_tools, mock_registry):
+def test_execute_plan_resumes_from_restored_transcript(
+    mock_chat_with_tools, mock_registry
+):
     state = DummyState()
     state.steps = 1
     state.restored_transcript = [
@@ -1335,9 +1438,7 @@ def test_requires_workspace_inspection_recognizes_project_and_todo_wording():
         )
         is True
     )
-    assert (
-        requires_workspace_inspection("Implement the items in TODO.md") is True
-    )
+    assert requires_workspace_inspection("Implement the items in TODO.md") is True
     assert requires_workspace_inspection("Follow the roadmap") is True
     assert requires_workspace_inspection("Resolve issue #12") is True
     assert requires_workspace_inspection("Give me a stock analysis") is False
@@ -1468,14 +1569,15 @@ def test_edit_task_breaks_repeated_read_loop_and_performs_change(
                 make_tool_call(
                     "edit",
                     "write_file",
-                    {"file_path": "tests/test_added.py", "content": "def test_added(): pass\n"},
+                    {
+                        "file_path": "tests/test_added.py",
+                        "content": "def test_added(): pass\n",
+                    },
                 )
             ]
         ),
         make_message(
-            tool_calls=[
-                make_tool_call("verify", "run_tests", {"directory": "."})
-            ]
+            tool_calls=[make_tool_call("verify", "run_tests", {"directory": "."})]
         ),
         make_message(content="Added and verified a focused coverage test."),
     ]
@@ -1498,7 +1600,9 @@ def test_edit_task_breaks_repeated_read_loop_and_performs_change(
         for call in mock_chat_with_tools.call_args_list
         for message in call.args[0]
     )
-    choices = [call.kwargs["tool_choice"] for call in mock_chat_with_tools.call_args_list]
+    choices = [
+        call.kwargs["tool_choice"] for call in mock_chat_with_tools.call_args_list
+    ]
     assert choices[:3] == ["auto", "auto", "auto"]
     assert choices[3:5] == ["required", "required"]
     assert choices[-1] == "auto"
@@ -1929,8 +2033,7 @@ def test_execute_plan_replans_after_consecutive_failures(
 
     last_turn = seen_messages[-1]
     assert any(
-        message["role"] == "user"
-        and "Follow this revised plan" in message["content"]
+        message["role"] == "user" and "Follow this revised plan" in message["content"]
         for message in last_turn
     )
 

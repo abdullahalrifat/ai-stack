@@ -10,6 +10,7 @@ Tool schemas for native function calling live in app/tool_schemas.py and
 must be kept in sync with the tool names registered below.
 """
 
+from app.tools.code_intelligence import analyze_task_context, inspect_code
 from app.tools.filesystem import (
     apply_patch,
     edit_file,
@@ -55,6 +56,10 @@ registry.register(name="project_summary", function=project_summary)
 registry.register(name="inspect_test_environment", function=inspect_test_environment)
 
 registry.register(name="inspect_files", function=inspect_files)
+
+registry.register(name="analyze_task_context", function=analyze_task_context)
+
+registry.register(name="inspect_code", function=inspect_code)
 
 registry.register(name="write_file", function=write_file)
 

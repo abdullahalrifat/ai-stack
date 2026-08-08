@@ -523,6 +523,12 @@ def execute_run(run_id: str) -> None:
             state.pending_failure_categories = set(
                 checkpoint.get("pending_failure_categories") or []
             )
+            state.evidence_ledger = dict(checkpoint.get("evidence_ledger") or {})
+            state.roadmap_requirements = list(
+                checkpoint.get("roadmap_requirements") or []
+            )
+            state.active_roadmap_item = str(checkpoint.get("active_roadmap_item") or "")
+            state.active_requirement = str(checkpoint.get("active_requirement") or "")
             state.restored_transcript = list(checkpoint.get("messages") or [])
             on_event(
                 "checkpoint_restored",

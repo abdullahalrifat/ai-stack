@@ -189,6 +189,57 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "analyze_task_context",
+            "description": (
+                "Build one bounded task-specific evidence packet containing relevant "
+                "source files, owning Python symbols, dependencies, and test targets. "
+                "Use before several directory listings or broad searches."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "requirement": {"type": "string"},
+                    "directory": {"type": "string", "default": "."},
+                },
+                "required": ["requirement"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_code",
+            "description": (
+                "Inspect up to 12 focused source symbols, regex patterns, or line "
+                "ranges in one call. Prefer this over repeated read_file calls."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "requests": {
+                        "type": "array",
+                        "maxItems": 12,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "symbol": {"type": "string"},
+                                "pattern": {"type": "string"},
+                                "start_line": {"type": "integer"},
+                                "end_line": {"type": "integer"},
+                                "context_lines": {"type": "integer", "default": 2},
+                            },
+                            "required": ["path"],
+                        },
+                    }
+                },
+                "required": ["requests"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "write_file",
             "description": (
                 "Create a new UTF-8 text file. Refuses to overwrite an "
