@@ -561,9 +561,7 @@ def interactive_shell(
             elif command == "/status":
                 print(f"workspace: {workspace}")
                 permission = (
-                    "automatic for change requests"
-                    if allow_write
-                    else "read-only"
+                    "automatic for change requests" if allow_write else "read-only"
                 )
                 print(f"edit permission: {permission}")
                 print(f"lifecycle: {'detached' if detached else 'foreground'}")
