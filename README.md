@@ -387,6 +387,27 @@ The runtime model-loop defaults live in `.env` (created from the tracked
    Ollama, pipelines service, and agent bind to `127.0.0.1` by default. Put an
    authenticated reverse proxy in front of them if remote access is required.
 
+### Releasing agent changes
+
+Use the targeted release script after changing the agent, tools, or CLI:
+
+```bash
+./scripts/release.sh
+```
+
+It validates Compose, builds the new image before downtime, runs the complete
+agent/CLI suite, removes only the old `agents` and `agent-runner` containers,
+recreates them, waits for API health, verifies both containers use the new
+image, and removes the superseded image. Databases, Ollama, LiteLLM, Qdrant,
+Redis, SearXNG, Open WebUI, and the Runs UI are not stopped. If startup or
+health verification fails, the script retags and redeploys the previously
+running agent image automatically.
+
+Use `--no-cache` for a clean Docker build, `--skip-tests` only when tests were
+already run against the exact checkout, `--keep-old-image` to retain the prior
+image, or `--timeout SECONDS` on slower hosts. Run `./scripts/release.sh --help`
+for the complete option list.
+
 ## Using the services
 
 | Service | Local address | Purpose |
