@@ -47,6 +47,22 @@ DOC_ONLY_MUTATION_FAILURE = (
 )
 
 
+def is_implementation_request(message: str) -> bool:
+    """Return whether a request requires source implementation, not docs alone."""
+
+    return bool(
+        _IMPLEMENTATION_INTENT.search(message)
+        and not _DOCUMENTATION_REQUEST.search(message)
+    )
+
+
+def is_documentation_path(path: str) -> bool:
+    """Return whether a mutation target is documentation or a marker file."""
+
+    normalized = str(path).strip().lstrip("./").casefold()
+    return normalized.endswith(_DOCUMENTATION_SUFFIXES)
+
+
 def tool_result_failed(result) -> bool:
     """Recognize registry errors and non-zero command exit codes."""
 
@@ -81,7 +97,7 @@ def requires_workspace_change(message: str) -> bool:
 
 
 def _tool_category(tool_name: str, args: dict) -> str:
-    if tool_name in {"write_file", "edit_file"}:
+    if tool_name in {"write_file", "edit_file", "apply_patch"}:
         return "mutation"
     if tool_name == "run_tests":
         return "verification"
@@ -112,6 +128,9 @@ def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
     state.pending_failure_categories = pending
     if category == "mutation":
         state.successful_mutation = True
+        # Verification proves a particular workspace state. Any later edit
+        # invalidates that proof and must be followed by a fresh check.
+        state.successful_verification = False
         file_path = str(args.get("file_path") or "").strip().lstrip("./")
         if file_path:
             mutated = set(getattr(state, "successful_mutation_paths", set()))
@@ -185,9 +204,8 @@ def answer_audit(state, answer: str) -> list[str]:
         mutation_paths = getattr(state, "successful_mutation_paths", set()) or set()
         if (
             mutation_paths
-            and _IMPLEMENTATION_INTENT.search(state.user_message)
-            and not _DOCUMENTATION_REQUEST.search(state.user_message)
-            and all(path.endswith(_DOCUMENTATION_SUFFIXES) for path in mutation_paths)
+            and is_implementation_request(state.user_message)
+            and all(is_documentation_path(path) for path in mutation_paths)
         ):
             failures.append(DOC_ONLY_MUTATION_FAILURE)
 

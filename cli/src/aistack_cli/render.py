@@ -163,7 +163,7 @@ class EventRenderer:
             if not self.verbose:
                 if tool in _QUIET_READ_TOOLS:
                     self._progress("Inspecting codebase…")
-                elif tool in {"edit_file", "write_file"}:
+                elif tool in {"apply_patch", "edit_file", "write_file"}:
                     self._progress("Editing files…")
                 elif tool == "run_tests":
                     self._progress("Running tests…")

@@ -1,8 +1,7 @@
-from pathlib import Path
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
-
 from app.core.cancellation import cancellation_context
 from app.core.exceptions import RunCancelled
 from app.core.permissions import (
@@ -702,6 +701,48 @@ def test_run_tests_does_not_hit_runner_under_read_scope(workspace, monkeypatch):
 
     assert result["kind"] == "pytest"
     assert calls == ["isolated"]
+
+
+def test_run_tests_supports_focused_pytest_node(workspace, monkeypatch):
+    monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
+    test_file = workspace / "tests" / "test_worker.py"
+    test_file.parent.mkdir()
+    test_file.write_text("def test_retry(): pass\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda command, cwd, tier="isolated": calls.append((command, cwd))
+        or {"exit_code": 0, "output": "1 passed"},
+    )
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.run_tests.invoke(
+            {
+                "kind": "pytest",
+                "test_path": "tests/test_worker.py::test_retry",
+            }
+        )
+
+    assert result["exit_code"] == 0
+    assert calls == [
+        ("pytest -q tests/test_worker.py::test_retry", workspace),
+    ]
+
+
+def test_run_tests_rejects_unsafe_focused_target(workspace, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        filesystem,
+        "_run_in_isolated_runner",
+        lambda *args, **kwargs: calls.append(args) or {},
+    )
+    with filesystem.workspace_context(str(workspace)):
+        result = filesystem.run_tests.invoke(
+            {"kind": "pytest", "test_path": "tests/test_worker.py;uname"}
+        )
+
+    assert "unsupported characters" in result["error"]
+    assert calls == []
 
 
 @contextmanager

@@ -32,10 +32,16 @@ from ..tools.registry import registry
 from ..tools.schemas import schemas_for
 from .completion import (
     DOC_ONLY_MUTATION_FAILURE,
-    answer_audit as _answer_audit,
-    record_tool_progress as _record_tool_progress,
+    is_documentation_path,
+    is_implementation_request,
     requires_workspace_change,
     tool_result_failed,
+)
+from .completion import (
+    answer_audit as _answer_audit,
+)
+from .completion import (
+    record_tool_progress as _record_tool_progress,
 )
 from .context_budget import estimate_tokens, fit_user_context, summarize_tool_result
 from .parser import parse_tool_arguments
@@ -54,7 +60,7 @@ MAX_STEPS = MAX_AGENT_STEPS
 
 # Tools that mutate the workspace. Excluded entirely from the tool list
 # whenever a request does not have allow_write set.
-WRITE_TOOLS = {"write_file", "edit_file", "run_command", "run_tests"}
+WRITE_TOOLS = {"write_file", "edit_file", "apply_patch", "run_command", "run_tests"}
 
 # Mutation tools that require an exact old_string anchor against the file's
 # current content. Anchor misses are the most common 8B-model edit failure:
@@ -116,6 +122,13 @@ QUICK_WORKSPACE_TOOLS = {
 }
 
 WORKSPACE_PREFETCH_TOOLS = (("list_files", {"directory": "."}),)
+
+DOC_MUTATION_RECOVERY = (
+    "This mutation was refused because the task asks for an implementation but the target "
+    "is only documentation or a checklist. Inspect the project structure and relevant source "
+    "files, then edit actual code. You may update documentation after a source-code mutation "
+    "has succeeded."
+)
 HYBRID_RESEARCH_TOOLS = QUICK_WORKSPACE_TOOLS | {"web_search", "web_fetch"}
 CACHEABLE_READ_TOOLS = HYBRID_RESEARCH_TOOLS | {
     "inspect_test_environment",
@@ -551,6 +564,40 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
 
     evidence = {}
     prefetch_tools = list(WORKSPACE_PREFETCH_TOOLS)
+    roadmap_implementation = bool(
+        re.search(r"\b(?:todo|roadmap|tier)\b", state.user_message, re.IGNORECASE)
+    )
+    if (
+        getattr(state, "allow_write", False)
+        and requires_workspace_change(state.user_message)
+        and roadmap_implementation
+    ):
+        if "project_summary" in available_tools:
+            prefetch_tools.append(("project_summary", {}))
+        # Give the model an architectural map before it can mistake a visible
+        # TODO checkbox for the implementation itself.
+        if "tree" in available_tools:
+            prefetch_tools.append(("tree", {"directory": ".", "depth": 2}))
+    if (
+        "inspect_files" in available_tools
+        and roadmap_implementation
+    ):
+        prefetch_tools.append(
+            (
+                "inspect_files",
+                {
+                    "paths": [
+                        "TODO.md",
+                        "ROADMAP.md",
+                        "README.md",
+                        "pyproject.toml",
+                        "package.json",
+                        "docker-compose.yml",
+                        "docker-compose.yaml",
+                    ]
+                },
+            )
+        )
     explicit_paths = explicit_workspace_paths(state.user_message)
     if explicit_paths and "inspect_files" in available_tools:
         prefetch_tools.append(("inspect_files", {"paths": explicit_paths}))
@@ -1082,6 +1129,14 @@ def execute_plan(
         available_tools = [
             tool for tool in available_tools if tool in HYBRID_RESEARCH_TOOLS
         ]
+    elif workspace_mode:
+        # Local repository work does not need web schemas unless routing has
+        # explicitly identified an external-evidence requirement. Keeping
+        # irrelevant tools away from small coding models improves selection
+        # accuracy and leaves more context for source and test output.
+        available_tools = [
+            tool for tool in available_tools if tool not in {"web_search", "web_fetch"}
+        ]
 
     tools = schemas_for(available_tools)
     workspace_evidence = _prefetch_workspace(state, available_tools, on_event)
@@ -1365,7 +1420,19 @@ tool. Do not provide a final answer before both actions succeed.
                         {"tool": tool_name, "args": args, "cached": True},
                     )
                 else:
-                    if call_index in parallel_results:
+                    source_mutated = any(
+                        not is_documentation_path(path)
+                        for path in getattr(state, "successful_mutation_paths", set())
+                    )
+                    blocks_doc_shortcut = (
+                        tool_name in MUTATION_ANCHOR_TOOLS
+                        and is_implementation_request(state.user_message)
+                        and is_documentation_path(args.get("file_path", ""))
+                        and not source_mutated
+                    )
+                    if blocks_doc_shortcut:
+                        result = {"error": DOC_MUTATION_RECOVERY}
+                    elif call_index in parallel_results:
                         result = parallel_results[call_index]
                     else:
                         try:

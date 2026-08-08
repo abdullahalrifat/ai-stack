@@ -12,8 +12,6 @@ from contextvars import ContextVar
 from pathlib import Path
 
 import requests
-from langchain.tools import tool
-
 from app.core.cancellation import cancellation_requested
 from app.core.config import (
     ALLOWED_COMMANDS,
@@ -30,6 +28,7 @@ from app.core.config import (
 )
 from app.core.exceptions import RunCancelled
 from app.core.permissions import active_policy
+from langchain.tools import tool
 
 # ============================================================
 # Configuration
@@ -834,8 +833,11 @@ def project_summary():
 
             if file.name in {
                 "docker-compose.yml",
+                "docker-compose.yaml",
                 "Dockerfile",
                 "README.md",
+                "TODO.md",
+                "ROADMAP.md",
                 "requirements.txt",
                 "pyproject.toml",
                 "package.json",
@@ -1379,18 +1381,35 @@ def run_tests(
     kind: str = "pytest",
     directory: str = ".",
     coverage_target: str = "",
+    test_path: str = "",
 ):
     """Run a small approved test command in the active workspace.
 
     Supported kinds are pytest, pytest_coverage, python_compile, npm_test, and
     ruff. Coverage uses the runner image's declared pytest-cov dependency.
     """
-    commands = {
+    commands: dict[str, list[str]] = {
         "pytest": ["pytest", "-q"],
         "python_compile": ["python", "-m", "compileall", "-q", "."],
         "npm_test": ["npm", "test", "--", "--runInBand"],
         "ruff": ["ruff", "check", "."],
     }
+    if test_path:
+        if kind != "pytest":
+            return {"error": "test_path is supported only for kind=pytest."}
+        normalized_target = test_path.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_./:\[\]-]+", normalized_target):
+            return {"error": "test_path contains unsupported characters."}
+        file_part, separator, node_id = normalized_target.partition("::")
+        if not file_part or file_part.startswith("-"):
+            return {"error": "test_path must name a workspace test file."}
+        target_file = resolve_path(file_part)
+        if not target_file.is_file():
+            return {"error": "test_path does not name a file."}
+        focused_target = relative(target_file)
+        if separator:
+            focused_target += f"::{node_id}"
+        commands["pytest"] = ["pytest", "-q", focused_target]
     if kind == "pytest_coverage":
         target = coverage_target.strip()
         if not target:
@@ -1416,7 +1435,7 @@ def run_tests(
         if not cwd.is_dir():
             return {"error": "Test directory is not a directory."}
         result = _run_in_isolated_runner(
-            " ".join(commands[kind]),
+            shlex.join(commands[kind]),
             cwd,
             tier="network" if RUN_COMMANDS_ALLOW_NETWORK else "isolated",
         )

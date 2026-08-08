@@ -16,8 +16,8 @@ from app.agent.executor import (
     financial_price_query,
     financial_research_queries,
     normalize_tool_args,
-    requires_workspace_inspection,
     report_pdf_link,
+    requires_workspace_inspection,
     tool_result_failed,
 )
 from app.agent.prompts import UNTRUSTED_TOOL_RESULT_HEADER, executor_prompt
@@ -242,6 +242,43 @@ def test_record_tool_progress_tracks_mutated_paths():
 
     assert state.successful_mutation is True
     assert "agents/app/worker.py" in state.successful_mutation_paths
+
+
+def test_record_tool_progress_treats_apply_patch_as_mutation():
+    state = DummyState()
+
+    record_tool_progress(
+        state,
+        "apply_patch",
+        {"file_path": "agents/app/worker.py", "old_string": "old", "new_string": "new"},
+        {"status": "edited"},
+    )
+
+    assert state.successful_mutation is True
+    assert state.successful_mutation_paths == {"agents/app/worker.py"}
+
+
+def test_mutation_invalidates_earlier_verification():
+    state = DummyState()
+    state.successful_verification = True
+
+    record_tool_progress(
+        state,
+        "edit_file",
+        {"file_path": "agents/app/worker.py"},
+        {"status": "edited"},
+    )
+
+    assert state.successful_mutation is True
+    assert state.successful_verification is False
+
+    record_tool_progress(
+        state,
+        "run_tests",
+        {"kind": "pytest", "test_path": "tests/test_worker.py"},
+        {"exit_code": 0, "output": "1 passed"},
+    )
+    assert state.successful_verification is True
 
 
 def test_answer_audit_rejects_todo_only_mutation_for_implementation():
@@ -520,19 +557,14 @@ def test_execute_plan_corrects_absolute_sandbox_path(
 
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_blocks_diff_after_doc_only_mutation(
+def test_execute_plan_refuses_doc_shortcut_before_it_changes_workspace(
     mock_chat_with_tools, mock_registry
 ):
     state = DummyState()
     state.allow_write = True
     state.user_message = "Review this project and from TODO list implement Tier 3"
     mock_registry.list_tools.return_value = ["write_file", "run_tests"]
-    mock_registry.execute.side_effect = [
-        {"status": "written", "path": "TODO.md"},
-        {"exit_code": 0, "output": "1 passed"},
-        {"status": "written", "path": "TODO.md"},
-        {"status": "written", "path": "TODO.md"},
-    ]
+    mock_registry.execute.return_value = {"exit_code": 0, "output": "1 passed"}
     todo_write = make_tool_call(
         "write", "write_file", {"file_path": "TODO.md", "content": "- [x] item\n"}
     )
@@ -550,15 +582,18 @@ def test_execute_plan_blocks_diff_after_doc_only_mutation(
     result = execute_plan(state)
 
     assert "Incomplete requirements:" in result
-    assert "change only modified documentation/marker files" in result
-    assert state.diff_blocked is True
+    assert "requested workspace change has not been made" in result
+    assert getattr(state, "successful_mutation", False) is False
+    assert not any(
+        call.args[0] == "write_file" for call in mock_registry.execute.call_args_list
+    )
 
 
 @patch("app.agent.executor.MAX_EMPTY_MODEL_TURNS", 1)
 @patch("app.agent.executor._synthesize_partial_answer", return_value="Partial synthesis.")
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
-def test_execute_plan_blocks_diff_on_partial_finalize_with_doc_only_mutation(
+def test_execute_plan_partial_finalize_after_refused_doc_shortcut_has_no_diff(
     mock_chat_with_tools, mock_registry, mock_synthesize
 ):
     state = DummyState()
@@ -581,9 +616,9 @@ def test_execute_plan_blocks_diff_on_partial_finalize_with_doc_only_mutation(
 
     result = execute_plan(state)
 
-    assert state.diff_blocked is True
+    assert getattr(state, "diff_blocked", False) is False
     assert "Incomplete requirements:" in result
-    assert "change only modified documentation/marker files" in result
+    assert "requested workspace change has not been made" in result
 
 
 @patch("app.agent.executor.registry")
@@ -685,6 +720,7 @@ def test_execute_plan_reflection_runs_at_most_once(mock_chat_with_tools, mock_re
 @patch("app.agent.executor.chat_with_tools")
 def test_execute_plan_retries_transient_tool_error_once(mock_chat_with_tools, mock_registry):
     state = DummyState()
+    state.user_message = "Fetch the current contents of this URL"
     mock_registry.list_tools.return_value = ["web_fetch"]
     mock_registry.execute.side_effect = [
         {"tool_error": "Connection reset by peer"},
@@ -699,9 +735,11 @@ def test_execute_plan_retries_transient_tool_error_once(mock_chat_with_tools, mo
     events = []
 
     assert (
-        execute_plan(
-            state, on_event=lambda kind, payload: events.append((kind, payload))
-        )
+            execute_plan(
+                state,
+                on_event=lambda kind, payload: events.append((kind, payload)),
+                force_research=True,
+            )
         == "Done"
     )
     assert mock_registry.execute.call_count == 2
@@ -715,6 +753,7 @@ def test_execute_plan_does_not_retry_deterministic_tool_failure(
     mock_chat_with_tools, mock_registry
 ):
     state = DummyState()
+    state.user_message = "Fetch the current contents of this URL"
     mock_registry.list_tools.return_value = ["web_fetch"]
     mock_registry.execute.return_value = {"error": "URL returned HTTP 404"}
     mock_chat_with_tools.side_effect = [
@@ -726,9 +765,11 @@ def test_execute_plan_does_not_retry_deterministic_tool_failure(
     events = []
 
     assert (
-        execute_plan(
-            state, on_event=lambda kind, payload: events.append((kind, payload))
-        )
+            execute_plan(
+                state,
+                on_event=lambda kind, payload: events.append((kind, payload)),
+                force_research=True,
+            )
         == "Done"
     )
     mock_registry.execute.assert_called_once()
@@ -1016,6 +1057,31 @@ def test_execute_plan_full_write_policy_from_allow_write(mock_chat_with_tools, m
 
     permissions_events = [payload for kind, payload in events if kind == "permissions"]
     assert permissions_events[0]["scope"] == FULL_WRITE
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_workspace_code_task_hides_web_tools_without_research_requirement(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.user_message = "Review this repository and explain the worker"
+    mock_registry.list_tools.return_value = [
+        "list_files",
+        "read_file",
+        "web_search",
+        "web_fetch",
+    ]
+    mock_registry.execute.return_value = {"files": ["worker.py"]}
+    mock_chat_with_tools.return_value = make_message(content="Reviewed the worker.")
+
+    assert execute_plan(state) == "Reviewed the worker."
+
+    advertised = {
+        schema["function"]["name"]
+        for schema in mock_chat_with_tools.call_args.kwargs["tools"]
+    }
+    assert advertised == {"list_files", "read_file"}
 
 
 @patch("app.agent.executor.registry")
