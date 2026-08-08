@@ -66,6 +66,14 @@ MAX_STEPS = MAX_AGENT_STEPS
 def _escalation_handoff(state) -> str:
     """Build a compact failure packet for a stronger reasoning model."""
 
+    recent_evidence = []
+    for observation in getattr(state, "observations", [])[-6:]:
+        recent_evidence.append(
+            {
+                "tool": observation.get("tool"),
+                "result": str(observation.get("result"))[:1_200],
+            }
+        )
     packet = {
         "requirement": getattr(state, "active_requirement", "") or state.user_message,
         "phase": getattr(state, "graph_phase", ""),
@@ -75,6 +83,7 @@ def _escalation_handoff(state) -> str:
         ),
         "verification_succeeded": getattr(state, "successful_verification", False),
         "recent_failures": _failure_context(state),
+        "recent_evidence": recent_evidence,
         "instruction": (
             "Diagnose the concrete failure. Use existing symbols and exact source; "
             "do not repeat prior edits or restart broad exploration."
@@ -84,6 +93,32 @@ def _escalation_handoff(state) -> str:
         "Reasoning-model escalation handoff:\n"
         + json.dumps(packet, default=str)[:8_000]
     )
+
+
+def _escalate_model(
+    state, messages: list, on_event, *, reason: str
+) -> tuple[list, bool]:
+    """Perform one bounded stronger-model handoff while preserving evidence."""
+
+    if (
+        getattr(state, "model_escalations", 0) >= AGENT_MODEL_ESCALATIONS
+        or state.model == AGENT_REASONING_MODEL
+    ):
+        return messages, False
+    previous_model = state.model
+    state.model = AGENT_REASONING_MODEL
+    state.model_escalations = getattr(state, "model_escalations", 0) + 1
+    handoff = _escalation_handoff(state)
+    on_event(
+        "model_escalated",
+        {
+            "from": previous_model,
+            "to": state.model,
+            "reason": reason,
+            "escalation": state.model_escalations,
+        },
+    )
+    return [*messages[:2], {"role": "user", "content": handoff}], True
 
 
 # Tools that mutate the workspace. Excluded entirely from the tool list
@@ -2261,27 +2296,9 @@ explicitly instead of marking them complete without code.
                     replan_count,
                     REPLAN_MAX_RETRIES,
                 )
-                if (
-                    getattr(state, "model_escalations", 0) < AGENT_MODEL_ESCALATIONS
-                    and state.model != AGENT_REASONING_MODEL
-                ):
-                    previous_model = state.model
-                    state.model = AGENT_REASONING_MODEL
-                    state.model_escalations = getattr(state, "model_escalations", 0) + 1
-                    handoff = _escalation_handoff(state)
-                    messages = [
-                        *messages[:2],
-                        {"role": "user", "content": handoff},
-                    ]
-                    on_event(
-                        "model_escalated",
-                        {
-                            "from": previous_model,
-                            "to": state.model,
-                            "reason": replan_reason,
-                            "escalation": state.model_escalations,
-                        },
-                    )
+                messages, _ = _escalate_model(
+                    state, messages, on_event, reason=replan_reason
+                )
                 messages.append(
                     {
                         "role": "user",
@@ -2415,6 +2432,25 @@ explicitly instead of marking them complete without code.
                     ),
                 },
             )
+            if change_incomplete:
+                reason = "empty model turn during required implementation"
+                messages, escalated = _escalate_model(
+                    state, messages, on_event, reason=reason
+                )
+                if escalated:
+                    empty_turn_count = 0
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "The previous coding model stopped after recovery evidence was "
+                                "collected. Continue the required implementation now. Use the exact "
+                                "recent source in the handoff, make a grounded source edit, then run "
+                                "the focused verification. Do not return a roadmap status report."
+                            ),
+                        }
+                    )
+                    continue
             if empty_turn_count >= MAX_EMPTY_MODEL_TURNS:
                 answer = _synthesize_partial_answer(state)
                 return finalize(answer, partial=True)

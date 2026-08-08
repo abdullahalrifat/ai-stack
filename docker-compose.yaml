@@ -311,7 +311,7 @@ services:
       ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS: ${ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS:-360}
       # Escalate only after a bounded failure loop, then independently review
       # high-risk diffs before exposing them for approval.
-      AGENT_REASONING_MODEL: ${AGENT_REASONING_MODEL:-reasoning}
+      AGENT_REASONING_MODEL: ${AGENT_REASONING_MODEL:-qwen3-14b}
       AGENT_MODEL_ESCALATIONS: ${AGENT_MODEL_ESCALATIONS:-1}
       CHANGE_REVIEW_MODEL: ${CHANGE_REVIEW_MODEL:-reasoning}
       CHANGE_REVIEW_MODEL_ENABLED: ${CHANGE_REVIEW_MODEL_ENABLED:-true}

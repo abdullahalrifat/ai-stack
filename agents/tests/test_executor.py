@@ -29,6 +29,7 @@ from app.agent.executor import (
     tool_result_failed,
 )
 from app.agent.prompts import UNTRUSTED_TOOL_RESULT_HEADER, executor_prompt
+from app.core.config import AGENT_REASONING_MODEL
 from app.core.permissions import FULL_WRITE, SCOPED_WRITE, PermissionPolicy
 from app.tools.filesystem import current_workspace
 
@@ -786,6 +787,7 @@ def test_execute_plan_refuses_doc_shortcut_before_it_changes_workspace(
 
 
 @patch("app.agent.executor.MAX_EMPTY_MODEL_TURNS", 1)
+@patch("app.agent.executor.AGENT_MODEL_ESCALATIONS", 0)
 @patch(
     "app.agent.executor._synthesize_partial_answer", return_value="Partial synthesis."
 )
@@ -819,6 +821,106 @@ def test_execute_plan_partial_finalize_after_refused_doc_shortcut_has_no_diff(
     assert getattr(state, "diff_blocked", False) is False
     assert "Incomplete requirements:" in result
     assert "requested workspace change has not been made" in result
+
+
+@patch("app.agent.executor.registry")
+@patch("app.agent.executor.chat_with_tools")
+def test_empty_turn_after_anchor_recovery_escalates_and_finishes_change(
+    mock_chat_with_tools, mock_registry
+):
+    state = DummyState()
+    state.allow_write = True
+    state.user_message = "Implement the missing feature in this codebase"
+    mock_registry.list_tools.return_value = [
+        "edit_file",
+        "search_code",
+        "read_file",
+        "run_tests",
+    ]
+    mock_registry.execute.side_effect = [
+        {"error": "old_string not found in file. Re-read the file."},
+        {
+            "matches": [{"path": "app.py", "line": 1, "text": "def execute(state):"}],
+            "truncated": False,
+        },
+        "def execute(state):\n    return False\n",
+        {"status": "edited", "path": "app.py"},
+        {"exit_code": 0, "output": "1 passed"},
+    ]
+    mock_chat_with_tools.side_effect = [
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "bad-edit",
+                    "edit_file",
+                    {
+                        "file_path": "app.py",
+                        "old_string": "def execute(self):\n    return False",
+                        "new_string": "def execute(self):\n    return True",
+                    },
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "search",
+                    "search_code",
+                    {"directory": "app.py", "pattern": "execute"},
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "read",
+                    "read_file",
+                    {"file_path": "app.py", "start_line": 1, "end_line": 2},
+                )
+            ]
+        ),
+        make_message(content=""),
+        make_message(
+            tool_calls=[
+                make_tool_call(
+                    "good-edit",
+                    "edit_file",
+                    {
+                        "file_path": "app.py",
+                        "old_string": "def execute(state):\n    return False",
+                        "new_string": "def execute(state):\n    return True",
+                    },
+                )
+            ]
+        ),
+        make_message(
+            tool_calls=[make_tool_call("tests", "run_tests", {"kind": "pytest"})]
+        ),
+        make_message(content="Implemented the feature; tests pass."),
+    ]
+    events = []
+
+    result = execute_plan(
+        state, on_event=lambda kind, payload: events.append((kind, payload))
+    )
+
+    assert result == "Implemented the feature; tests pass."
+    assert state.successful_mutation is True
+    assert state.successful_verification is True
+    escalations = [payload for kind, payload in events if kind == "model_escalated"]
+    assert escalations == [
+        {
+            "from": "test-model",
+            "to": AGENT_REASONING_MODEL,
+            "reason": "empty model turn during required implementation",
+            "escalation": 1,
+        }
+    ]
+    escalation_call = mock_chat_with_tools.call_args_list[4]
+    assert escalation_call.kwargs["model"] == AGENT_REASONING_MODEL
+    handoff = escalation_call.args[0][2]["content"]
+    assert "def execute(state)" in handoff
+    assert "old_string not found" in handoff
 
 
 @patch("app.agent.executor.registry")
@@ -2091,12 +2193,12 @@ def test_execute_plan_replans_after_consecutive_failures(
     assert escalated == [
         {
             "from": "test-model",
-            "to": "reasoning",
+            "to": AGENT_REASONING_MODEL,
             "reason": "3 consecutive tool-call steps failed",
             "escalation": 1,
         }
     ]
-    assert state.model == "reasoning"
+    assert state.model == AGENT_REASONING_MODEL
     assert state.model_escalations == 1
 
     last_turn = seen_messages[-1]

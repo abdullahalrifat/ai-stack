@@ -104,7 +104,7 @@ ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
 # A stronger model is used only after bounded grounded failures; normal coding
 # remains on the selected/default model. Independent change review is likewise
 # risk-based and never overrides a deterministic rejection.
-AGENT_REASONING_MODEL = os.getenv("AGENT_REASONING_MODEL", "reasoning")
+AGENT_REASONING_MODEL = os.getenv("AGENT_REASONING_MODEL", "qwen3-14b")
 AGENT_MODEL_ESCALATIONS = int(os.getenv("AGENT_MODEL_ESCALATIONS", "1"))
 CHANGE_REVIEW_MODEL = os.getenv("CHANGE_REVIEW_MODEL", "reasoning")
 CHANGE_REVIEW_MODEL_ENABLED = env_flag("CHANGE_REVIEW_MODEL_ENABLED", True)

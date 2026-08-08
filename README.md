@@ -347,7 +347,7 @@ The runtime model-loop defaults live in `.env` (created from the tracked
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AGENT_REASONING_MODEL` | `reasoning` | Stronger model used after bounded execution failures |
+| `AGENT_REASONING_MODEL` | `qwen3-14b` | Stronger tool-capable model used after bounded execution failures |
 | `AGENT_MODEL_ESCALATIONS` | `1` | Maximum stronger-model handoffs in one run |
 | `CHANGE_REVIEW_MODEL` | `reasoning` | Independent reviewer for high-risk accepted diffs |
 | `CHANGE_REVIEW_MODEL_ENABLED` | `true` | Enables risk-based independent diff review |

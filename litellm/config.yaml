@@ -25,6 +25,8 @@ model_list:
       model: ollama_chat/qwen3:14b
       api_base: http://ollama:11434
       num_ctx: 32768
+    model_info:
+      supports_function_calling: true
 
   ###########################################################
   # Coding
