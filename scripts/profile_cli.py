@@ -1,9 +1,9 @@
 # Lightweight profiler for CLI hotpath discovery
-# Run via: PYTHONPATH=cli/src python3 scripts/profile_cli.py
+# Run via: PYTHONPATH=jarvis/src python3 scripts/profile_cli.py
 
 import time
 
-# Import CLI package (ensure PYTHONPATH=cli/src when running)
+# Import CLI package (ensure PYTHONPATH=jarvis/src when running)
 import aistack_cli.main as main
 
 class FakeClient:
@@ -16,7 +16,7 @@ class FakeClient:
 
 def workload():
     # match_workspace
-    paths = ["/mnt/work/code/ai-stack", "/tmp/unrelated", "/mnt/work/code/ai-stack/cli/src"]
+    paths = ["/mnt/work/code/ai-stack", "/tmp/unrelated", "/mnt/work/code/ai-stack/jarvis/src"]
     choices = ["/workspace", "/workspace/ai-stack", "/workspace/other"]
     for p in paths:
         for _ in range(200):

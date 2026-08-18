@@ -1,6 +1,6 @@
 """Run a simple metrics HTTP server for LLM metrics.
 
-Usage: PYTHONPATH=agents python3 scripts/metrics_server.py
+Usage: PYTHONPATH=server python3 scripts/metrics_server.py
 """
 from agents.app.llm.metrics_http import start_metrics_server
 

@@ -7,8 +7,8 @@ import threading
 import runpy
 
 # Load modules without importing app.llm to avoid external deps
-cache_mod = runpy.run_path('agents/app/llm/cache.py')
-scheduler_mod = runpy.run_path('agents/app/llm/scheduler.py')
+cache_mod = runpy.run_path('server/app/llm/cache.py')
+scheduler_mod = runpy.run_path('server/app/llm/scheduler.py')
 
 default_cache = cache_mod['default_cache']
 def make_key(x):

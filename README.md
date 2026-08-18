@@ -1,41 +1,72 @@
-# AI Stack
+# Jarvis
 
-AI Stack is a self-hosted control plane for private chat, coding assistance,
-retrieval-augmented knowledge work, and source-cited financial research.
-It runs local models through Ollama and presents a single OpenAI-compatible
-gateway through LiteLLM.
+Jarvis is a standalone, open-model coding agent. The terminal runs its agent
+loop, repository inspection, planning, editing, command execution,
+verification, and review locally while inference can run on any
+OpenAI-compatible open-model endpoint.
 
-## What is included
+The primary product is under `jarvis/` and does not require Docker or the
+server deployment:
 
-```text
-Open WebUI / IDE clients / API clients
-                 |
-             LiteLLM gateway
-                 |
-     local Ollama models and optional providers
+```bash
+cd jarvis
+pipx install .
+export JARVIS_BASE_URL=https://your-open-model-endpoint/v1
+export JARVIS_MODEL=your-coding-model
+export JARVIS_API_KEY=your-key
 
-Open WebUI ---- Postgres / Redis / Qdrant
-                 |
-           Coding-agent API
-                 |
-      request-scoped workspace mount(s)
+cd /path/to/project
+jarvis "review and improve this repository"
 ```
 
-- **Ollama** runs local models.
-- **LiteLLM** provides the shared OpenAI-compatible inference endpoint.
-- **Open WebUI** is the human chat interface.
-- **Qdrant, Redis, and PostgreSQL** support retrieval, conversation state, and
-  durable agent run history.
-- **Coding agent** plans repository work, reads/searches/edits files, runs an
-  allowlisted set of commands, and can make explicitly approved file changes
-  inside a disposable, reviewable sandbox.
-- **Runs UI** is the live, streamed, reviewable task console for the agent.
-- **Sandbox runner** (`agent-runner`) executes the allowlisted commands in
-  isolated containers with per-tier kernel limits.
-- **Terminal agent** (`cli/`) is an independently packaged client for the same
-  durable run API.
-- **SearXNG** provides private metasearch for agent web research; it is internal
-  to the Docker network and never exposed as a public port.
+Running `jarvis` without a task starts the interactive local shell. Use
+`jarvis run ...` only when intentionally connecting to the optional durable
+server.
+
+## Optional server platform
+
+The `server/` tree and Docker Compose deployment are optional. They provide
+always-online integrations and infrastructure that do not belong in the
+standalone terminal:
+
+- Telegram, web, and future mobile adapters;
+- durable and detached background jobs;
+- shared PostgreSQL, Redis, and Qdrant state;
+- Open WebUI and Runs UI;
+- centralized research and document ingestion;
+- server-mounted workspaces and isolated sandbox runners.
+
+The server reuses the same model-facing principles, but Jarvis local mode
+operates directly on the user's repository and sends only model messages and
+tool results to the configured inference endpoint.
+
+## Repository components
+
+- **Jarvis** (`jarvis/`) is the primary standalone coding agent.
+- **Server** (`server/`) is the optional FastAPI control plane.
+- **Ollama/LiteLLM** provide optional local or routed inference.
+- **Runs UI** is the optional durable-task console.
+- **PostgreSQL, Redis, and Qdrant** support server-only persistence.
+- **SearXNG** supports optional server-side research.
+
+## Which product should I use?
+
+Use **Jarvis** for everyday repository work: the agent loop and guarded tools
+run on your computer, while inference may run on a local model or a remote
+open-model GPU endpoint. Use **Server** only for durable/shared runs, remote
+workspaces, document pipelines, central governance, or Telegram/WhatsApp/web/
+mobile integrations.
+
+- [Install and use Jarvis](jarvis/README.md)
+- [Deploy and operate Server](server/README.md)
+- [Product and channel architecture](docs/product-architecture.md)
+- [World-class capability roadmap](jarvis/ROADMAP.md)
+
+Jarvis covers the core local coding loop today, but the roadmap intentionally
+lists the remaining parity gaps. Server has production-oriented durability and
+safety features, while its README defines the identity, observability, scale,
+security, and recovery gates that must be proven before describing a
+deployment as world-class.
 
 ## Agent routing and execution pipeline
 
@@ -354,7 +385,7 @@ read-only runs stay on the single fast loop with no extra model calls.
 Every tunable value is controlled from `.env` — the single source of truth
 for the stack. Copy the tracked template (`.env.example`) and edit values
 there; `docker-compose.yaml` forwards every variable into the containers with
-defaults that match `agents/app/core/config.py`, so no other file needs
+defaults that match `server/app/core/config.py`, so no other file needs
 touching for routine tuning. The runtime model-loop defaults look like:
 
 | Variable | Default | Meaning |
@@ -511,12 +542,12 @@ storage or send it to any third party.
 
 ### Terminal agent
 
-`cli/` is an independently packaged terminal client for the same durable
+`jarvis/` is an independently packaged terminal client for the same durable
 `/runs` API.
 The server remains the only planner and tool executor; the client streams
 events, displays reviewable diffs, and sends explicit approve, discard, or
 cancel actions. See the complete
-[terminal-agent guide](cli/README.md) for command reference,
+[terminal-agent guide](jarvis/README.md) for command reference,
 automation formats, workspace mapping, troubleshooting, and security details.
 
 Current terminal capabilities include:
@@ -544,16 +575,16 @@ Current terminal capabilities include:
 From the repository:
 
 ```bash
-./cli/scripts/aistack doctor
-./cli/scripts/aistack
-./cli/scripts/aistack "review this repository and run its tests"
-./cli/scripts/aistack run --allow-edits "fix the failing tests"
+./jarvis/scripts/aistack doctor
+./jarvis/scripts/aistack
+./jarvis/scripts/aistack "review this repository and run its tests"
+./jarvis/scripts/aistack run --allow-edits "fix the failing tests"
 ```
 
 Install the launcher once to use it like other terminal agents:
 
 ```bash
-./cli/scripts/install-aistack
+./jarvis/scripts/install-aistack
 aistack
 ```
 
@@ -570,11 +601,11 @@ terminal asks whether to approve, discard, or leave it pending. The same
 actions are available non-interactively:
 
 ```bash
-./cli/scripts/aistack list
-./cli/scripts/aistack resume RUN_ID
-./cli/scripts/aistack approve RUN_ID
-./cli/scripts/aistack discard RUN_ID
-./cli/scripts/aistack cancel RUN_ID
+./jarvis/scripts/aistack list
+./jarvis/scripts/aistack resume RUN_ID
+./jarvis/scripts/aistack approve RUN_ID
+./jarvis/scripts/aistack discard RUN_ID
+./jarvis/scripts/aistack cancel RUN_ID
 ```
 
 The wrapper reads `AGENT_API_KEY` from the repository `.env` as data without
@@ -583,7 +614,7 @@ default local endpoint with `AISTACK_URL`. It maps the current host checkout
 to an allowed in-container workspace; use `--workspace /workspace/repository`
 or `--project NAME` when automatic mapping is ambiguous. The installer creates
 `~/.local/bin/aistack` without overwriting an existing command. Remove only
-that managed symlink with `./cli/scripts/install-aistack --uninstall`.
+that managed symlink with `./jarvis/scripts/install-aistack --uninstall`.
 The old `scripts/aistack` and `scripts/install-aistack` paths remain as
 compatibility shims.
 
@@ -729,27 +760,27 @@ agent image. From the agent container, execute from the mounted checkout so
 coverage measures the code under test:
 
 ```bash
-docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tests --cov=app --cov-report=term-missing
+docker compose exec -w /workspace/ai-stack agents python -m pytest -q server/tests --cov=app --cov-report=term-missing
 ```
 
-Python dependencies are resolved in `agents/requirements.lock`;
-`agents/requirements.txt` remains the short direct-dependency list. Review
+Python dependencies are resolved in `server/requirements.lock`;
+`server/requirements.txt` remains the short direct-dependency list. Review
 dependency upgrades and update the lock intentionally. CI uses Python 3.12,
 enforces the current coverage floor, builds the TypeScript UI, and validates
 the Compose configuration.
 
-The agent service has a Compose build definition, so changes under `agents/`
+The agent service has a Compose build definition, so changes under `server/`
 are deployed with `docker compose build agents` followed by
 `docker compose up -d --force-recreate agents`.
 
 ### Agent regression evaluations
 
-Fixed benchmark prompts live in `agents/evals/cases.json`. Their schema is
+Fixed benchmark prompts live in `server/evals/cases.json`. Their schema is
 validated in the normal test suite. Run them against a live local stack when
 changing models, prompts, tools, or routing:
 
 ```bash
-python agents/evals/run_evals.py --base http://127.0.0.1:8000 --key "$AGENT_API_KEY"
+python server/evals/run_evals.py --base http://127.0.0.1:8000 --key "$AGENT_API_KEY"
 ```
 
 The checks catch known regressions; compare answers, tool traces, citations,
@@ -759,7 +790,7 @@ Evaluate the central router/planner separately inside an environment that has
 the agent's LiteLLM settings:
 
 ```bash
-cd agents
+cd server
 PYTHONPATH=. python evals/run_router_evals.py
 ```
 
@@ -878,7 +909,7 @@ amount of retrieved text sent to the local model.
 ## Project layout
 
 ```text
-agents/app/
+server/app/
   main.py          stable FastAPI/OpenAI-compatible entry point
   api/             routes, request/response schemas, authentication dependencies
   core/            configuration and shared exceptions
@@ -888,14 +919,14 @@ agents/app/
   tools/           registry, schemas, filesystem, constrained commands, web search
   memory/          Redis conversations and Qdrant vector memory
 contracts/         canonical OpenAPI contracts shared by server, CLI, and Runs UI
-cli/               independently packaged terminal client, tests, launchers, and guide
+jarvis/               independently packaged terminal client, tests, launchers, and guide
 scripts/aistack    compatibility shim for the former launcher location
 runs-ui/           main React/TypeScript coding-task application
 ```
 
 Keep HTTP routes, agent behavior, persistence, sandboxing, tools, memory, and
 frontends separate. The CLI communicates with the service only through the
-Runs HTTP/SSE API and must not import `agents/app`. New capabilities should be
+Runs HTTP/SSE API and must not import `server/app`. New capabilities should be
 added to the matching package rather than extending `main.py` with business
 logic.
 
@@ -903,6 +934,55 @@ Shared wire contracts stay under root-level `contracts/` because no one client
 owns them. Server, CLI, and Runs UI tests must all validate the same versioned
 artifact. A future repository split should distribute that artifact through a
 release pipeline instead of moving the canonical schema into either consumer.
+
+## Remote model providers
+
+The terminal remains a thin client of the durable Runs API. It can therefore
+connect from any computer to an AI Stack deployment without carrying provider
+credentials or implementing a second agent loop. The server owns routing,
+tools, retries, history, and approval; LiteLLM owns provider translation.
+
+Remote providers are optional and disabled by default. Configure either
+provider in `.env`, rebuild LiteLLM, and select the resulting alias through
+the existing workflow model settings:
+
+```dotenv
+# Claude through Anthropic's hosted API
+ANTHROPIC_MODEL=<current-Claude-model-id>
+ANTHROPIC_API_KEY=<secret>
+
+# Open-weight model deployed to a Hugging Face OpenAI-compatible endpoint
+HF_MODEL=<organization/model-or-endpoint-model-id>
+HF_INFERENCE_BASE_URL=https://<endpoint>.endpoints.huggingface.cloud/v1
+HF_API_KEY=<secret>
+```
+
+The generated aliases are `remote-claude` and `remote-hf`. Provider
+configuration is fail-closed: supplying only part of a provider's settings
+prevents LiteLLM from starting, rather than silently routing to an unintended
+model. Secrets are read by LiteLLM from its environment and are never written
+to the generated configuration.
+
+Claude itself is not deployable to Hugging Face. Use `remote-claude` for the
+Anthropic API and `remote-hf` for an open-weight model hosted by Hugging Face.
+Before assigning a remote model to an agent workflow, verify that the deployed
+model and serving engine support streaming and reliable OpenAI-style function
+calling.
+
+For access from another computer, expose the **agent API**, not LiteLLM,
+through a TLS reverse proxy or private VPN and configure:
+
+```bash
+export AISTACK_URL=https://agent.example.com
+export AISTACK_API_KEY=<agent-key>
+aistack doctor
+aistack run "review this repository"
+```
+
+The current remote server operates on workspaces mounted on that server.
+Secure execution against repositories that exist only on the client computer
+requires the planned outbound local-runner protocol; the CLI must never grant
+a remote server arbitrary access to local files implicitly.
 
 ## Model selection
 

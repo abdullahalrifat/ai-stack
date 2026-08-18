@@ -13,11 +13,11 @@ def _state(**overrides):
         "active_roadmap_item": "Multi-expert dispatch with structured findings",
         "user_message": "Implement multi-expert dispatch",
         "evidence_ledger": {
-            "relevant_files": ["agents/app/agent/executor.py"],
-            "test_targets": ["agents/tests/test_executor.py"],
+            "relevant_files": ["server/app/agent/executor.py"],
+            "test_targets": ["server/tests/test_executor.py"],
         },
         "successful_verification": True,
-        "successful_mutation_paths": {"agents/app/agent/dispatch.py"},
+        "successful_mutation_paths": {"server/app/agent/dispatch.py"},
         "partial": False,
     }
     values.update(overrides)
@@ -46,9 +46,9 @@ def test_execution_graph_accepts_valid_transitions_and_emits_events():
 
 def test_deterministic_change_review_accepts_grounded_verified_diff():
     state = _state()
-    diff = """diff --git a/agents/app/agent/dispatch.py b/agents/app/agent/dispatch.py
+    diff = """diff --git a/server/app/agent/dispatch.py b/server/app/agent/dispatch.py
 --- /dev/null
-+++ b/agents/app/agent/dispatch.py
++++ b/server/app/agent/dispatch.py
 @@ -0,0 +1,2 @@
 +class ExpertDispatcher:
 +    findings = dispatch_experts()
@@ -82,7 +82,7 @@ def test_response_claim_validation_rejects_partial_completion_claim():
     failures = validate_response_claims(
         state,
         "Implemented and completed the feature.",
-        ["agents/app/agent/dispatch.py"],
+        ["server/app/agent/dispatch.py"],
     )
     assert "response claims completion for a partial run" in failures
 
@@ -93,14 +93,14 @@ def test_high_risk_change_uses_independent_reviewer(mock_chat):
         active_roadmap_item="",
         active_requirement="Improve security permissions",
         evidence_ledger={
-            "relevant_files": ["agents/app/core/permissions.py"],
-            "test_targets": ["agents/tests/test_permissions.py"],
+            "relevant_files": ["server/app/core/permissions.py"],
+            "test_targets": ["server/tests/test_permissions.py"],
         },
-        successful_mutation_paths={"agents/app/core/permissions.py"},
+        successful_mutation_paths={"server/app/core/permissions.py"},
     )
-    diff = """diff --git a/agents/app/core/permissions.py b/agents/app/core/permissions.py
---- a/agents/app/core/permissions.py
-+++ b/agents/app/core/permissions.py
+    diff = """diff --git a/server/app/core/permissions.py b/server/app/core/permissions.py
+--- a/server/app/core/permissions.py
++++ b/server/app/core/permissions.py
 @@ -1 +1 @@
 -ALLOW = True
 +SECURE_PERMISSION = True

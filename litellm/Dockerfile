@@ -15,7 +15,11 @@ RUN pip install --no-cache-dir \
     async_generator
 
 COPY direct_client_guard.py /app/direct_client_guard.py
+COPY render_config.py /app/render_config.py
+COPY start.sh /app/start.sh
+RUN chmod 0755 /app/start.sh
 
 EXPOSE 4000
 
-CMD ["litellm", "--config", "/app/config.yaml", "--port", "4000"]
+ENTRYPOINT ["/app/start.sh"]
+CMD ["--host=0.0.0.0", "--port=4000"]

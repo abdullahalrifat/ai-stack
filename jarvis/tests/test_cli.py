@@ -982,7 +982,7 @@ def test_main_doctor_checks_api_and_resolves_server_default(monkeypatch, capsys)
     )
 
 
-def test_main_shorthand_starts_run_with_mapped_workspace(
+def test_main_explicit_run_starts_with_mapped_workspace(
     monkeypatch,
     capsys,
     tmp_path,
@@ -1007,7 +1007,7 @@ def test_main_shorthand_starts_run_with_mapped_workspace(
     monkeypatch.setattr("aistack_cli.main.AgentClient", FakeClient)
     monkeypatch.setattr("aistack_cli.main.run_task", fake_run_task)
 
-    assert main(["review", "the repo"]) == 0
+    assert main(["run", "review", "the repo"]) == 0
     assert calls[0][1] == "review the repo"
     assert calls[0][2]["workspace"] == "/workspace/example"
     assert calls[0][2]["allow_write"] is False
@@ -1042,7 +1042,7 @@ def test_main_shorthand_automatically_allows_requested_edit(monkeypatch, tmp_pat
         ),
     )
 
-    assert main(["fix", "the tests"]) == 0
+    assert main(["run", "fix", "the tests"]) == 0
     assert calls[0]["allow_write"] is True
 
 
@@ -1051,6 +1051,19 @@ def test_main_local_stream_simulate_mode(capsys):
     output = capsys.readouterr()
     assert "Quicksort is a divide-and-conquer sorting algorithm" in output.out
     assert "[done in" in output.err
+
+
+def test_main_local_stream_fails_when_runtime_is_unavailable(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "aistack_cli.main._import_chat_stream_text",
+        lambda: None,
+    )
+
+    assert main(["stream", "never", "fabricate", "this"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "Use 'jarvis run'" in output.err
+    assert "Quicksort" not in output.err
 
 
 def test_main_reports_configuration_errors_without_traceback(monkeypatch, capsys):

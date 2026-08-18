@@ -81,12 +81,12 @@ def resolve_api_key(explicit: str | None = None) -> str:
 
 
 def _history_path() -> Path:
-    configured = os.getenv("AISTACK_HISTORY_FILE")
+    configured = os.getenv("JARVIS_HISTORY_FILE") or os.getenv("AISTACK_HISTORY_FILE")
     if configured:
         return Path(configured).expanduser()
     state_home = os.getenv("XDG_STATE_HOME")
     base = Path(state_home).expanduser() if state_home else Path.home() / ".local/state"
-    return base / "aistack/history"
+    return base / "jarvis/history"
 
 
 def configure_shell_history() -> None:
@@ -181,26 +181,24 @@ def simulated_stream(prompt: str):
 
 
 def stream_response(prompt: str, simulate: bool = False):
-    chat_stream_text = _import_chat_stream_text()
-    if simulate or chat_stream_text is None:
-        if not simulate:
-            print(
-                "[warning] local stream unavailable; using simulated stream",
-                file=sys.stderr,
-            )
+    """Stream a direct model response without ever fabricating a fallback."""
+
+    if simulate:
         yield from simulated_stream(prompt)
         return
+
+    chat_stream_text = _import_chat_stream_text()
+    if chat_stream_text is None:
+        raise APIError(
+            "Direct local streaming is unavailable in the standalone CLI. "
+            "Use 'jarvis run' to connect to the configured remote agent service."
+        )
 
     messages = [{"role": "user", "content": prompt}]
     try:
         yield from chat_stream_text(messages)
     except Exception as exc:
-        print(
-            "[warning] real stream failed, falling back to simulated stream:",
-            exc,
-            file=sys.stderr,
-        )
-        yield from simulated_stream(prompt)
+        raise APIError(f"Direct model stream failed: {exc}") from exc
 
 
 def stream_prompt(args: argparse.Namespace) -> int:
@@ -224,6 +222,9 @@ def stream_prompt(args: argparse.Namespace) -> int:
         print()
     except KeyboardInterrupt:
         print("\nStreaming cancelled.", file=sys.stderr)
+        return 1
+    except APIError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
     elapsed = time.time() - start
     print(f"\n[done in {elapsed:.2f}s]", file=sys.stderr)
@@ -316,7 +317,7 @@ def resolve_workspace(
             return matched, None
         raise APIError(
             f"Could not map '{requested}' to an agent workspace. "
-            "Run `aistack workspaces` or pass an in-container path."
+            "Run `jarvis workspaces` or pass an in-container path."
         )
 
     matched = match_workspace(Path.cwd(), choices)
@@ -395,7 +396,7 @@ def review_run(
         client.action(str(run["id"]), "approve")
     except APIError as exc:
         print(f"Could not apply pending changes: {exc}", file=sys.stderr)
-        print(f"Review later with: aistack resume {run['id']}")
+        print(f"Review later with: jarvis resume {run['id']}")
         return run
     run["status"] = "completed"
     print("Changes approved and applied.")
@@ -503,13 +504,13 @@ def interactive_shell(
 ) -> int:
     conversation_id = conversation_id or str(uuid.uuid4())
     active_run: dict[str, Any] | None = None
-    print(f"ai-stack agent {__version__}")
+    print(f"Jarvis {__version__}")
     print(f"workspace: {workspace}")
     print("type /help for commands")
 
     while True:
         try:
-            line = read_shell_input("aistack> ").strip()
+            line = read_shell_input("jarvis> ").strip()
         except EOFError:
             print()
             return 0
@@ -609,8 +610,8 @@ def interactive_shell(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="aistack",
-        description="Terminal client for the durable ai-stack agent.",
+        prog="jarvis",
+        description="Jarvis: a standalone, open-model coding agent.",
     )
     parser.add_argument(
         "--url",
@@ -692,6 +693,44 @@ def build_parser() -> argparse.ArgumentParser:
         help="Let the run continue after this client exits",
     )
 
+    local = subparsers.add_parser(
+        "local",
+        help="Run the coding agent locally against a remote model API",
+    )
+    local.add_argument("task", nargs="*", help="Task text; reads stdin when omitted")
+    local.add_argument("--provider", choices=("openai", "anthropic"))
+    local.add_argument("--base-url", help="Remote model API base URL")
+    local.add_argument("--model", help="Remote model identifier")
+    local.add_argument(
+        "--api-key-env",
+        help="Environment variable containing the model API key",
+    )
+    local.add_argument(
+        "--no-api-key",
+        action="store_true",
+        help="Connect to a trusted private endpoint without authentication",
+    )
+    local.add_argument("--workspace", dest="local_workspace")
+    local.add_argument("--max-steps", type=int, default=30)
+    local.add_argument("--timeout", type=float, default=180)
+    local.add_argument(
+        "--accept-edits",
+        action="store_true",
+        help="Apply model-proposed patches without an interactive prompt",
+    )
+    local.add_argument(
+        "--accept-commands",
+        action="store_true",
+        help="Run allowlisted commands without an interactive prompt",
+    )
+    local.add_argument(
+        "--read-only",
+        dest="write",
+        action="store_false",
+        default=True,
+        help="Disable the local patch tool",
+    )
+
     stream = subparsers.add_parser(
         "stream",
         help="Stream a local prompt with a lightweight local LLM UX",
@@ -731,6 +770,7 @@ def main(argv: list[str] | None = None) -> int:
         "discard",
         "doctor",
         "list",
+        "local",
         "projects",
         "resume",
         "run",
@@ -738,9 +778,36 @@ def main(argv: list[str] | None = None) -> int:
         "stream",
         "workspaces",
     }
-    if argv and not argv[0].startswith("-") and argv[0] not in commands:
-        argv = ["run", *argv]
+    if not argv:
+        argv = ["local"]
+    elif not argv[0].startswith("-") and argv[0] not in commands:
+        argv = ["local", *argv]
     args = build_parser().parse_args(argv)
+    if args.command == "local":
+        try:
+            from .local_agent import (
+                LocalTools,
+                interactive_approval,
+                resolve_local_config,
+                run_local_agent,
+                run_local_shell,
+            )
+
+            task = " ".join(args.task).strip()
+            if not task and not sys.stdin.isatty():
+                task = sys.stdin.read().strip()
+            config = resolve_local_config(args)
+            if not task:
+                return run_local_shell(config)
+            tools = LocalTools(config, approval=interactive_approval)
+            print(run_local_agent(task, config, tools=tools))
+            return 0
+        except KeyboardInterrupt:
+            print("\nInterrupted.", file=sys.stderr)
+            return 130
+        except APIError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
     if args.command == "stream":
         return stream_prompt(args)
     try:

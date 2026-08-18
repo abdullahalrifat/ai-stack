@@ -164,7 +164,7 @@ def test_coverage_failure_prose_is_replaced_with_plain_pytest_tool_call():
         "messages": [
             {"role": "user", "content": "Improve test coverage"},
             *terminal_turn(
-                "coverage run -m pytest agents/tests --cov=agents "
+                "coverage run -m pytest server/tests --cov=agents "
                 "--cov-report=term-missing",
                 "/bin/bash: coverage: command not found",
             ),
@@ -188,7 +188,7 @@ def test_coverage_failure_prose_is_replaced_with_plain_pytest_tool_call():
     assert tool_call["function"]["name"] == "run_terminal_command"
     assert (
         tool_call["function"]["arguments"]
-        == '{"command": "python -m pytest agents/tests"}'
+        == '{"command": "python -m pytest server/tests"}'
     )
 
 
@@ -223,13 +223,13 @@ def test_coverage_recovery_is_not_repeated_after_plain_pytest_attempt():
 def test_plain_pytest_recovery_preserves_safe_args_and_drops_shell_suffix():
     messages = [
         *terminal_turn(
-            "coverage run -m pytest agents/tests -q --cov agents "
+            "coverage run -m pytest server/tests -q --cov agents "
             "--cov-branch && pip install coverage",
             "coverage: command not found",
         )
     ]
 
-    assert guard._plain_pytest_command(messages) == "python -m pytest agents/tests -q"
+    assert guard._plain_pytest_command(messages) == "python -m pytest server/tests -q"
 
 
 def test_existing_coverage_recovery_tool_call_is_preserved():

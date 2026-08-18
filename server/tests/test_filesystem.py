@@ -139,7 +139,7 @@ def test_sandbox_accepts_singular_alias_only_for_active_run(
 
 
 def test_list_files_tolerates_file_and_glob_arguments(workspace):
-    package = workspace / "agents" / "app" / "llm"
+    package = workspace / "server" / "app" / "llm"
     package.mkdir(parents=True)
     init_file = package / "__init__.py"
     init_file.write_text("")
@@ -152,7 +152,7 @@ def test_list_files_tolerates_file_and_glob_arguments(workspace):
 
     expected = {
         "name": "__init__.py",
-        "path": "agents/app/llm/__init__.py",
+        "path": "server/app/llm/__init__.py",
         "type": "file",
     }
     assert file_result == [expected]
@@ -468,13 +468,13 @@ def test_inspect_test_environment_reports_stable_coverage_capability(
 
 
 def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
-    (workspace / "agents" / "tests").mkdir(parents=True)
-    (workspace / "agents" / "app").mkdir()
-    (workspace / "agents" / "requirements.txt").write_text("pytest\n")
-    (workspace / "cli" / "tests").mkdir(parents=True)
-    (workspace / "cli" / "src" / "aistack_cli").mkdir(parents=True)
-    (workspace / "cli" / "src" / "aistack_cli" / "__init__.py").write_text("")
-    (workspace / "cli" / "pyproject.toml").write_text("[project]\n")
+    (workspace / "server" / "tests").mkdir(parents=True)
+    (workspace / "server" / "app").mkdir()
+    (workspace / "server" / "requirements.txt").write_text("pytest\n")
+    (workspace / "jarvis" / "tests").mkdir(parents=True)
+    (workspace / "jarvis" / "src" / "aistack_cli").mkdir(parents=True)
+    (workspace / "jarvis" / "src" / "aistack_cli" / "__init__.py").write_text("")
+    (workspace / "jarvis" / "pyproject.toml").write_text("[project]\n")
     (workspace / "runs-ui" / "tests").mkdir(parents=True)
     (workspace / "runs-ui" / "package.json").write_text("{}\n")
 
@@ -482,14 +482,14 @@ def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
         result = filesystem.inspect_test_environment.invoke({"directory": "."})
 
     assert result["test_directories"] == [
-        "agents/tests",
-        "cli/tests",
+        "jarvis/tests",
         "runs-ui/tests",
+        "server/tests",
     ]
-    assert result["configs"] == ["cli/pyproject.toml", "runs-ui/package.json"]
+    assert result["configs"] == ["jarvis/pyproject.toml", "runs-ui/package.json"]
     assert result["coverage_runs"] == [
-        {"directory": "agents", "coverage_target": "app"},
-        {"directory": "cli", "coverage_target": "aistack_cli"},
+        {"directory": "jarvis", "coverage_target": "aistack_cli"},
+        {"directory": "server", "coverage_target": "app"},
     ]
 
 
@@ -672,8 +672,8 @@ def test_write_file_scoped_to_allowed_roots(workspace):
 def test_write_file_does_not_clobber_same_basename_existing_file(workspace):
     """A write to a path that does not exist must CREATE that path, never be
     redirected onto a different existing file that shares its basename. This
-    is the regression that destroyed agents/app/agent/executor.py when a model
-    wrote to the non-existent agents/executor.py."""
+    is the regression that destroyed server/app/agent/executor.py when a model
+    wrote to the non-existent server/executor.py."""
     (workspace / "src").mkdir()
     existing = workspace / "src" / "deep" / "executor.py"
     existing.parent.mkdir(parents=True)

@@ -73,7 +73,7 @@ def make_message(content=None, tool_calls=None):
 
 def test_semantic_progress_groups_search_scope_drift_and_rejects_cached_reads():
     first = _semantic_tool_key(
-        "search_code", {"pattern": "multi_expert_dispatch", "directory": "agents/app"}
+        "search_code", {"pattern": "multi_expert_dispatch", "directory": "server/app"}
     )
     second = _semantic_tool_key(
         "search_code", {"pattern": "multi_expert_dispatch", "directory": "."}
@@ -95,7 +95,7 @@ def test_semantic_progress_groups_cosmetic_verification_argument_drift():
         {
             "kind": "pytest",
             "directory": ".",
-            "test_path": "agents/tests/test_planner.py",
+            "test_path": "server/tests/test_planner.py",
         },
     )
     second = _semantic_tool_key(
@@ -103,7 +103,7 @@ def test_semantic_progress_groups_cosmetic_verification_argument_drift():
         {
             "kind": "pytest",
             "directory": str(current_workspace()),
-            "test_path": "agents/tests/test_planner.py",
+            "test_path": "server/tests/test_planner.py",
             "ignore_warnings": True,
             "max_chars": 100,
         },
@@ -120,7 +120,7 @@ def test_roadmap_heading_copy_is_not_treated_as_source_implementation():
         state,
         "edit_file",
         {
-            "file_path": "agents/app/agent/planner.py",
+            "file_path": "server/app/agent/planner.py",
             "old_string": "Low-latency plan.",
             "new_string": "Low-latency plan implementing Tier 3.",
         },
@@ -129,7 +129,7 @@ def test_roadmap_heading_copy_is_not_treated_as_source_implementation():
         state,
         "edit_file",
         {
-            "file_path": "agents/app/agent/dispatch.py",
+            "file_path": "server/app/agent/dispatch.py",
             "old_string": "def dispatch(tasks): pass",
             "new_string": "def dispatch(tasks): return run_parallel(tasks)",
         },
@@ -166,7 +166,7 @@ def test_roadmap_implementation_readiness_requires_source_symbols_and_tests():
     state = DummyState()
     state.active_roadmap_item = "Multi-expert dispatch"
     state.evidence_ledger = {
-        "relevant_files": ["agents/app/agent/executor.py"],
+        "relevant_files": ["server/app/agent/executor.py"],
         "owning_symbols": [],
         "test_targets": [],
     }
@@ -177,25 +177,25 @@ def test_roadmap_implementation_readiness_requires_source_symbols_and_tests():
     ]
 
     state.evidence_ledger["owning_symbols"] = [{"name": "execute_plan"}]
-    state.evidence_ledger["test_targets"] = ["agents/tests/test_executor.py"]
+    state.evidence_ledger["test_targets"] = ["server/tests/test_executor.py"]
     state.evidence_ledger["verification_strategy"] = {
         "kind": "pytest",
-        "test_path": "agents/tests/test_executor.py",
+        "test_path": "server/tests/test_executor.py",
     }
     assert _implementation_readiness_failures(state) == []
 
 
 def test_mutation_cache_invalidation_is_scoped_but_drops_derived_analysis():
     cache = {
-        'read_file:{"file_path": "agents/app/agent/executor.py"}': "old",
+        'read_file:{"file_path": "server/app/agent/executor.py"}': "old",
         'read_file:{"file_path": "README.md"}': "keep",
-        'inspect_code:{"requests": [{"path": "agents/app/agent/executor.py"}]}': "old",
+        'inspect_code:{"requests": [{"path": "server/app/agent/executor.py"}]}': "old",
         'analyze_task_context:{"requirement": "dispatch"}': "derived",
         'search_code:{"directory": ".", "pattern": "execute_plan"}': "stale",
         'web_search:{"query": "current Python release"}': "keep external",
     }
 
-    _invalidate_read_cache_after_mutation(cache, "agents/app/agent/executor.py")
+    _invalidate_read_cache_after_mutation(cache, "server/app/agent/executor.py")
 
     assert list(cache) == [
         'read_file:{"file_path": "README.md"}',
@@ -424,12 +424,12 @@ def test_record_tool_progress_tracks_mutated_paths():
     record_tool_progress(
         state,
         "write_file",
-        {"file_path": "./agents/app/worker.py"},
+        {"file_path": "./server/app/worker.py"},
         {"status": "written"},
     )
 
     assert state.successful_mutation is True
-    assert "agents/app/worker.py" in state.successful_mutation_paths
+    assert "server/app/worker.py" in state.successful_mutation_paths
 
 
 def test_record_tool_progress_treats_apply_patch_as_mutation():
@@ -438,12 +438,12 @@ def test_record_tool_progress_treats_apply_patch_as_mutation():
     record_tool_progress(
         state,
         "apply_patch",
-        {"file_path": "agents/app/worker.py", "old_string": "old", "new_string": "new"},
+        {"file_path": "server/app/worker.py", "old_string": "old", "new_string": "new"},
         {"status": "edited"},
     )
 
     assert state.successful_mutation is True
-    assert state.successful_mutation_paths == {"agents/app/worker.py"}
+    assert state.successful_mutation_paths == {"server/app/worker.py"}
 
 
 def test_mutation_invalidates_earlier_verification():
@@ -453,7 +453,7 @@ def test_mutation_invalidates_earlier_verification():
     record_tool_progress(
         state,
         "edit_file",
-        {"file_path": "agents/app/worker.py"},
+        {"file_path": "server/app/worker.py"},
         {"status": "edited"},
     )
 
@@ -483,7 +483,7 @@ def test_answer_audit_rejects_todo_only_mutation_for_implementation():
         "only modified documentation/marker files" in failure for failure in failures
     )
 
-    state.successful_mutation_paths = {"TODO.md", "agents/app/executor.py"}
+    state.successful_mutation_paths = {"TODO.md", "server/app/executor.py"}
     assert _answer_audit(state, "Implemented Tier 3.") == []
 
 
@@ -567,8 +567,8 @@ def test_execute_plan_guides_search_after_hallucinated_edit_anchor(
     ]
     mock_registry.execute.side_effect = [
         {"error": "old_string not found in file. Re-read the file and try again."},
-        [{"path": "agents/app/runner.py"}],
-        {"path": "agents/app/runner.py", "status": "edited"},
+        [{"path": "server/app/runner.py"}],
+        {"path": "server/app/runner.py", "status": "edited"},
         {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
     ]
     seen_messages = []
@@ -583,7 +583,7 @@ def test_execute_plan_guides_search_after_hallucinated_edit_anchor(
                         "edit",
                         "edit_file",
                         {
-                            "file_path": "agents/app/runner.py",
+                            "file_path": "server/app/runner.py",
                             "old_string": "def execute(self):\n    return []",
                             "new_string": "def execute(self):\n    return self._dispatch()",
                         },
@@ -596,7 +596,7 @@ def test_execute_plan_guides_search_after_hallucinated_edit_anchor(
                     make_tool_call(
                         "search",
                         "search_text",
-                        {"keyword": "def execute", "directory": "agents/app"},
+                        {"keyword": "def execute", "directory": "server/app"},
                     )
                 ]
             )
@@ -607,7 +607,7 @@ def test_execute_plan_guides_search_after_hallucinated_edit_anchor(
                         "edit",
                         "edit_file",
                         {
-                            "file_path": "agents/app/runner.py",
+                            "file_path": "server/app/runner.py",
                             "old_string": "def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):",
                             "new_string": "def execute(request: ExecuteRequest, x_runner_key: str | None = Header(None)):\n    # Dispatch work through the runner.",
                         },
@@ -663,7 +663,7 @@ def test_execute_plan_corrects_absolute_sandbox_path(
     mock_registry.execute.side_effect = [
         {"error": "Access outside workspace denied."},
         {"error": "Access outside workspace denied."},
-        {"path": "agents/app/runner.py", "status": "edited"},
+        {"path": "server/app/runner.py", "status": "edited"},
         {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
     ]
     seen_messages = []
@@ -678,7 +678,7 @@ def test_execute_plan_corrects_absolute_sandbox_path(
                         "edit",
                         "edit_file",
                         {
-                            "file_path": "/sandbox/agents/app/runner.py",
+                            "file_path": "/sandbox/server/app/runner.py",
                             "old_string": "def _authorize(x):\n    return True",
                             "new_string": "def _authorize(x):\n    return True\n\ndef run_subagents():\n    return []",
                         },
@@ -692,7 +692,7 @@ def test_execute_plan_corrects_absolute_sandbox_path(
                         "write",
                         "write_file",
                         {
-                            "file_path": "/sandbox/agents/app/runner.py",
+                            "file_path": "/sandbox/server/app/runner.py",
                             "content": "def run_subagents():\n    return []",
                         },
                     )
@@ -705,7 +705,7 @@ def test_execute_plan_corrects_absolute_sandbox_path(
                         "edit",
                         "edit_file",
                         {
-                            "file_path": "agents/app/runner.py",
+                            "file_path": "server/app/runner.py",
                             "old_string": "def _authorize(x):\n    return True",
                             "new_string": "def _authorize(x):\n    return True\n\ndef run_subagents():\n    return []",
                         },
@@ -765,12 +765,12 @@ def test_execute_plan_injects_expert_findings_when_dispatch_requested(
             "findings": [
                 {
                     "claim": "runner owns the parallel loop",
-                    "evidence": ["agents/app/runner.py"],
+                    "evidence": ["server/app/runner.py"],
                     "confidence": "high",
                 }
             ],
             "open_questions": [],
-            "recommended_focus": ["agents/app/runner.py"],
+            "recommended_focus": ["server/app/runner.py"],
         }
     ]
     mock_dispatch.return_value = canned
@@ -795,7 +795,7 @@ def test_execute_plan_injects_expert_findings_when_dispatch_requested(
         "run_tests",
     ]
     mock_registry.execute.side_effect = [
-        {"path": "agents/app/runner.py", "status": "edited"},
+        {"path": "server/app/runner.py", "status": "edited"},
         {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
     ]
     seen_messages = []
@@ -809,7 +809,7 @@ def test_execute_plan_injects_expert_findings_when_dispatch_requested(
                         "edit",
                         "edit_file",
                         {
-                            "file_path": "agents/app/runner.py",
+                            "file_path": "server/app/runner.py",
                             "old_string": "def _loop():\n    pass",
                             "new_string": "def _loop():\n    return dispatch()",
                         },
@@ -852,7 +852,7 @@ def test_execute_plan_skips_expert_dispatch_without_marker(
         "run_tests",
     ]
     mock_registry.execute.side_effect = [
-        {"path": "agents/app/runner.py", "status": "edited"},
+        {"path": "server/app/runner.py", "status": "edited"},
         {"kind": "pytest", "exit_code": 0, "output": "1 passed"},
     ]
     seen_messages = []
@@ -866,7 +866,7 @@ def test_execute_plan_skips_expert_dispatch_without_marker(
                         "edit",
                         "edit_file",
                         {
-                            "file_path": "agents/app/runner.py",
+                            "file_path": "server/app/runner.py",
                             "old_string": "old",
                             "new_string": "new",
                         },
@@ -1236,7 +1236,7 @@ def test_execute_plan_does_not_retry_deterministic_tool_failure(
 def test_failed_guess_does_not_invalidate_successful_inspection():
     state = DummyState()
 
-    record_tool_progress(state, "list_files", {"directory": "."}, ["agents/tests"])
+    record_tool_progress(state, "list_files", {"directory": "."}, ["server/tests"])
     record_tool_progress(
         state,
         "list_files",
@@ -1746,8 +1746,8 @@ def test_requires_workspace_inspection_recognizes_project_and_todo_wording():
 
 def test_explicit_workspace_paths_are_bounded_and_deduplicated():
     assert explicit_workspace_paths(
-        "Compare ./README.md with cli/README.md and README.md"
-    ) == ["README.md", "cli/README.md"]
+        "Compare ./README.md with jarvis/README.md and README.md"
+    ) == ["README.md", "jarvis/README.md"]
 
 
 @patch("app.agent.executor.registry")
@@ -1933,7 +1933,7 @@ def test_hybrid_analysis_synthesizes_after_sufficient_evidence(
     ]
     mock_registry.execute.side_effect = [
         [{"name": "README.md"}],
-        {"items": [{"path": "cli/ROADMAP.md", "content": "current and future work"}]},
+        {"items": [{"path": "jarvis/ROADMAP.md", "content": "current and future work"}]},
         {
             "results": [
                 {
@@ -2031,7 +2031,7 @@ def test_execute_plan_reprompts_workspace_refusal_to_inspect_then_tool(
         if tool == "list_files":
             return {"files": ["README.md", "TODO.md"]}
         if tool == "write_file":
-            return {"status": "written", "path": "agents/app/worker.py"}
+            return {"status": "written", "path": "server/app/worker.py"}
         if tool == "run_tests":
             return {"exit_code": 0, "output": "1 passed"}
         return {"error": "unknown tool"}
@@ -2055,7 +2055,7 @@ def test_execute_plan_reprompts_workspace_refusal_to_inspect_then_tool(
                     "call_2",
                     "write_file",
                     {
-                        "file_path": "agents/app/worker.py",
+                        "file_path": "server/app/worker.py",
                         "content": "def spawn(): pass\n",
                     },
                 )

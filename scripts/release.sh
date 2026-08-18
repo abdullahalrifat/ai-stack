@@ -91,9 +91,9 @@ if [[ "$RUN_TESTS" == true ]]; then
   docker run --rm \
     --volume "${PROJECT_ROOT}:/workspace" \
     --workdir /workspace \
-    --env PYTHONPATH=/workspace/agents:/workspace/cli/src \
+    --env PYTHONPATH=/workspace/agents:/workspace/jarvis/src \
     ai-agents:latest \
-    pytest -q agents/tests cli/tests
+    pytest -q server/tests jarvis/tests
 fi
 
 rollback() {

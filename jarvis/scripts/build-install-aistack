@@ -4,9 +4,9 @@ set -euo pipefail
 # Build the CLI package as a wheel and install it into a target Python
 # environment.
 #
-# The repository-local symlink installer (./cli/scripts/install-aistack) is
+# The repository-local symlink installer (./jarvis/scripts/install-aistack) is
 # the recommended way to run the CLI against a checkout. This script is for
-# packaging-style installs: it produces a wheel under cli/dist and installs
+# packaging-style installs: it produces a wheel under jarvis/dist and installs
 # that wheel, so the console entry point and metadata match what CI builds.
 
 script_path="${BASH_SOURCE[0]}"
@@ -19,14 +19,14 @@ python_bin="${AISTACK_CLI_PYTHON:-${checkout_dir}/.venv/bin/python}"
 
 usage() {
   cat <<'EOF'
-Usage: ./cli/scripts/build-install-aistack [--help]
+Usage: ./jarvis/scripts/build-install-aistack [--help]
 
 Builds the CLI as a wheel and installs it into the target environment.
 
 Environment:
   AISTACK_CLI_PYTHON    Python interpreter of the target venv
                         (default: checkout/.venv/bin/python)
-  AISTACK_CLI_DIST_DIR  Where to write the built wheel (default: cli/dist)
+  AISTACK_CLI_DIST_DIR  Where to write the built wheel (default: jarvis/dist)
 EOF
 }
 

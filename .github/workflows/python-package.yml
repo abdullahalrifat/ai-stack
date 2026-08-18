@@ -10,18 +10,18 @@ permissions:
   contents: read
 
 jobs:
-  agents:
+  server:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agents
+        working-directory: server
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: agents/requirements.lock
+          cache-dependency-path: server/requirements.lock
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Syntax and import safety
@@ -31,18 +31,18 @@ jobs:
       - name: Tests and coverage floor
         run: python -m pytest -q tests --cov=app --cov-report=term-missing --cov-fail-under=67
 
-  cli:
+  jarvis:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: cli
+        working-directory: jarvis
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: cli/requirements.txt
+          cache-dependency-path: jarvis/requirements.txt
       - name: Install CLI and development tools
         run: python -m pip install -e . -r requirements.txt
       - name: Syntax and import safety
@@ -54,7 +54,7 @@ jobs:
       - name: Tests and coverage floor
         run: python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=70
       - name: Build package
-        run: python -m pip wheel --no-deps . --wheel-dir /tmp/aistack-cli-dist
+        run: python -m pip wheel --no-deps . --wheel-dir /tmp/jarvis-dist
 
   runs-ui:
     runs-on: ubuntu-latest

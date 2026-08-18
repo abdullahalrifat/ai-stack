@@ -1,4 +1,4 @@
-# World-class terminal agent roadmap
+# Jarvis world-class terminal roadmap
 
 The goal is not to copy another tool's interface line for line. The goal is to
 match the qualities users expect from a world-class coding-agent terminal:
@@ -8,9 +8,10 @@ predictable behavior under failure.
 
 Claude Code is one useful external benchmark for session workflows,
 non-interactive output, layered permissions, project memory, MCP integration,
-installation, and diagnostics. AI Stack must implement those outcomes in a
-way that preserves its own server-owned planning, durable history, isolated
-write sandboxes, and local-model architecture.
+installation, and diagnostics. Jarvis must implement those outcomes without requiring a commercial model or
+the AI Stack Server. Local mode owns its planning and guarded tools; optional
+Server mode adds durable history, isolated remote write sandboxes, and shared
+policy.
 
 ## Current baseline
 
@@ -34,9 +35,12 @@ The CLI already provides:
 - a standard-library-only runtime package, wheel build, installer, tests, and
   independent coverage floor.
 
-These capabilities make the CLI dependable for the current single-user,
-self-hosted workflow. The following work is required before calling it a
-world-class general-purpose terminal agent.
+Those capabilities primarily describe durable Server mode. Standalone Jarvis
+also has a bounded model/tool loop, AGENTS.md instructions, workspace-confined
+read/search/edit tools, guarded unified patches, constrained command execution,
+Git status/diff inspection, verification, and OpenAI-compatible or Anthropic
+remote inference. The following work is required before calling the combined
+local experience a world-class general-purpose terminal agent.
 
 ## Product principles
 
@@ -44,16 +48,18 @@ world-class general-purpose terminal agent.
    leave hidden work consuming models, commands, or sandboxes.
 2. **Autonomy remains reviewable.** More convenience must not weaken workspace
    boundaries, command constraints, or explicit write approval.
-3. **The server remains the orchestration owner.** The CLI should never add a
-   competing local planner or tool loop.
+3. **Jarvis is independently useful.** Local mode owns its agent loop and must
+   never require Server. Server mode is explicit and owns only remote runs.
 4. **Automation is a first-class interface.** Human output and machine output
    must both be stable, documented, and testable.
 5. **Failure is a normal state.** Disconnects, restarts, partial output, stale
    worktrees, unavailable dependencies, and incompatible versions need
    deliberate recovery behavior.
-6. **Local-first does not mean single-machine-only.** Remote endpoints,
-   multiple workspaces, secure credentials, and enterprise policy should fit
-   the same design.
+6. **Open-model first does not mean one endpoint.** Local models, remote GPUs,
+   multiple workspaces, secure credentials, and enterprise policy fit the same
+   provider-neutral design.
+7. **Claims require evidence.** A capability is complete only when its safety,
+   failure, and compatibility behavior is documented and tested.
 
 ## P0: correctness and lifecycle — completed
 
@@ -121,7 +127,7 @@ or managing older conversations still requires IDs.
 
 Required work:
 
-- `aistack --resume` with an interactive searchable picker;
+- `jarvis --resume` with an interactive searchable picker;
 - session names, timestamps, workspace, branch, status, and concise summaries;
 - rename, fork, archive, and guarded delete operations;
 - workspace-scoped recent-session ordering;
@@ -181,9 +187,9 @@ editing the real checkout itself.
 
 ### 9. Project instructions and memory
 
-Required work:
+Standalone Jarvis already loads repository-level `AGENTS.md`. Required work:
 
-- load hierarchical repository instructions such as `AGENTS.md`;
+- load hierarchical repository instructions beyond the repository root;
 - support user-level and workspace-local private instructions;
 - show exactly which instruction files are active;
 - define precedence, imports, size limits, and cycle protection;
@@ -222,7 +228,7 @@ Introduce a documented configuration model with deterministic precedence:
 
 Configuration should cover endpoints, workspace mappings, lifecycle defaults,
 output preferences, history, editor, notifications, proxy/TLS settings, and
-permission rules. `aistack config list --sources` should show the winning value
+permission rules. `jarvis config list --sources` should show the winning value
 without exposing secrets.
 
 ### 12. Secure credential management

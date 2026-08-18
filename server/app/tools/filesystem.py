@@ -304,7 +304,7 @@ def resolve_path(path: str, *, unique_basename: bool = True) -> Path:
 
     Supports both:
         docker-compose.yml
-        agents/app/main.py
+        server/app/main.py
         /workspace/docker-compose.yml
     """
 
@@ -361,13 +361,13 @@ def resolve_path(path: str, *, unique_basename: bool = True) -> Path:
     # If the requested path doesn't exist as written, try a safe workspace-wide
     # lookup for a unique match with the same basename. This helps small models
     # that emit a short path like `src` when the repository's nested layout is
-    # `cli/src` or similar. Only accept a single unambiguous candidate. Limit
+    # `jarvis/src` or similar. Only accept a single unambiguous candidate. Limit
     # the search breadth to avoid long-running file system scans.
     #
     # Writes disable this: a write to a path that does not exist is a request to
     # CREATE that file, and redirecting it to a different existing file with the
     # same basename would silently clobber unrelated code (a common 8B-model
-    # failure that destroyed agents/app/agent/executor.py in production).
+    # failure that destroyed server/app/agent/executor.py in production).
     if unique_basename and not p.exists():
         name = p.name
         candidates = []
@@ -828,7 +828,7 @@ def walk_files(root: Path):
     """Yield files deterministically while pruning ignored subtrees.
 
     The model often passes the file it is investigating as ``directory``
-    (``agents/app/runner.py``) instead of its parent folder. Treat a file
+    (``server/app/runner.py``) instead of its parent folder. Treat a file
     path as a single-file search rather than silently returning no matches,
     which previously made weak edit-calling models conclude the symbol does
     not exist anywhere. Unlike ``Path.rglob``, this does not descend through
@@ -1640,7 +1640,7 @@ def run_tests(
     try:
         cwd = resolve_path(directory)
         # The model commonly passes the file under investigation (e.g.
-        # agents/app/runner.py) as directory. Run from its parent folder so
+        # server/app/runner.py) as directory. Run from its parent folder so
         # "run the tests for this file" resolves instead of erroring.
         if not cwd.is_dir():
             cwd = cwd.parent

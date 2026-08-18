@@ -119,10 +119,7 @@ services:
     container_name: litellm
     restart: unless-stopped
 
-    entrypoint: ["litellm"]
-
     command:
-      - "--config=/app/config.yaml"
       - "--host=0.0.0.0"
       - "--port=4000"
 
@@ -131,6 +128,13 @@ services:
 
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Optional remote providers. They are activated only when every variable
+      # for that provider is configured.
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HF_MODEL: ${HF_MODEL:-}
+      HF_INFERENCE_BASE_URL: ${HF_INFERENCE_BASE_URL:-}
+      HF_API_KEY: ${HF_API_KEY:-}
 
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
@@ -195,7 +199,7 @@ services:
         condition: service_started
       pipelines:
         condition: service_started
-      agents:
+      server:
         condition: service_healthy
 
     ports:
@@ -211,7 +215,7 @@ services:
 
       OPENAI_API_BASE_URL: http://litellm:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
-      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://agents:8000/v1
+      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8000/v1
       # Keys correspond positionally to OPENAI_API_BASE_URLS.  The agent
       # endpoint has its own key; leaving this blank makes the seeded
       # connection unusable.
@@ -229,10 +233,10 @@ services:
   ####################################################
   ## AI Agents
   ####################################################
-  agents:
-    build: ./agents
-    image: ai-agents:latest
-    container_name: ai-agents
+  server:
+    build: ./server
+    image: ai-stack-server:latest
+    container_name: ai-stack-server
     restart: unless-stopped
 
     working_dir: /app
@@ -407,7 +411,7 @@ services:
 
     cap_drop:
       - ALL
-    # The agents container merges approved sandbox diffs directly into the
+    # The server container merges approved sandbox diffs directly into the
     # host bind-mounted workspace, which is owned by the host user's UID.
     # Without DAC_OVERRIDE the root process cannot write into those 775
     # subdirectories and approvals fail to land.
@@ -437,7 +441,7 @@ services:
       - runner
 
   agent-runner:
-    image: ai-agents:latest
+    image: ai-stack-server:latest
     container_name: agent-runner
     restart: unless-stopped
     command: ["uvicorn", "app.runner:app", "--host", "0.0.0.0", "--port", "8001"]
@@ -478,7 +482,7 @@ services:
     restart: unless-stopped
 
     depends_on:
-      agents:
+      server:
         condition: service_healthy
 
     ports:

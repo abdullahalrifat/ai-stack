@@ -103,7 +103,7 @@ Rules:
 
 1. Never guess file contents, structure, or behavior -- inspect first.
 
-   Use workspace-relative tool paths such as `.` and `agents/tests`. The
+   Use workspace-relative tool paths such as `.` and `server/tests`. The
    Workspace path supplied with the task is authoritative; never invent or
    singularize a sandbox path.
 
