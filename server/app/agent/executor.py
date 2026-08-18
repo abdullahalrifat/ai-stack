@@ -869,11 +869,11 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
                 "inspect_files",
                 {
                     "paths": [
-                        "cli/ROADMAP.md",
-                        "cli/README.md",
+                        "jarvis/ROADMAP.md",
+                        "jarvis/README.md",
                         "contracts/aistack-protocol-v1.json",
                         "README.md",
-                        "cli/pyproject.toml",
+                        "jarvis/pyproject.toml",
                     ]
                 },
             )
