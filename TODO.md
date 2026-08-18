@@ -14,7 +14,7 @@
 ## Tier 1 - Agent reliability (completed)
 
 - [x] Offline replay evals harness: golden traces + deterministic replay through the
-      executor, sequence-fidelity regression checks (`agents/evals/`)
+      executor, sequence-fidelity regression checks (`server/evals/`)
 - [x] Context management: budget-aware tool-result summaries, goal-aware history
       compaction, capped verbatim recent context
 - [x] Parallel tool calls: concurrent execution of independent read-only calls in one turn
