@@ -714,6 +714,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply model-proposed patches without an interactive prompt",
     )
     local.add_argument(
+        "--accept-commands",
+        action="store_true",
+        help="Run allowlisted commands without an interactive prompt",
+    )
+    local.add_argument(
         "--read-only",
         dest="write",
         action="store_false",
