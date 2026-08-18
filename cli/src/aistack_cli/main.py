@@ -223,6 +223,9 @@ def stream_prompt(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print("\nStreaming cancelled.", file=sys.stderr)
         return 1
+    except APIError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     elapsed = time.time() - start
     print(f"\n[done in {elapsed:.2f}s]", file=sys.stderr)
     return 0
