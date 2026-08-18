@@ -89,11 +89,7 @@ def window_lines(text: str, max_chars: int = TOOL_RESULT_SUMMARY_CHARS) -> str:
     omitted = len(lines) - len(head) - len(tail)
     if omitted <= 0:
         return text
-    return (
-        "".join(head)
-        + f"\n...[truncated {omitted} lines]...\n"
-        + "".join(tail)
-    )
+    return "".join(head) + f"\n...[truncated {omitted} lines]...\n" + "".join(tail)
 
 
 def _window_items(items: list, max_chars: int) -> tuple[list, int]:
@@ -131,9 +127,7 @@ def summarize_tool_result(
 
     if result is None:
         return "null"
-    if isinstance(result, dict) and (
-        result.get("error") or result.get("tool_error")
-    ):
+    if isinstance(result, dict) and (result.get("error") or result.get("tool_error")):
         return json.dumps(result, default=str)
     if tool_name in _SEARCH_TOOLS:
         return _summarize_search(tool_name, result, max_chars)
