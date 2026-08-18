@@ -161,10 +161,13 @@ def test_local_tools_reject_workspace_escape_and_mutating_git(tmp_path):
 def test_read_file_stays_inside_workspace(tmp_path):
     (tmp_path / "hello.txt").write_text("first\nsecond\n")
     tools = LocalTools(config(tmp_path))
-    assert tools.execute(
-        "read_file",
-        {"path": "hello.txt", "start_line": 2, "end_line": 2},
-    ) == "2: second"
+    assert (
+        tools.execute(
+            "read_file",
+            {"path": "hello.txt", "start_line": 2, "end_line": 2},
+        )
+        == "2: second"
+    )
 
 
 def test_agent_executes_tool_then_returns_final_answer(tmp_path):
