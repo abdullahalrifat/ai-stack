@@ -161,13 +161,13 @@ PATH_TOOLS = {"edit_file", "write_file", "apply_patch", "read_file"}
 PATH_DENIAL_RECOVERY = (
     "A file tool was denied because the path you supplied is outside the workspace. Never use an "
     "absolute path such as /sandbox/... or /workspace/... -- those are container paths, not tool "
-    "paths. Use only workspace-relative paths (for example agents/app/runner.py or agents/app). "
+    "paths. Use only workspace-relative paths (for example server/app/runner.py or server/app). "
     "The list_files, tree, and read_file results above already show the exact relative paths."
 )
 
 PATH_DENIAL_REPEATED_RECOVERY = (
     "The same path has been denied more than once because it is outside the workspace. Stop using "
-    "that path. Every file tool must receive a workspace-relative path like agents/app/runner.py "
+    "that path. Every file tool must receive a workspace-relative path like server/app/runner.py "
     "-- never an absolute path. Copy the exact path from a list_files or tree result. If the file "
     "does not exist, you are targeting the wrong file: find where the code actually lives with "
     "search_text or search_code before writing anything."
