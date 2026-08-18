@@ -119,10 +119,7 @@ services:
     container_name: litellm
     restart: unless-stopped
 
-    entrypoint: ["litellm"]
-
     command:
-      - "--config=/app/config.yaml"
       - "--host=0.0.0.0"
       - "--port=4000"
 
@@ -131,6 +128,13 @@ services:
 
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Optional remote providers. They are activated only when every variable
+      # for that provider is configured.
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HF_MODEL: ${HF_MODEL:-}
+      HF_INFERENCE_BASE_URL: ${HF_INFERENCE_BASE_URL:-}
+      HF_API_KEY: ${HF_API_KEY:-}
 
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
