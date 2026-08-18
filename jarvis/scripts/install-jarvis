@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source_path="${script_dir}/jarvis"
+install_dir="${JARVIS_INSTALL_DIR:-${HOME}/.local/bin}"
+target_path="${install_dir}/jarvis"
+
+if [[ "${1:-}" == "--uninstall" ]]; then
+  if [[ ! -L "${target_path}" || "$(readlink "${target_path}")" != "${source_path}" ]]; then
+    echo "Refusing to remove ${target_path}: it is not the managed Jarvis symlink." >&2
+    exit 1
+  fi
+  rm "${target_path}"
+  echo "Removed ${target_path}"
+  exit 0
+fi
+
+if [[ "$#" -ne 0 ]]; then
+  echo "Usage: ./jarvis/scripts/install-jarvis [--uninstall]" >&2
+  exit 2
+fi
+
+mkdir -p "${install_dir}"
+if [[ -e "${target_path}" || -L "${target_path}" ]]; then
+  if [[ -L "${target_path}" && "$(readlink "${target_path}")" == "${source_path}" ]]; then
+    echo "Already installed: ${target_path}"
+    exit 0
+  fi
+  echo "Refusing to overwrite existing path: ${target_path}" >&2
+  exit 1
+fi
+
+ln -s "${source_path}" "${target_path}"
+echo "Installed ${target_path}"
+if [[ ":${PATH}:" != *":${install_dir}:"* ]]; then
+  echo "Add ${install_dir} to PATH, then start a new terminal." >&2
+fi
