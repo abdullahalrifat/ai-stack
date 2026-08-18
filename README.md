@@ -1,41 +1,53 @@
-# AI Stack
+# Jarvis
 
-AI Stack is a self-hosted control plane for private chat, coding assistance,
-retrieval-augmented knowledge work, and source-cited financial research.
-It runs local models through Ollama and presents a single OpenAI-compatible
-gateway through LiteLLM.
+Jarvis is a standalone, open-model coding agent. The terminal runs its agent
+loop, repository inspection, planning, editing, command execution,
+verification, and review locally while inference can run on any
+OpenAI-compatible open-model endpoint.
 
-## What is included
+The primary product is under `jarvis/` and does not require Docker or the
+server deployment:
 
-```text
-Open WebUI / IDE clients / API clients
-                 |
-             LiteLLM gateway
-                 |
-     local Ollama models and optional providers
+```bash
+cd jarvis
+pipx install .
+export JARVIS_BASE_URL=https://your-open-model-endpoint/v1
+export JARVIS_MODEL=your-coding-model
+export JARVIS_API_KEY=your-key
 
-Open WebUI ---- Postgres / Redis / Qdrant
-                 |
-           Coding-agent API
-                 |
-      request-scoped workspace mount(s)
+cd /path/to/project
+jarvis "review and improve this repository"
 ```
 
-- **Ollama** runs local models.
-- **LiteLLM** provides the shared OpenAI-compatible inference endpoint.
-- **Open WebUI** is the human chat interface.
-- **Qdrant, Redis, and PostgreSQL** support retrieval, conversation state, and
-  durable agent run history.
-- **Coding agent** plans repository work, reads/searches/edits files, runs an
-  allowlisted set of commands, and can make explicitly approved file changes
-  inside a disposable, reviewable sandbox.
-- **Runs UI** is the live, streamed, reviewable task console for the agent.
-- **Sandbox runner** (`agent-runner`) executes the allowlisted commands in
-  isolated containers with per-tier kernel limits.
-- **Terminal agent** (`jarvis/`) is an independently packaged client for the same
-  durable run API.
-- **SearXNG** provides private metasearch for agent web research; it is internal
-  to the Docker network and never exposed as a public port.
+Running `jarvis` without a task starts the interactive local shell. Use
+`jarvis run ...` only when intentionally connecting to the optional durable
+server.
+
+## Optional server platform
+
+The `server/` tree and Docker Compose deployment are optional. They provide
+always-online integrations and infrastructure that do not belong in the
+standalone terminal:
+
+- Telegram, web, and future mobile adapters;
+- durable and detached background jobs;
+- shared PostgreSQL, Redis, and Qdrant state;
+- Open WebUI and Runs UI;
+- centralized research and document ingestion;
+- server-mounted workspaces and isolated sandbox runners.
+
+The server reuses the same model-facing principles, but Jarvis local mode
+operates directly on the user's repository and sends only model messages and
+tool results to the configured inference endpoint.
+
+## Repository components
+
+- **Jarvis** (`jarvis/`) is the primary standalone coding agent.
+- **Server** (`server/`) is the optional FastAPI control plane.
+- **Ollama/LiteLLM** provide optional local or routed inference.
+- **Runs UI** is the optional durable-task console.
+- **PostgreSQL, Redis, and Qdrant** support server-only persistence.
+- **SearXNG** supports optional server-side research.
 
 ## Agent routing and execution pipeline
 
