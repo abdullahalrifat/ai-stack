@@ -90,7 +90,7 @@ def resolve_local_config(args: Any) -> LocalConfig:
         workspace=workspace,
         allow_edits=bool(args.write),
         accept_edits=bool(args.accept_edits),
-        accept_commands=bool(args.accept_commands),
+        accept_commands=bool(getattr(args, "accept_commands", False)),
         max_steps=max(1, min(int(args.max_steps), 100)),
         timeout=max(10.0, float(args.timeout)),
     )
