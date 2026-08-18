@@ -93,7 +93,7 @@ if [[ "$RUN_TESTS" == true ]]; then
     --workdir /workspace \
     --env PYTHONPATH=/workspace/agents:/workspace/cli/src \
     ai-agents:latest \
-    pytest -q agents/tests cli/tests
+    pytest -q server/tests cli/tests
 fi
 
 rollback() {
