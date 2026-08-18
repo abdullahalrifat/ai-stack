@@ -142,6 +142,13 @@ REPLAN_MAX_RETRIES = int(os.getenv("REPLAN_MAX_RETRIES", "3"))
 OPENAI_INPUT_MAX_CHARS = int(os.getenv("OPENAI_INPUT_MAX_CHARS", "16000"))
 CONTEXT_TOKEN_LIMIT = int(os.getenv("CONTEXT_TOKEN_LIMIT", "32768"))
 CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "4096"))
+# Shared run/agent/turn token budgets enforced by jarvis-core.
+TOKEN_RUN_INPUT_LIMIT = int(os.getenv("TOKEN_RUN_INPUT_LIMIT", "120000"))
+TOKEN_RUN_OUTPUT_LIMIT = int(os.getenv("TOKEN_RUN_OUTPUT_LIMIT", "12000"))
+TOKEN_TURN_INPUT_LIMIT = int(os.getenv("TOKEN_TURN_INPUT_LIMIT", "32000"))
+TOKEN_TURN_OUTPUT_LIMIT = int(os.getenv("TOKEN_TURN_OUTPUT_LIMIT", "4096"))
+TOKEN_AGENT_INPUT_LIMIT = int(os.getenv("TOKEN_AGENT_INPUT_LIMIT", "80000"))
+TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "8000"))
 # Finance answers need room for a compact evidence summary plus scenarios.
 # Kept separate so normal Code/Quick responses remain fast on CPU.
 FINANCE_MAX_COMPLETION_TOKENS = int(os.getenv("FINANCE_MAX_COMPLETION_TOKENS", "1536"))
