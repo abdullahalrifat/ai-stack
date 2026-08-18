@@ -482,7 +482,7 @@ services:
     restart: unless-stopped
 
     depends_on:
-      agents:
+      server:
         condition: service_healthy
 
     ports:
