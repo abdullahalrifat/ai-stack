@@ -191,7 +191,7 @@ def stream_response(prompt: str, simulate: bool = False):
     if chat_stream_text is None:
         raise APIError(
             "Direct local streaming is unavailable in the standalone CLI. "
-            "Use 'aistack run' to connect to the configured remote agent service."
+            "Use 'jarvis run' to connect to the configured remote agent service."
         )
 
     messages = [{"role": "user", "content": prompt}]
@@ -317,7 +317,7 @@ def resolve_workspace(
             return matched, None
         raise APIError(
             f"Could not map '{requested}' to an agent workspace. "
-            "Run `aistack workspaces` or pass an in-container path."
+            "Run `jarvis workspaces` or pass an in-container path."
         )
 
     matched = match_workspace(Path.cwd(), choices)
@@ -396,7 +396,7 @@ def review_run(
         client.action(str(run["id"]), "approve")
     except APIError as exc:
         print(f"Could not apply pending changes: {exc}", file=sys.stderr)
-        print(f"Review later with: aistack resume {run['id']}")
+        print(f"Review later with: jarvis resume {run['id']}")
         return run
     run["status"] = "completed"
     print("Changes approved and applied.")
@@ -504,13 +504,13 @@ def interactive_shell(
 ) -> int:
     conversation_id = conversation_id or str(uuid.uuid4())
     active_run: dict[str, Any] | None = None
-    print(f"ai-stack agent {__version__}")
+    print(f"Jarvis {__version__}")
     print(f"workspace: {workspace}")
     print("type /help for commands")
 
     while True:
         try:
-            line = read_shell_input("aistack> ").strip()
+            line = read_shell_input("jarvis> ").strip()
         except EOFError:
             print()
             return 0
@@ -610,8 +610,8 @@ def interactive_shell(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="aistack",
-        description="Terminal client for the durable ai-stack agent.",
+        prog="jarvis",
+        description="Jarvis: a standalone, open-model coding agent.",
     )
     parser.add_argument(
         "--url",
