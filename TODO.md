@@ -1,9 +1,9 @@
-# AI Stack TODO
+# Jarvis and Server TODO
 
 ## Agent core (completed)
 
 - [x] Implement streaming responses and responsive CLI UX
-- [x] Add local `aistack stream` command with `--simulate` fallback
+- [x] Add local `jarvis stream` command with `--simulate` fallback
 - [x] Add regression test for CLI stream behavior
 - [x] `search_code` tool (regex search with line numbers/context, bounded matches)
 - [x] Deterministic post-mutation verification (an edit is not finished until verified)
@@ -44,3 +44,35 @@
 
 - [ ] Scale infrastructure: GPU, quantized models, autoscaling runners
 - [ ] Harden safety, persona, and memory systems
+
+
+## Jarvis parity gates
+
+- [x] Standalone local agent loop with remote OpenAI-compatible inference
+- [x] Repository read/search, guarded patching, constrained commands, verification
+- [x] Optional explicit durable Server mode
+- [ ] Named, searchable, resumable local sessions with compaction
+- [ ] Local text/JSON/stream-JSON automation contract
+- [ ] Plan-only mode and layered permissions/configuration
+- [ ] Rich terminal editor, attachments, and per-hunk diff review
+- [ ] MCP, hooks, skills/plugins, and connector protocol
+- [ ] Worktree/branch workflows and safe parallel local agents
+- [ ] Keyring, named provider profiles, signed releases, and upgrade path
+
+## Server production gates
+
+- [ ] OIDC/OAuth, tenant isolation, scoped service tokens, and identity linking
+- [ ] Idempotent webhook/channel gateway with queued outbound delivery
+- [ ] OpenTelemetry traces, SLO dashboards, and per-run usage accounting
+- [ ] Quotas, admission control, circuit breakers, and capacity/load tests
+- [ ] Tamper-evident audit events, secret rotation, SBOM, and release signing
+- [ ] Retention/deletion, malware scanning, backup/restore, and DR drills
+- [ ] Stable SDK/webhook schemas and compatibility/deprecation tests
+
+## Channel roadmap
+
+- [ ] Shared channel message envelope and adapter SDK
+- [ ] Authenticated web app with event replay and approval UI
+- [ ] Telegram webhook adapter with linking, signatures, and idempotency
+- [ ] WhatsApp Cloud API adapter with linking, retries, and policy handling
+- [ ] Mobile client with OIDC, safe push notifications, and offline resume
