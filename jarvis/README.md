@@ -89,7 +89,7 @@ Run a one-shot task:
 
 ```bash
 jarvis "review auth.py for security defects"
-jarvis --read-only "review this repository"
+jarvis local --read-only "review this repository"
 jarvis local --max-steps 40 --timeout 300 "implement and verify the change"
 ```
 
