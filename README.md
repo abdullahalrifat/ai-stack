@@ -354,7 +354,7 @@ read-only runs stay on the single fast loop with no extra model calls.
 Every tunable value is controlled from `.env` — the single source of truth
 for the stack. Copy the tracked template (`.env.example`) and edit values
 there; `docker-compose.yaml` forwards every variable into the containers with
-defaults that match `agents/app/core/config.py`, so no other file needs
+defaults that match `server/app/core/config.py`, so no other file needs
 touching for routine tuning. The runtime model-loop defaults look like:
 
 | Variable | Default | Meaning |
@@ -729,27 +729,27 @@ agent image. From the agent container, execute from the mounted checkout so
 coverage measures the code under test:
 
 ```bash
-docker compose exec -w /workspace/ai-stack agents python -m pytest -q agents/tests --cov=app --cov-report=term-missing
+docker compose exec -w /workspace/ai-stack agents python -m pytest -q server/tests --cov=app --cov-report=term-missing
 ```
 
-Python dependencies are resolved in `agents/requirements.lock`;
-`agents/requirements.txt` remains the short direct-dependency list. Review
+Python dependencies are resolved in `server/requirements.lock`;
+`server/requirements.txt` remains the short direct-dependency list. Review
 dependency upgrades and update the lock intentionally. CI uses Python 3.12,
 enforces the current coverage floor, builds the TypeScript UI, and validates
 the Compose configuration.
 
-The agent service has a Compose build definition, so changes under `agents/`
+The agent service has a Compose build definition, so changes under `server/`
 are deployed with `docker compose build agents` followed by
 `docker compose up -d --force-recreate agents`.
 
 ### Agent regression evaluations
 
-Fixed benchmark prompts live in `agents/evals/cases.json`. Their schema is
+Fixed benchmark prompts live in `server/evals/cases.json`. Their schema is
 validated in the normal test suite. Run them against a live local stack when
 changing models, prompts, tools, or routing:
 
 ```bash
-python agents/evals/run_evals.py --base http://127.0.0.1:8000 --key "$AGENT_API_KEY"
+python server/evals/run_evals.py --base http://127.0.0.1:8000 --key "$AGENT_API_KEY"
 ```
 
 The checks catch known regressions; compare answers, tool traces, citations,
@@ -759,7 +759,7 @@ Evaluate the central router/planner separately inside an environment that has
 the agent's LiteLLM settings:
 
 ```bash
-cd agents
+cd server
 PYTHONPATH=. python evals/run_router_evals.py
 ```
 
@@ -878,7 +878,7 @@ amount of retrieved text sent to the local model.
 ## Project layout
 
 ```text
-agents/app/
+server/app/
   main.py          stable FastAPI/OpenAI-compatible entry point
   api/             routes, request/response schemas, authentication dependencies
   core/            configuration and shared exceptions
@@ -895,7 +895,7 @@ runs-ui/           main React/TypeScript coding-task application
 
 Keep HTTP routes, agent behavior, persistence, sandboxing, tools, memory, and
 frontends separate. The CLI communicates with the service only through the
-Runs HTTP/SSE API and must not import `agents/app`. New capabilities should be
+Runs HTTP/SSE API and must not import `server/app`. New capabilities should be
 added to the matching package rather than extending `main.py` with business
 logic.
 
