@@ -152,7 +152,7 @@ def test_list_files_tolerates_file_and_glob_arguments(workspace):
 
     expected = {
         "name": "__init__.py",
-        "path": "agents/app/llm/__init__.py",
+        "path": "server/app/llm/__init__.py",
         "type": "file",
     }
     assert file_result == [expected]
@@ -482,7 +482,7 @@ def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
         result = filesystem.inspect_test_environment.invoke({"directory": "."})
 
     assert result["test_directories"] == [
-        "agents/tests",
+        "server/tests",
         "cli/tests",
         "runs-ui/tests",
     ]
@@ -672,8 +672,8 @@ def test_write_file_scoped_to_allowed_roots(workspace):
 def test_write_file_does_not_clobber_same_basename_existing_file(workspace):
     """A write to a path that does not exist must CREATE that path, never be
     redirected onto a different existing file that shares its basename. This
-    is the regression that destroyed agents/app/agent/executor.py when a model
-    wrote to the non-existent agents/executor.py."""
+    is the regression that destroyed server/app/agent/executor.py when a model
+    wrote to the non-existent server/executor.py."""
     (workspace / "src").mkdir()
     existing = workspace / "src" / "deep" / "executor.py"
     existing.parent.mkdir(parents=True)
