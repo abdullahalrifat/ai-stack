@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: agents/requirements.lock
+          cache-dependency-path: server/requirements.lock
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Syntax and import safety
