@@ -1042,7 +1042,7 @@ def test_main_shorthand_automatically_allows_requested_edit(monkeypatch, tmp_pat
         ),
     )
 
-    assert main(["fix", "the tests"]) == 0
+    assert main(["run", "fix", "the tests"]) == 0
     assert calls[0]["allow_write"] is True
 
 
