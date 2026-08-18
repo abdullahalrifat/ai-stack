@@ -20,7 +20,7 @@ verification, sandboxing, and durable history remain in the agent service.
 The CLI is an independent Python package under `cli/`. Its runtime uses only
 the Python standard library and communicates with the agent service through
 the authenticated Runs HTTP API and Server-Sent Events. It does not import
-server code from `agents/`, and the agent container does not install the CLI.
+server code from `server/`, and the agent container does not install the CLI.
 
 Keeping both packages in this repository makes protocol changes atomic, but
 they no longer require lockstep deployment. Protocol v1 has a checked-in
