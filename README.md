@@ -904,6 +904,55 @@ owns them. Server, CLI, and Runs UI tests must all validate the same versioned
 artifact. A future repository split should distribute that artifact through a
 release pipeline instead of moving the canonical schema into either consumer.
 
+## Remote model providers
+
+The terminal remains a thin client of the durable Runs API. It can therefore
+connect from any computer to an AI Stack deployment without carrying provider
+credentials or implementing a second agent loop. The server owns routing,
+tools, retries, history, and approval; LiteLLM owns provider translation.
+
+Remote providers are optional and disabled by default. Configure either
+provider in `.env`, rebuild LiteLLM, and select the resulting alias through
+the existing workflow model settings:
+
+```dotenv
+# Claude through Anthropic's hosted API
+ANTHROPIC_MODEL=<current-Claude-model-id>
+ANTHROPIC_API_KEY=<secret>
+
+# Open-weight model deployed to a Hugging Face OpenAI-compatible endpoint
+HF_MODEL=<organization/model-or-endpoint-model-id>
+HF_INFERENCE_BASE_URL=https://<endpoint>.endpoints.huggingface.cloud/v1
+HF_API_KEY=<secret>
+```
+
+The generated aliases are `remote-claude` and `remote-hf`. Provider
+configuration is fail-closed: supplying only part of a provider's settings
+prevents LiteLLM from starting, rather than silently routing to an unintended
+model. Secrets are read by LiteLLM from its environment and are never written
+to the generated configuration.
+
+Claude itself is not deployable to Hugging Face. Use `remote-claude` for the
+Anthropic API and `remote-hf` for an open-weight model hosted by Hugging Face.
+Before assigning a remote model to an agent workflow, verify that the deployed
+model and serving engine support streaming and reliable OpenAI-style function
+calling.
+
+For access from another computer, expose the **agent API**, not LiteLLM,
+through a TLS reverse proxy or private VPN and configure:
+
+```bash
+export AISTACK_URL=https://agent.example.com
+export AISTACK_API_KEY=<agent-key>
+aistack doctor
+aistack run "review this repository"
+```
+
+The current remote server operates on workspaces mounted on that server.
+Secure execution against repositories that exist only on the client computer
+requires the planned outbound local-runner protocol; the CLI must never grant
+a remote server arbitrary access to local files implicitly.
+
 ## Model selection
 
 The Runs UI submits every new task and follow-up as `orchestrator`; it does not
