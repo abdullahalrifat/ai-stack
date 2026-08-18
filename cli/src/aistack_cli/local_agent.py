@@ -77,7 +77,8 @@ def resolve_local_config(args: Any) -> LocalConfig:
             "selected provider's API key."
         )
 
-    workspace = Path(args.workspace or Path.cwd()).expanduser().resolve()
+    workspace_value = getattr(args, "local_workspace", None) or getattr(args, "workspace", None)
+    workspace = Path(workspace_value or Path.cwd()).expanduser().resolve()
     if not workspace.is_dir():
         raise APIError(f"Local workspace is not a directory: {workspace}")
     return LocalConfig(
