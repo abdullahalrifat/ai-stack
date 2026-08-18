@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aistack-cli"
-description = "Terminal client for the durable ai-stack Runs API"
+description = "Standalone and remote terminal coding agent"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
