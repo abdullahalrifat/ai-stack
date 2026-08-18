@@ -17,7 +17,7 @@ verification, sandboxing, and durable history remain in the agent service.
 
 ## Package boundary
 
-The CLI is an independent Python package under `cli/`. Its runtime uses only
+The CLI is an independent Python package under `jarvis/`. Its runtime uses only
 the Python standard library and communicates with the agent service through
 the authenticated Runs HTTP API and Server-Sent Events. It does not import
 server code from `server/`, and the agent container does not install the CLI.
@@ -32,7 +32,7 @@ publishes compatible ranges and feature flags, and incompatible versions fail
 with an upgrade instruction.
 
 The canonical contract intentionally lives at the repository root, not under
-`cli/`: it defines a boundary jointly owned by the agent server, CLI, and Runs
+`jarvis/`: it defines a boundary jointly owned by the agent server, CLI, and Runs
 UI. If the CLI later moves to a separate repository, release automation should
 publish or copy this versioned artifact rather than creating a second source of
 truth.
@@ -181,13 +181,13 @@ The default endpoint is `http://127.0.0.1:8000`. The client requires the same
 From the repository root:
 
 ```bash
-./cli/scripts/install-aistack
+./jarvis/scripts/install-aistack
 ```
 
 This creates:
 
 ```text
-~/.local/bin/aistack -> /path/to/ai-stack/cli/scripts/aistack
+~/.local/bin/aistack -> /path/to/ai-stack/jarvis/scripts/aistack
 ```
 
 The installer:
@@ -211,13 +211,13 @@ as authentication and workspace mapping.
 Remove only the managed symlink with:
 
 ```bash
-./cli/scripts/install-aistack --uninstall
+./jarvis/scripts/install-aistack --uninstall
 ```
 
 The repository-local form remains available without installation:
 
 ```bash
-./cli/scripts/aistack
+./jarvis/scripts/aistack
 ```
 
 ## Interactive shell
@@ -523,7 +523,7 @@ does not participate in an `aistack` run.
 Run the installer and verify that `~/.local/bin` is on `PATH`:
 
 ```bash
-./cli/scripts/install-aistack
+./jarvis/scripts/install-aistack
 command -v aistack
 ```
 
@@ -644,8 +644,8 @@ server-side controls.
 Run the isolated CLI checks from the repository root:
 
 ```bash
-PYTHONPATH=cli/src python3 -m pytest -q cli/tests
-python3 -m compileall -q cli/src
+PYTHONPATH=jarvis/src python3 -m pytest -q jarvis/tests
+python3 -m compileall -q jarvis/src
 ```
 
 The package can also be installed in a virtual environment:
