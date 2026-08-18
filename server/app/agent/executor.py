@@ -49,7 +49,8 @@ from .completion import (
 from .completion import (
     record_tool_progress as _record_tool_progress,
 )
-from .context_budget import estimate_tokens, fit_user_context, summarize_tool_result
+from .context_budget import estimate_tokens, fit_user_context
+from .shared_runtime import ServerAgentRuntime
 from .dispatch import dispatch_experts, findings_context
 from .graph import transition_graph
 from .parser import parse_tool_arguments
@@ -1349,6 +1350,7 @@ def execute_plan(
 
     on_event = on_event or _noop_event
     should_cancel = should_cancel or (lambda: False)
+    shared_runtime = ServerAgentRuntime.for_state(state)
     if not getattr(state, "original_model", ""):
         state.original_model = state.model
     transition_graph(state, "analyzing", reason="execution started", on_event=on_event)
@@ -1537,7 +1539,7 @@ Execution brief:
 {_bounded_context(getattr(state, "execution_brief", ""), 3_500)}
 
 Recent conversation:
-{_bounded_context(state.history[-4:], 1_200)}
+{_bounded_context(shared_runtime.delta(state), 1_200)}
 
 Relevant memory:
 {_bounded_context(state.memories[:3], 1_000)}
@@ -1715,16 +1717,26 @@ explicitly instead of marking them complete without code.
 
         if _needs_compaction(messages, system_prompt, turn_tools):
             before = len(messages)
-            messages = _compact_history(
+            messages, saved_tokens = shared_runtime.compact(
                 messages,
-                state.model,
                 goal=f"{state.user_message}\nPlan: {state.plan}",
             )
             if len(messages) < before:
                 on_event(
                     "context_compacted",
-                    {"messages_before": before, "messages_after": len(messages)},
+                    {
+                        "messages_before": before,
+                        "messages_after": len(messages),
+                        "tokens_saved": saved_tokens,
+                    },
                 )
+
+        requested_output_tokens = (
+            getattr(state, "max_completion_tokens", None) or 3072
+        )
+        shared_runtime.reserve_turn(
+            "implementer", messages, turn_tools, requested_output_tokens
+        )
 
         message = (
             _stream_message(
@@ -1746,6 +1758,15 @@ explicitly instead of marking them complete without code.
                 tool_choice=tool_choice,
             )
         )
+
+        shared_runtime.record_turn(
+            "implementer",
+            state.model,
+            messages,
+            turn_tools,
+            getattr(message, "content", "") or "",
+        )
+        on_event("token_usage", shared_runtime.ledger.to_dict()["totals"])
 
         tool_calls = getattr(message, "tool_calls", None)
 
@@ -2166,7 +2187,7 @@ explicitly instead of marking them complete without code.
                     if tool_name in PATH_TOOLS:
                         path_denial_failures.clear()
 
-                result_text = summarize_tool_result(tool_name, result)
+                result_text = shared_runtime.summarize(tool_name, result)
 
                 messages.append(
                     {
