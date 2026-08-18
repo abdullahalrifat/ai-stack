@@ -23,7 +23,7 @@ MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_TOOL_OUTPUT_CHARS = 20_000
 DEFAULT_ALLOWED_COMMANDS = {
     "git", "pytest", "python", "python3", "npm", "node", "make",
-    "mypy", "ruff", "black", "flake8",
+    "mypy", "ruff", "black", "flake8", "rg",
 }
 MUTATING_GIT_SUBCOMMANDS = {
     "add", "am", "apply", "branch", "checkout", "cherry-pick", "clean",
@@ -41,6 +41,7 @@ class LocalConfig:
     workspace: Path
     allow_edits: bool = True
     accept_edits: bool = False
+    accept_commands: bool = False
     max_steps: int = 30
     timeout: float = 180.0
 
@@ -89,6 +90,7 @@ def resolve_local_config(args: Any) -> LocalConfig:
         workspace=workspace,
         allow_edits=bool(args.write),
         accept_edits=bool(args.accept_edits),
+        accept_commands=bool(args.accept_commands),
         max_steps=max(1, min(int(args.max_steps), 100)),
         timeout=max(10.0, float(args.timeout)),
     )
@@ -345,14 +347,17 @@ class LocalTools:
             argv = arguments.get("argv")
             if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
                 raise APIError("run_command argv must be an array of strings.")
-            return self._command(argv)
+            return self._command(argv, require_approval=True)
         raise APIError(f"Unknown local tool: {name}")
 
-    def _command(self, argv: list[str]) -> str:
+    def _command(self, argv: list[str], *, require_approval: bool = False) -> str:
         if not argv or argv[0] not in DEFAULT_ALLOWED_COMMANDS:
             raise APIError("Command is not in the local allowlist.")
         if argv[0] == "git" and len(argv) > 1 and argv[1] in MUTATING_GIT_SUBCOMMANDS:
             raise APIError("Mutating Git commands are not allowed through run_command.")
+        if require_approval and not self.config.accept_commands:
+            if not self.approval(f"Run command: {shlex.join(argv)}?"):
+                raise APIError("User rejected the proposed command.")
         try:
             result = subprocess.run(
                 argv,
