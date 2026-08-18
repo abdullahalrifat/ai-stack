@@ -1731,9 +1731,7 @@ explicitly instead of marking them complete without code.
                     },
                 )
 
-        requested_output_tokens = (
-            getattr(state, "max_completion_tokens", None) or 3072
-        )
+        requested_output_tokens = getattr(state, "max_completion_tokens", None) or 3072
         shared_runtime.reserve_turn(
             "implementer", messages, turn_tools, requested_output_tokens
         )
