@@ -47,25 +47,25 @@ class LocalConfig:
 
 
 def resolve_local_config(args: Any) -> LocalConfig:
-    provider = (args.provider or os.getenv("AISTACK_LOCAL_PROVIDER", "openai")).lower()
+    provider = (\n        args.provider\n        or os.getenv("JARVIS_PROVIDER")\n        or os.getenv("AISTACK_LOCAL_PROVIDER", "openai")\n    ).lower()
     if provider not in {"openai", "anthropic"}:
         raise APIError("Local provider must be 'openai' or 'anthropic'.")
 
-    model = args.model or os.getenv("AISTACK_LOCAL_MODEL")
+    model = args.model or os.getenv("JARVIS_MODEL") or os.getenv("AISTACK_LOCAL_MODEL")
     if not model:
         raise APIError("No local model configured. Pass --model or set AISTACK_LOCAL_MODEL.")
 
     if provider == "anthropic":
         base_url = (
             args.base_url
-            or os.getenv("AISTACK_LOCAL_BASE_URL")
+            or os.getenv("JARVIS_BASE_URL")\n            or os.getenv("AISTACK_LOCAL_BASE_URL")
             or "https://api.anthropic.com"
         )
         api_key = os.getenv(args.api_key_env or "ANTHROPIC_API_KEY", "")
     else:
-        base_url = args.base_url or os.getenv("AISTACK_LOCAL_BASE_URL", "")
+        base_url = (\n            args.base_url\n            or os.getenv("JARVIS_BASE_URL")\n            or os.getenv("AISTACK_LOCAL_BASE_URL", "")\n        )
         api_key = os.getenv(args.api_key_env or "OPENAI_API_KEY", "")
-    api_key = os.getenv("AISTACK_MODEL_API_KEY", api_key)
+    api_key = os.getenv("JARVIS_API_KEY", os.getenv("AISTACK_MODEL_API_KEY", api_key))
 
     if not base_url:
         raise APIError(
@@ -74,7 +74,7 @@ def resolve_local_config(args: Any) -> LocalConfig:
         )
     if not api_key:
         raise APIError(
-            "No model API key configured. Set AISTACK_MODEL_API_KEY or the "
+            "No model API key configured. Set JARVIS_API_KEY or the "
             "selected provider's API key."
         )
 
@@ -153,7 +153,7 @@ class ModelProvider:
                 ],
                 "tool_choice": "auto",
             },
-            {"Authorization": f"Bearer {self.config.api_key}"},
+            ({"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}),
             self.config.timeout,
             self.opener,
         )
@@ -487,3 +487,31 @@ def interactive_approval(description: str) -> bool:
     except EOFError:
         return False
     return answer in {"y", "yes"}
+
+
+def run_local_shell(config: LocalConfig) -> int:
+    """Interactive standalone Jarvis shell."""
+
+    tools = LocalTools(config, approval=interactive_approval)
+    print(f"Jarvis local agent — {config.model}")
+    print(f"workspace: {config.workspace}")
+    print("type /exit to quit")
+    while True:
+        try:
+            task = input("jarvis> ").strip()
+        except EOFError:
+            print()
+            return 0
+        except KeyboardInterrupt:
+            print()
+            continue
+        if not task:
+            continue
+        if task in {"/exit", "/quit"}:
+            return 0
+        try:
+            print(run_local_agent(task, config, tools=tools))
+        except KeyboardInterrupt:
+            print("\nInterrupted.")
+        except APIError as exc:
+            print(f"Error: {exc}")
