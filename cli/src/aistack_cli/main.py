@@ -693,6 +693,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Let the run continue after this client exits",
     )
 
+    local = subparsers.add_parser(
+        "local",
+        help="Run the coding agent locally against a remote model API",
+    )
+    local.add_argument("task", nargs="*", help="Task text; reads stdin when omitted")
+    local.add_argument("--provider", choices=("openai", "anthropic"))
+    local.add_argument("--base-url", help="Remote model API base URL")
+    local.add_argument("--model", help="Remote model identifier")
+    local.add_argument(
+        "--api-key-env",
+        help="Environment variable containing the model API key",
+    )
+    local.add_argument("--workspace", dest="local_workspace")
+    local.add_argument("--max-steps", type=int, default=30)
+    local.add_argument("--timeout", type=float, default=180)
+    local.add_argument(
+        "--accept-edits",
+        action="store_true",
+        help="Apply model-proposed patches without an interactive prompt",
+    )
+    local.add_argument(
+        "--read-only",
+        dest="write",
+        action="store_false",
+        default=True,
+        help="Disable the local patch tool",
+    )
+
     stream = subparsers.add_parser(
         "stream",
         help="Stream a local prompt with a lightweight local LLM UX",
@@ -732,6 +760,7 @@ def main(argv: list[str] | None = None) -> int:
         "discard",
         "doctor",
         "list",
+        "local",
         "projects",
         "resume",
         "run",
@@ -742,6 +771,32 @@ def main(argv: list[str] | None = None) -> int:
     if argv and not argv[0].startswith("-") and argv[0] not in commands:
         argv = ["run", *argv]
     args = build_parser().parse_args(argv)
+    if args.command == "local":
+        try:
+            from .local_agent import (
+                LocalTools,
+                interactive_approval,
+                resolve_local_config,
+                run_local_agent,
+            )
+
+            task = " ".join(args.task).strip()
+            if not task and not sys.stdin.isatty():
+                task = sys.stdin.read().strip()
+            if not task:
+                task = input("Task: ").strip()
+            if not task:
+                raise APIError("Task cannot be empty")
+            config = resolve_local_config(args)
+            tools = LocalTools(config, approval=interactive_approval)
+            print(run_local_agent(task, config, tools=tools))
+            return 0
+        except KeyboardInterrupt:
+            print("\nInterrupted.", file=sys.stderr)
+            return 130
+        except APIError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
     if args.command == "stream":
         return stream_prompt(args)
     try:
