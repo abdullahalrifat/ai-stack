@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aistack-cli"
+name = "jarvis-agent-cli"
 description = "Standalone and remote terminal coding agent"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,6 +11,8 @@ dependencies = []
 dynamic = ["version"]
 
 [project.scripts]
+jarvis = "aistack_cli.main:main"
+# Backward-compatible command during the migration.
 aistack = "aistack_cli.main:main"
 
 [tool.setuptools.packages.find]
