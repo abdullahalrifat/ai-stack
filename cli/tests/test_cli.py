@@ -1053,6 +1053,19 @@ def test_main_local_stream_simulate_mode(capsys):
     assert "[done in" in output.err
 
 
+def test_main_local_stream_fails_when_runtime_is_unavailable(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "aistack_cli.main._import_chat_stream_text",
+        lambda: None,
+    )
+
+    assert main(["stream", "never", "fabricate", "this"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "Use 'aistack run'" in output.err
+    assert "Quicksort" not in output.err
+
+
 def test_main_reports_configuration_errors_without_traceback(monkeypatch, capsys):
     monkeypatch.delenv("AISTACK_API_KEY", raising=False)
     monkeypatch.delenv("AGENT_API_KEY", raising=False)
