@@ -79,9 +79,7 @@ class ServerAgentRuntime:
             Usage(
                 agent=role,
                 model=model,
-                input_tokens=estimate_tokens(
-                    {"messages": messages, "tools": tools}
-                ),
+                input_tokens=estimate_tokens({"messages": messages, "tools": tools}),
                 output_tokens=estimate_tokens(output),
             )
         )
