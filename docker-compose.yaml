@@ -234,9 +234,9 @@ services:
   ## AI Agents
   ####################################################
   server:
-    build: ./agents
+    build: ./server
     image: ai-stack-server:latest
-    container_name: ai-agents
+    container_name: ai-stack-server
     restart: unless-stopped
 
     working_dir: /app
@@ -411,7 +411,7 @@ services:
 
     cap_drop:
       - ALL
-    # The agents container merges approved sandbox diffs directly into the
+    # The server container merges approved sandbox diffs directly into the
     # host bind-mounted workspace, which is owned by the host user's UID.
     # Without DAC_OVERRIDE the root process cannot write into those 775
     # subdirectories and approvals fail to land.
