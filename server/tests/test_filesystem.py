@@ -483,10 +483,10 @@ def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
 
     assert result["test_directories"] == [
         "server/tests",
-        "cli/tests",
+        "jarvis/tests",
         "runs-ui/tests",
     ]
-    assert result["configs"] == ["cli/pyproject.toml", "runs-ui/package.json"]
+    assert result["configs"] == ["jarvis/pyproject.toml", "runs-ui/package.json"]
     assert result["coverage_runs"] == [
         {"directory": "agents", "coverage_target": "app"},
         {"directory": "cli", "coverage_target": "aistack_cli"},
