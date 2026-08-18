@@ -1,72 +1,34 @@
-# Jarvis
+# AI Stack Server
 
-Jarvis is a standalone, open-model coding agent. The terminal runs its agent
-loop, repository inspection, planning, editing, command execution,
-verification, and review locally while inference can run on any
-OpenAI-compatible open-model endpoint.
+AI Stack Server is the durable, self-hosted control plane for open-model
+agents. It provides shared orchestration, remote workspaces, isolated runners,
+document retrieval, durable runs, approvals, and channel-ready APIs.
 
-The primary product is under `jarvis/` and does not require Docker or the
-server deployment:
+The standalone coding CLI now lives in
+[abdullahalrifat/jarvis](https://github.com/abdullahalrifat/jarvis). Shared
+token/context/orchestration primitives live in
+[abdullahalrifat/jarvis-core](https://github.com/abdullahalrifat/jarvis-core).
 
-```bash
-cd jarvis
-pipx install .
-export JARVIS_BASE_URL=https://your-open-model-endpoint/v1
-export JARVIS_MODEL=your-coding-model
-export JARVIS_API_KEY=your-key
-
-cd /path/to/project
-jarvis "review and improve this repository"
-```
-
-Running `jarvis` without a task starts the interactive local shell. Use
-`jarvis run ...` only when intentionally connecting to the optional durable
-server.
-
-## Optional server platform
-
-The `server/` tree and Docker Compose deployment are optional. They provide
-always-online integrations and infrastructure that do not belong in the
-standalone terminal:
-
-- Telegram, web, and future mobile adapters;
-- durable and detached background jobs;
-- shared PostgreSQL, Redis, and Qdrant state;
-- Open WebUI and Runs UI;
-- centralized research and document ingestion;
-- server-mounted workspaces and isolated sandbox runners.
-
-The server reuses the same model-facing principles, but Jarvis local mode
-operates directly on the user's repository and sends only model messages and
-tool results to the configured inference endpoint.
+Use **Jarvis** for direct work in a local checkout while inference runs locally
+or on a remote GPU. Deploy **Server** for durable/shared runs, remote
+workspaces, document pipelines, central policy, or Telegram, WhatsApp, web, and
+mobile clients.
 
 ## Repository components
 
-- **Jarvis** (`jarvis/`) is the primary standalone coding agent.
-- **Server** (`server/`) is the optional FastAPI control plane.
-- **Ollama/LiteLLM** provide optional local or routed inference.
-- **Runs UI** is the optional durable-task console.
-- **PostgreSQL, Redis, and Qdrant** support server-only persistence.
-- **SearXNG** supports optional server-side research.
+- **Server** (`server/`) is the FastAPI control plane and durable agent runtime.
+- **Runs UI** is the durable-task and approval console.
+- **Ollama/LiteLLM** provide local or routed inference.
+- **PostgreSQL, Redis, and Qdrant** provide durable state and retrieval.
+- **SearXNG** provides optional server-side research.
+- **jarvis-core** is installed as a separately versioned dependency.
 
-## Which product should I use?
+## Documentation
 
-Use **Jarvis** for everyday repository work: the agent loop and guarded tools
-run on your computer, while inference may run on a local model or a remote
-open-model GPU endpoint. Use **Server** only for durable/shared runs, remote
-workspaces, document pipelines, central governance, or Telegram/WhatsApp/web/
-mobile integrations.
-
-- [Install and use Jarvis](jarvis/README.md)
 - [Deploy and operate Server](server/README.md)
+- [Standalone Jarvis CLI](https://github.com/abdullahalrifat/jarvis)
+- [Shared Jarvis Core](https://github.com/abdullahalrifat/jarvis-core)
 - [Product and channel architecture](docs/product-architecture.md)
-- [World-class capability roadmap](jarvis/ROADMAP.md)
-
-Jarvis covers the core local coding loop today, but the roadmap intentionally
-lists the remaining parity gaps. Server has production-oriented durability and
-safety features, while its README defines the identity, observability, scale,
-security, and recovery gates that must be proven before describing a
-deployment as world-class.
 
 ## Agent routing and execution pipeline
 
