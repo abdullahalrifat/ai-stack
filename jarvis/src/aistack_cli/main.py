@@ -705,6 +705,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--api-key-env",
         help="Environment variable containing the model API key",
     )
+    local.add_argument(
+        "--no-api-key",
+        action="store_true",
+        help="Connect to a trusted private endpoint without authentication",
+    )
     local.add_argument("--workspace", dest="local_workspace")
     local.add_argument("--max-steps", type=int, default=30)
     local.add_argument("--timeout", type=float, default=180)
@@ -773,8 +778,10 @@ def main(argv: list[str] | None = None) -> int:
         "stream",
         "workspaces",
     }
-    if argv and not argv[0].startswith("-") and argv[0] not in commands:
-        argv = ["run", *argv]
+    if not argv:
+        argv = ["local"]
+    elif not argv[0].startswith("-") and argv[0] not in commands:
+        argv = ["local", *argv]
     args = build_parser().parse_args(argv)
     if args.command == "local":
         try:
@@ -783,16 +790,15 @@ def main(argv: list[str] | None = None) -> int:
                 interactive_approval,
                 resolve_local_config,
                 run_local_agent,
+                run_local_shell,
             )
 
             task = " ".join(args.task).strip()
             if not task and not sys.stdin.isatty():
                 task = sys.stdin.read().strip()
-            if not task:
-                task = input("Task: ").strip()
-            if not task:
-                raise APIError("Task cannot be empty")
             config = resolve_local_config(args)
+            if not task:
+                return run_local_shell(config)
             tools = LocalTools(config, approval=interactive_approval)
             print(run_local_agent(task, config, tools=tools))
             return 0
