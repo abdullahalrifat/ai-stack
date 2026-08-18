@@ -32,7 +32,7 @@ Open WebUI ---- Postgres / Redis / Qdrant
 - **Runs UI** is the live, streamed, reviewable task console for the agent.
 - **Sandbox runner** (`agent-runner`) executes the allowlisted commands in
   isolated containers with per-tier kernel limits.
-- **Terminal agent** (`cli/`) is an independently packaged client for the same
+- **Terminal agent** (`jarvis/`) is an independently packaged client for the same
   durable run API.
 - **SearXNG** provides private metasearch for agent web research; it is internal
   to the Docker network and never exposed as a public port.
@@ -511,12 +511,12 @@ storage or send it to any third party.
 
 ### Terminal agent
 
-`cli/` is an independently packaged terminal client for the same durable
+`jarvis/` is an independently packaged terminal client for the same durable
 `/runs` API.
 The server remains the only planner and tool executor; the client streams
 events, displays reviewable diffs, and sends explicit approve, discard, or
 cancel actions. See the complete
-[terminal-agent guide](cli/README.md) for command reference,
+[terminal-agent guide](jarvis/README.md) for command reference,
 automation formats, workspace mapping, troubleshooting, and security details.
 
 Current terminal capabilities include:
@@ -544,16 +544,16 @@ Current terminal capabilities include:
 From the repository:
 
 ```bash
-./cli/scripts/aistack doctor
-./cli/scripts/aistack
-./cli/scripts/aistack "review this repository and run its tests"
-./cli/scripts/aistack run --allow-edits "fix the failing tests"
+./jarvis/scripts/aistack doctor
+./jarvis/scripts/aistack
+./jarvis/scripts/aistack "review this repository and run its tests"
+./jarvis/scripts/aistack run --allow-edits "fix the failing tests"
 ```
 
 Install the launcher once to use it like other terminal agents:
 
 ```bash
-./cli/scripts/install-aistack
+./jarvis/scripts/install-aistack
 aistack
 ```
 
@@ -570,11 +570,11 @@ terminal asks whether to approve, discard, or leave it pending. The same
 actions are available non-interactively:
 
 ```bash
-./cli/scripts/aistack list
-./cli/scripts/aistack resume RUN_ID
-./cli/scripts/aistack approve RUN_ID
-./cli/scripts/aistack discard RUN_ID
-./cli/scripts/aistack cancel RUN_ID
+./jarvis/scripts/aistack list
+./jarvis/scripts/aistack resume RUN_ID
+./jarvis/scripts/aistack approve RUN_ID
+./jarvis/scripts/aistack discard RUN_ID
+./jarvis/scripts/aistack cancel RUN_ID
 ```
 
 The wrapper reads `AGENT_API_KEY` from the repository `.env` as data without
@@ -583,7 +583,7 @@ default local endpoint with `AISTACK_URL`. It maps the current host checkout
 to an allowed in-container workspace; use `--workspace /workspace/repository`
 or `--project NAME` when automatic mapping is ambiguous. The installer creates
 `~/.local/bin/aistack` without overwriting an existing command. Remove only
-that managed symlink with `./cli/scripts/install-aistack --uninstall`.
+that managed symlink with `./jarvis/scripts/install-aistack --uninstall`.
 The old `scripts/aistack` and `scripts/install-aistack` paths remain as
 compatibility shims.
 
@@ -888,7 +888,7 @@ server/app/
   tools/           registry, schemas, filesystem, constrained commands, web search
   memory/          Redis conversations and Qdrant vector memory
 contracts/         canonical OpenAPI contracts shared by server, CLI, and Runs UI
-cli/               independently packaged terminal client, tests, launchers, and guide
+jarvis/               independently packaged terminal client, tests, launchers, and guide
 scripts/aistack    compatibility shim for the former launcher location
 runs-ui/           main React/TypeScript coding-task application
 ```
