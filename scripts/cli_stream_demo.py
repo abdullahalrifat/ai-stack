@@ -1,7 +1,7 @@
 """Demo CLI streamer that prints incremental text from `chat_stream_text`.
 
 Run with:
-    PYTHONPATH=agents python3 scripts/cli_stream_demo.py "Explain quicksort briefly."
+    PYTHONPATH=server python3 scripts/cli_stream_demo.py "Explain quicksort briefly."
 
 If `openai` is not installed, this script falls back to a simulated stream so
 the responsive CLI UX can still be demonstrated.
