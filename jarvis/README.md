@@ -1,14 +1,14 @@
 # ai-stack terminal agent
 
-`aistack` is the terminal interface for the repository's durable server-side
+`jarvis` is the terminal interface for the repository's durable server-side
 agent. Running it without arguments opens an interactive shell:
 
 ```text
-$ aistack
+$ jarvis
 ai-stack agent 0.1.0
 workspace: /workspace/ai-stack
 type /help for commands
-aistack>
+jarvis>
 ```
 
 The terminal is a thin client. It does not run model-selected commands or
@@ -44,7 +44,7 @@ client and mature coding-agent terminals.
 
 ### Interactive terminal experience
 
-- Running `aistack` with no arguments opens a conversational shell.
+- Running `jarvis` with no arguments opens a conversational shell.
 - Prompts in one shell share a conversation until `/new` or `/clear`.
 - Command history persists under the XDG state directory.
 - Arrow-key history, Tab completion for slash commands, and backslash-based
@@ -109,12 +109,12 @@ client and mature coding-agent terminals.
   `pyproject.toml`, tests, coverage floor, wheel build, launcher, and installer.
 - `aistack doctor` validates authentication, workspace mapping, server protocol
   version, and advertised features.
-- The package builds as `aistack-cli` and exposes both the `aistack` console
+- The package builds as `jarvis-agent-cli` and exposes both the `jarvis` console
   entry point and `python -m aistack_cli`.
 
 ## Standalone local agent mode
 
-`aistack local` runs the agent loop, repository tools, approvals, and commands
+`jarvis` runs the agent loop, repository tools, approvals, and commands
 on the current computer. It calls only the configured remote model API and
 does not require Docker, PostgreSQL, Redis, Qdrant, LiteLLM, or the AI Stack
 server.
@@ -123,23 +123,23 @@ Use any OpenAI-compatible endpoint, including a Hugging Face Inference
 Endpoint, vLLM, LiteLLM, or a securely exposed Ollama-compatible gateway:
 
 ```bash
-export AISTACK_LOCAL_PROVIDER=openai
-export AISTACK_LOCAL_BASE_URL=https://example.endpoints.huggingface.cloud/v1
-export AISTACK_LOCAL_MODEL=organization/coding-model
-export AISTACK_MODEL_API_KEY=<secret>
+export JARVIS_PROVIDER=openai
+export JARVIS_BASE_URL=https://example.endpoints.huggingface.cloud/v1
+export JARVIS_MODEL=organization/coding-model
+export JARVIS_API_KEY=<secret>
 
 cd /path/to/repository
-aistack local "review this repository"
+jarvis "review this repository"
 ```
 
 Use Claude through Anthropic's native Messages API:
 
 ```bash
-export AISTACK_LOCAL_PROVIDER=anthropic
-export AISTACK_LOCAL_MODEL=<current-Claude-model-id>
+export JARVIS_PROVIDER=anthropic
+export JARVIS_MODEL=<current-Claude-model-id>
 export ANTHROPIC_API_KEY=<secret>
 
-aistack local "fix the failing tests"
+jarvis "fix the failing tests"
 ```
 
 The local runtime provides bounded file listing/reading/search, Git
@@ -152,15 +152,15 @@ Patches and commands require an interactive confirmation by default. Use
 `--accept-edits` or `--accept-commands` only in a trusted repository:
 
 ```bash
-aistack local --accept-edits --accept-commands "implement and test the change"
-aistack local --read-only "audit this repository"
+jarvis --accept-edits --accept-commands "implement and test the change"
+jarvis --read-only "audit this repository"
 ```
 
 Provider credentials are read from environment variables and are sent only to
 the configured model endpoint. The local runtime does not require
 `AISTACK_API_KEY`; that key remains specific to remote server mode.
 
-The existing `aistack run` command remains the durable remote mode. In that
+The existing `jarvis run` command remains the durable remote mode. In that
 mode the server owns orchestration and can operate only on workspaces mounted
 on the server.
 
@@ -232,7 +232,7 @@ aistack
 Enter an ordinary task at the prompt:
 
 ```text
-aistack> review the test configuration and explain any gaps
+jarvis> review the test configuration and explain any gaps
 Allow this task to edit files in a reviewable sandbox? [y/N]: n
 ```
 
@@ -264,7 +264,7 @@ Tab completes slash commands.
 Tasks that request code changes ask for edit permission before they start:
 
 ```text
-aistack> fix the failing tests
+jarvis> fix the failing tests
 Allow this task to edit files in a reviewable sandbox? [y/N]: y
 ```
 
@@ -285,7 +285,7 @@ Use detached mode only when the run should intentionally continue without the
 terminal:
 
 ```bash
-aistack run --detach "perform the long repository audit"
+jarvis run --detach "perform the long repository audit"
 ```
 
 In the interactive shell, `/detach` changes subsequent tasks and
@@ -305,7 +305,7 @@ automatically authorized and their completed sandbox diff is applied directly
 to the checkout:
 
 ```text
-aistack> fix the failing tests and verify the result
+jarvis> fix the failing tests and verify the result
 ```
 
 Use `--read-only` to disable edit and command tools. Use `--no-review` to keep
@@ -324,7 +324,7 @@ JSON modes leave diffs pending. `--allow-edits` and `--write` remain accepted
 as backward-compatible aliases for the default behavior:
 
 ```bash
-aistack run --allow-edits --no-review "prepare a reviewable patch"
+jarvis run --allow-edits --no-review "prepare a reviewable patch"
 ```
 
 ## One-shot commands
@@ -338,24 +338,24 @@ aistack "explain how requests are routed"
 The explicit form exposes run options:
 
 ```bash
-aistack run "run the tests and summarize failures"
-aistack run --allow-edits "repair the failing tests"
-aistack run --detach "perform a long repository audit"
-aistack run --no-review --allow-edits "prepare a reviewable patch"
+jarvis run "run the tests and summarize failures"
+jarvis run --allow-edits "repair the failing tests"
+jarvis run --detach "perform a long repository audit"
+jarvis run --no-review --allow-edits "prepare a reviewable patch"
 ```
 
 Read a task from standard input:
 
 ```bash
-printf '%s\n' "review this stack" | aistack run -
+printf '%s\n' "review this stack" | jarvis run -
 ```
 
 Continue a previous conversation:
 
 ```bash
 aistack --continue
-aistack run --continue "check the remaining issue"
-aistack run --conversation CONVERSATION_ID "check the remaining issue"
+jarvis run --continue "check the remaining issue"
+jarvis run --conversation CONVERSATION_ID "check the remaining issue"
 ```
 
 Continuation is workspace-scoped, so a conversation from another repository
@@ -419,19 +419,19 @@ Run states include:
 Text is the default human-readable output:
 
 ```bash
-aistack run "inspect the project"
+jarvis run "inspect the project"
 ```
 
 Emit only the final run object:
 
 ```bash
-aistack run --output json "inspect the project"
+jarvis run --output json "inspect the project"
 ```
 
 Emit each durable event as one JSON line:
 
 ```bash
-aistack run --output stream-json "inspect the project"
+jarvis run --output stream-json "inspect the project"
 ```
 
 Exit codes are suitable for scripts:
@@ -506,7 +506,7 @@ workspace roots.
 
 Use one orchestration owner for each task:
 
-- Use `aistack` or the Runs UI for autonomous repository review, debugging,
+- Use `jarvis` or the Runs UI for autonomous repository review, debugging,
   testing, edits, and approval.
 - Use Continue with the direct `coder` model for completion, questions, and
   small IDE-owned edits.
@@ -514,7 +514,7 @@ Use one orchestration owner for each task:
   agent around the server agent and creates competing tool loops.
 
 The terminal shell is the first-party interface for the server agent. Continue
-does not participate in an `aistack` run.
+does not participate in an `jarvis` run.
 
 ## Troubleshooting
 
@@ -633,7 +633,7 @@ start a new write task against the current repository state.
 - Applying a diff requires an explicit approval request.
 - Foreground CLI runs expire when their matching client lease is abandoned.
 - Detached mode must be selected explicitly when work should survive exit.
-- The installer refuses to overwrite another `aistack` command.
+- The installer refuses to overwrite another `jarvis` command.
 - Uninstall removes only the symlink created for this checkout.
 
 See the repository [security model](../README.md#security-model) for the
