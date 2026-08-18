@@ -49,6 +49,25 @@ tool results to the configured inference endpoint.
 - **PostgreSQL, Redis, and Qdrant** support server-only persistence.
 - **SearXNG** supports optional server-side research.
 
+## Which product should I use?
+
+Use **Jarvis** for everyday repository work: the agent loop and guarded tools
+run on your computer, while inference may run on a local model or a remote
+open-model GPU endpoint. Use **Server** only for durable/shared runs, remote
+workspaces, document pipelines, central governance, or Telegram/WhatsApp/web/
+mobile integrations.
+
+- [Install and use Jarvis](jarvis/README.md)
+- [Deploy and operate Server](server/README.md)
+- [Product and channel architecture](docs/product-architecture.md)
+- [World-class capability roadmap](jarvis/ROADMAP.md)
+
+Jarvis covers the core local coding loop today, but the roadmap intentionally
+lists the remaining parity gaps. Server has production-oriented durability and
+safety features, while its README defines the identity, observability, scale,
+security, and recovery gates that must be proven before describing a
+deployment as world-class.
+
 ## Agent routing and execution pipeline
 
 The agent presents one default `orchestrator` identity to clients while
