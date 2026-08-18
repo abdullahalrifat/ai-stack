@@ -1746,8 +1746,8 @@ def test_requires_workspace_inspection_recognizes_project_and_todo_wording():
 
 def test_explicit_workspace_paths_are_bounded_and_deduplicated():
     assert explicit_workspace_paths(
-        "Compare ./README.md with cli/README.md and README.md"
-    ) == ["README.md", "cli/README.md"]
+        "Compare ./README.md with jarvis/README.md and README.md"
+    ) == ["README.md", "jarvis/README.md"]
 
 
 @patch("app.agent.executor.registry")
@@ -1933,7 +1933,7 @@ def test_hybrid_analysis_synthesizes_after_sufficient_evidence(
     ]
     mock_registry.execute.side_effect = [
         [{"name": "README.md"}],
-        {"items": [{"path": "cli/ROADMAP.md", "content": "current and future work"}]},
+        {"items": [{"path": "jarvis/ROADMAP.md", "content": "current and future work"}]},
         {
             "results": [
                 {
