@@ -11,6 +11,8 @@ is only the model-visible transcript copy.
 import json
 import re
 
+from jarvis_core.tokens import estimate_tokens as core_estimate_tokens
+
 from app.core.config import (
     CONTEXT_OUTPUT_RESERVE_TOKENS,
     CONTEXT_TOKEN_LIMIT,
@@ -24,12 +26,8 @@ _ITEMS_TOOLS = {"list_files", "tree", "find_file"}
 
 
 def estimate_tokens(value: object) -> int:
-    """Conservative local estimate when an exact model tokenizer is unavailable."""
-    text = value if isinstance(value, str) else json.dumps(value, default=str)
-    # Code, JSON punctuation, and non-ASCII text generally tokenize more
-    # densely than prose, so use the larger of word-ish and character bounds.
-    pieces = len(re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE))
-    return max(pieces, (len(text) + 2) // 3)
+    """Use the shared provider-neutral estimator."""
+    return core_estimate_tokens(value)
 
 
 def fit_user_context(
