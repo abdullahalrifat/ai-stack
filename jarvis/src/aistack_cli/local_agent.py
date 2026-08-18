@@ -22,13 +22,40 @@ from .client import APIError
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_TOOL_OUTPUT_CHARS = 20_000
 DEFAULT_ALLOWED_COMMANDS = {
-    "git", "pytest", "python", "python3", "npm", "node", "make",
-    "mypy", "ruff", "black", "flake8", "rg",
+    "git",
+    "pytest",
+    "python",
+    "python3",
+    "npm",
+    "node",
+    "make",
+    "mypy",
+    "ruff",
+    "black",
+    "flake8",
+    "rg",
 }
 MUTATING_GIT_SUBCOMMANDS = {
-    "add", "am", "apply", "branch", "checkout", "cherry-pick", "clean",
-    "commit", "merge", "mv", "pull", "push", "rebase", "reset", "restore",
-    "revert", "rm", "stash", "switch", "tag",
+    "add",
+    "am",
+    "apply",
+    "branch",
+    "checkout",
+    "cherry-pick",
+    "clean",
+    "commit",
+    "merge",
+    "mv",
+    "pull",
+    "push",
+    "rebase",
+    "reset",
+    "restore",
+    "revert",
+    "rm",
+    "stash",
+    "switch",
+    "tag",
 }
 
 
@@ -55,15 +82,9 @@ def resolve_local_config(args: Any) -> LocalConfig:
     if provider not in {"openai", "anthropic"}:
         raise APIError("Local provider must be 'openai' or 'anthropic'.")
 
-    model = (
-        args.model
-        or os.getenv("JARVIS_MODEL")
-        or os.getenv("AISTACK_LOCAL_MODEL")
-    )
+    model = args.model or os.getenv("JARVIS_MODEL") or os.getenv("AISTACK_LOCAL_MODEL")
     if not model:
-        raise APIError(
-            "No model configured. Pass --model or set JARVIS_MODEL."
-        )
+        raise APIError("No model configured. Pass --model or set JARVIS_MODEL.")
 
     if provider == "anthropic":
         base_url = (
@@ -87,8 +108,7 @@ def resolve_local_config(args: Any) -> LocalConfig:
 
     if not base_url:
         raise APIError(
-            "No model endpoint configured. Pass --base-url or set "
-            "JARVIS_BASE_URL."
+            "No model endpoint configured. Pass --base-url or set " "JARVIS_BASE_URL."
         )
     if not api_key and not bool(getattr(args, "no_api_key", False)):
         raise APIError(
@@ -97,9 +117,8 @@ def resolve_local_config(args: Any) -> LocalConfig:
             "private endpoint."
         )
 
-    workspace_value = (
-        getattr(args, "local_workspace", None)
-        or getattr(args, "workspace", None)
+    workspace_value = getattr(args, "local_workspace", None) or getattr(
+        args, "workspace", None
     )
     workspace = Path(workspace_value or Path.cwd()).expanduser().resolve()
     if not workspace.is_dir():
@@ -116,6 +135,7 @@ def resolve_local_config(args: Any) -> LocalConfig:
         max_steps=max(1, min(int(args.max_steps), 100)),
         timeout=max(10.0, float(args.timeout)),
     )
+
 
 def _request_json(
     url: str,
@@ -169,19 +189,23 @@ class ModelProvider:
             {
                 "model": self.config.model,
                 "messages": messages,
-                "tools": [
-                    {"type": "function", "function": tool} for tool in tools
-                ],
+                "tools": [{"type": "function", "function": tool} for tool in tools],
                 "tool_choice": "auto",
             },
-            ({"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}),
+            (
+                {"Authorization": f"Bearer {self.config.api_key}"}
+                if self.config.api_key
+                else {}
+            ),
             self.config.timeout,
             self.opener,
         )
         try:
             message = response["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise APIError("OpenAI-compatible endpoint omitted choices[0].message.") from exc
+            raise APIError(
+                "OpenAI-compatible endpoint omitted choices[0].message."
+            ) from exc
         calls = []
         for call in message.get("tool_calls") or []:
             try:
@@ -231,7 +255,9 @@ class ModelProvider:
         )
         blocks = response.get("content") or []
         text = "".join(
-            str(block.get("text", "")) for block in blocks if block.get("type") == "text"
+            str(block.get("text", ""))
+            for block in blocks
+            if block.get("type") == "text"
         )
         calls = [
             {
@@ -356,7 +382,15 @@ class LocalTools:
         if name == "search_text":
             path = self._path(str(arguments.get("path", ".")))
             return self._command(
-                ["rg", "-n", "--hidden", "--glob", "!.git", str(arguments["pattern"]), str(path)]
+                [
+                    "rg",
+                    "-n",
+                    "--hidden",
+                    "--glob",
+                    "!.git",
+                    str(arguments["pattern"]),
+                    str(path),
+                ]
             )
         if name == "git_status":
             return self._command(["git", "status", "--short", "--branch"])
