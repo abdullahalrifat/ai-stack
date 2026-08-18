@@ -181,26 +181,24 @@ def simulated_stream(prompt: str):
 
 
 def stream_response(prompt: str, simulate: bool = False):
-    chat_stream_text = _import_chat_stream_text()
-    if simulate or chat_stream_text is None:
-        if not simulate:
-            print(
-                "[warning] local stream unavailable; using simulated stream",
-                file=sys.stderr,
-            )
+    """Stream a direct model response without ever fabricating a fallback."""
+
+    if simulate:
         yield from simulated_stream(prompt)
         return
+
+    chat_stream_text = _import_chat_stream_text()
+    if chat_stream_text is None:
+        raise APIError(
+            "Direct local streaming is unavailable in the standalone CLI. "
+            "Use 'aistack run' to connect to the configured remote agent service."
+        )
 
     messages = [{"role": "user", "content": prompt}]
     try:
         yield from chat_stream_text(messages)
     except Exception as exc:
-        print(
-            "[warning] real stream failed, falling back to simulated stream:",
-            exc,
-            file=sys.stderr,
-        )
-        yield from simulated_stream(prompt)
+        raise APIError(f"Direct model stream failed: {exc}") from exc
 
 
 def stream_prompt(args: argparse.Namespace) -> int:
