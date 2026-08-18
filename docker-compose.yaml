@@ -199,7 +199,7 @@ services:
         condition: service_started
       pipelines:
         condition: service_started
-      agents:
+      server:
         condition: service_healthy
 
     ports:
@@ -215,7 +215,7 @@ services:
 
       OPENAI_API_BASE_URL: http://litellm:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
-      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://agents:8000/v1
+      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8000/v1
       # Keys correspond positionally to OPENAI_API_BASE_URLS.  The agent
       # endpoint has its own key; leaving this blank makes the seeded
       # connection unusable.
@@ -233,9 +233,9 @@ services:
   ####################################################
   ## AI Agents
   ####################################################
-  agents:
+  server:
     build: ./agents
-    image: ai-agents:latest
+    image: ai-stack-server:latest
     container_name: ai-agents
     restart: unless-stopped
 
@@ -441,7 +441,7 @@ services:
       - runner
 
   agent-runner:
-    image: ai-agents:latest
+    image: ai-stack-server:latest
     container_name: agent-runner
     restart: unless-stopped
     command: ["uvicorn", "app.runner:app", "--host", "0.0.0.0", "--port", "8001"]
