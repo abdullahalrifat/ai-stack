@@ -114,3 +114,21 @@ Server code lives in `server/`. The shared protocol contract lives at
 `contracts/aistack-protocol-v1.json`. Jarvis may later move to a separate
 repository; Server must then consume a versioned published contract rather than
 copying it.
+
+
+## Shared runtime dependency
+
+Server consumes the separately versioned
+[jarvis-core](https://github.com/abdullahalrifat/jarvis-core) package for
+token accounting and enforcement, deterministic context compaction,
+content-addressed artifacts, delta context, and common multi-agent contracts.
+
+During development, install the core checkout before Server:
+
+```bash
+python -m pip install ../jarvis-core
+python -m pip install -r server/requirements.lock
+```
+
+CI requires a read-only `CROSS_REPO_TOKEN` repository secret until
+`jarvis-agent-core` is published to the selected private package registry.
