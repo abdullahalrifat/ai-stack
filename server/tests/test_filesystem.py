@@ -482,9 +482,9 @@ def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
         result = filesystem.inspect_test_environment.invoke({"directory": "."})
 
     assert result["test_directories"] == [
-        "server/tests",
         "jarvis/tests",
         "runs-ui/tests",
+        "server/tests",
     ]
     assert result["configs"] == ["jarvis/pyproject.toml", "runs-ui/package.json"]
     assert result["coverage_runs"] == [
