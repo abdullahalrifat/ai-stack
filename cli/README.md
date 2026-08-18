@@ -112,6 +112,58 @@ client and mature coding-agent terminals.
 - The package builds as `aistack-cli` and exposes both the `aistack` console
   entry point and `python -m aistack_cli`.
 
+## Standalone local agent mode
+
+`aistack local` runs the agent loop, repository tools, approvals, and commands
+on the current computer. It calls only the configured remote model API and
+does not require Docker, PostgreSQL, Redis, Qdrant, LiteLLM, or the AI Stack
+server.
+
+Use any OpenAI-compatible endpoint, including a Hugging Face Inference
+Endpoint, vLLM, LiteLLM, or a securely exposed Ollama-compatible gateway:
+
+```bash
+export AISTACK_LOCAL_PROVIDER=openai
+export AISTACK_LOCAL_BASE_URL=https://example.endpoints.huggingface.cloud/v1
+export AISTACK_LOCAL_MODEL=organization/coding-model
+export AISTACK_MODEL_API_KEY=<secret>
+
+cd /path/to/repository
+aistack local "review this repository"
+```
+
+Use Claude through Anthropic's native Messages API:
+
+```bash
+export AISTACK_LOCAL_PROVIDER=anthropic
+export AISTACK_LOCAL_MODEL=<current-Claude-model-id>
+export ANTHROPIC_API_KEY=<secret>
+
+aistack local "fix the failing tests"
+```
+
+The local runtime provides bounded file listing/reading/search, Git
+status/diff, unified-patch application, and allowlisted shell-free command
+execution. Paths are resolved against the selected workspace and symlink
+escapes are rejected. Mutating Git subcommands are never available to the
+model.
+
+Patches and commands require an interactive confirmation by default. Use
+`--accept-edits` or `--accept-commands` only in a trusted repository:
+
+```bash
+aistack local --accept-edits --accept-commands "implement and test the change"
+aistack local --read-only "audit this repository"
+```
+
+Provider credentials are read from environment variables and are sent only to
+the configured model endpoint. The local runtime does not require
+`AISTACK_API_KEY`; that key remains specific to remote server mode.
+
+The existing `aistack run` command remains the durable remote mode. In that
+mode the server owns orchestration and can operate only on workspaces mounted
+on the server.
+
 ## Prerequisites
 
 Start the stack and confirm that the agent service is healthy:
