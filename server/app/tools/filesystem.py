@@ -361,7 +361,7 @@ def resolve_path(path: str, *, unique_basename: bool = True) -> Path:
     # If the requested path doesn't exist as written, try a safe workspace-wide
     # lookup for a unique match with the same basename. This helps small models
     # that emit a short path like `src` when the repository's nested layout is
-    # `cli/src` or similar. Only accept a single unambiguous candidate. Limit
+    # `jarvis/src` or similar. Only accept a single unambiguous candidate. Limit
     # the search breadth to avoid long-running file system scans.
     #
     # Writes disable this: a write to a path that does not exist is a request to
