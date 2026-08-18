@@ -488,8 +488,8 @@ def test_inspect_test_environment_discovers_package_scoped_tests(workspace):
     ]
     assert result["configs"] == ["jarvis/pyproject.toml", "runs-ui/package.json"]
     assert result["coverage_runs"] == [
-        {"directory": "server", "coverage_target": "app"},
         {"directory": "jarvis", "coverage_target": "aistack_cli"},
+        {"directory": "server", "coverage_target": "app"},
     ]
 
 
