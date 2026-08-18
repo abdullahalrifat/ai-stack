@@ -81,12 +81,12 @@ def resolve_api_key(explicit: str | None = None) -> str:
 
 
 def _history_path() -> Path:
-    configured = os.getenv("AISTACK_HISTORY_FILE")
+    configured = os.getenv("JARVIS_HISTORY_FILE") or os.getenv("AISTACK_HISTORY_FILE")
     if configured:
         return Path(configured).expanduser()
     state_home = os.getenv("XDG_STATE_HOME")
     base = Path(state_home).expanduser() if state_home else Path.home() / ".local/state"
-    return base / "aistack/history"
+    return base / "jarvis/history"
 
 
 def configure_shell_history() -> None:
