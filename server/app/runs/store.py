@@ -181,6 +181,48 @@ class RunStore:
             winner = cursor.fetchone()
         return str(winner["run_id"]), False
 
+
+    def record_change_transaction(
+        self,
+        transaction_id: str,
+        run_id: str,
+        base_revision: str,
+        applied_revision: str,
+        approved_patch: str,
+    ) -> None:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO agent_change_transactions
+                   (id, run_id, base_revision, applied_revision, approved_patch, status)
+                   VALUES (%s, %s, %s, %s, %s, 'applied')""",
+                (
+                    transaction_id,
+                    run_id,
+                    base_revision,
+                    applied_revision,
+                    approved_patch,
+                ),
+            )
+
+    def get_change_transaction(self, transaction_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM agent_change_transactions WHERE id=%s",
+                (transaction_id,),
+            )
+            return cursor.fetchone()
+
+    def revert_change_transaction(self, transaction_id: str) -> None:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_change_transactions
+                   SET status='reverted', reverted_at=NOW()
+                   WHERE id=%s AND status='applied'""",
+                (transaction_id,),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Change transaction is not applied")
+
     def append_event(
         self, run_id: str, event_type: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
