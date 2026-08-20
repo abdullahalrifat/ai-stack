@@ -1589,6 +1589,7 @@ explicitly instead of marking them complete without code.
     system_prompt = executor_prompt(
         getattr(state, "prompt_mode", "code"), research_mode
     )
+    system_prompt += instruction_prompt(state.workspace)
     task_context, budget = fit_user_context(system_prompt, tools, task_context)
     if budget["trimmed"]:
         on_event("context_budgeted", budget)
