@@ -83,3 +83,7 @@ class ImageGenerationRequest(BaseModel):
     height: int = 1024
     steps: int = 28
     seed: int = -1
+
+
+class HunkApprovalRequest(BaseModel):
+    hunk_ids: list[str]
