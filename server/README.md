@@ -111,7 +111,7 @@ are documented in
 ## Repository boundary
 
 Server code lives in `server/`. The shared protocol contract lives at
-`contracts/aistack-protocol-v1.json`. Jarvis may later move to a separate
+`contracts/jarvis-protocol-v1.json`. Jarvis may later move to a separate
 repository; Server must then consume a versioned published contract rather than
 copying it.
 
