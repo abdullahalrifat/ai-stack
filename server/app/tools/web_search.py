@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 import requests
 from langchain.tools import tool
+from jarvis_core import citation_context, normalize_search_results
 
 from app.core.config import (
     WEB_SEARCH_ENABLED,
@@ -13,8 +14,8 @@ from app.core.config import (
 
 # Search snippets are evidence, not a document dump.  A small, focused set
 # keeps local-model prompts inside their usable context window.
-MAX_RESULTS = 3
-MAX_RESULT_CONTENT_CHARS = 350
+MAX_RESULTS = 8
+MAX_RESULT_CONTENT_CHARS = 1_200
 MAX_QUERY_LENGTH = 500
 
 
@@ -40,7 +41,7 @@ def web_search(query: str, domains: list[str] | None = None):
             timeout=WEB_SEARCH_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
-        results = []
+        raw_results = []
         for item in response.json().get("results", []):
             url = item.get("url", "")
             hostname = (urlparse(url).hostname or "").lower()
@@ -49,16 +50,20 @@ def web_search(query: str, domains: list[str] | None = None):
                 for domain in domains
             ):
                 continue
-            results.append(
+            raw_results.append(
                 {
                     "title": item.get("title", "Untitled"),
                     "url": url,
-                    "content": item.get("content", "")[:MAX_RESULT_CONTENT_CHARS],
-                    "published_date": item.get("publishedDate"),
+                    "snippet": item.get("content", "")[:MAX_RESULT_CONTENT_CHARS],
+                    "published_at": item.get("publishedDate"),
+                    "source": hostname,
                 }
             )
-            if len(results) >= MAX_RESULTS:
-                break
-        return {"query": query, "results": results}
+        results = normalize_search_results(raw_results, limit=MAX_RESULTS)
+        return {
+            "query": query,
+            "results": [item.to_dict() for item in results],
+            "citation_context": citation_context(results),
+        }
     except requests.RequestException as exc:
         return {"error": f"Web search failed: {exc.__class__.__name__}"}
