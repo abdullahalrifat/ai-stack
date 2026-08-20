@@ -63,6 +63,7 @@ from .protocol import (
 )
 from .schemas import (
     ChatRequest,
+    ClaimVerificationRequest,
     ExecuteRequest,
     ImageGenerationRequest,
     HunkApprovalRequest,
@@ -102,6 +103,17 @@ def capabilities():
         "features": FEATURES,
         "deprecations": [],
     }
+
+
+
+@router.post("/evidence/verify", dependencies=[Depends(verify_api_key)])
+async def verify_evidence(request: ClaimVerificationRequest):
+    from app.core.claim_verification import verify_claims
+
+    try:
+        return {"claims": await run_in_threadpool(verify_claims, request.claims)}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(400, f"Invalid claim evidence: {exc}") from exc
 
 
 @router.get("/metrics/runs", dependencies=[Depends(verify_api_key)])
