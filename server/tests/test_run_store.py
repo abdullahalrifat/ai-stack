@@ -65,7 +65,9 @@ def test_initialize_applies_versioned_migrations_once():
     )
     assert (MIGRATIONS_DIR / "001_initial.sql").is_file()
     assert (MIGRATIONS_DIR / "002_client_leases.sql").is_file()
-    assert (MIGRATIONS_DIR / "003_client_lease_sweeping.sql").is_file()\n    assert (MIGRATIONS_DIR / "004_channel_events.sql").is_file()\n    assert (MIGRATIONS_DIR / "005_change_transactions.sql").is_file()
+    assert (MIGRATIONS_DIR / "003_client_lease_sweeping.sql").is_file()
+    assert (MIGRATIONS_DIR / "004_channel_events.sql").is_file()
+    assert (MIGRATIONS_DIR / "005_change_transactions.sql").is_file()
 
 
 def test_heartbeat_requires_the_current_worker():
