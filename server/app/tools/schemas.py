@@ -521,7 +521,7 @@ TOOL_SCHEMAS = [
                 "required": ["file_path"],
             },
         },
-    },,
+    },
     {
         "type": "function",
         "function": {
@@ -540,7 +540,7 @@ TOOL_SCHEMAS = [
                 "required": ["server", "tool_name", "arguments"],
             },
         },
-    }
+    },
 ]
 
 
