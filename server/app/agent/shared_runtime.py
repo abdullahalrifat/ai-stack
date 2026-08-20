@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 from jarvis_core import (
+    ArtifactResolver,
     MemoryArtifactStore,
     TokenBudget,
     TokenLedger,
+    TokenReservation,
     Usage,
     compact_messages,
     delta_context,
@@ -60,8 +62,8 @@ class ServerAgentRuntime:
         messages: object,
         tools: object,
         max_output_tokens: int,
-    ) -> None:
-        self.ledger.reserve(
+    ) -> TokenReservation:
+        return self.ledger.reserve(
             role,
             estimate_tokens({"messages": messages, "tools": tools}),
             max_output_tokens,
@@ -69,19 +71,30 @@ class ServerAgentRuntime:
 
     def record_turn(
         self,
+        reservation: TokenReservation,
         role: str,
         model: str,
         messages: object,
         tools: object,
         output: object,
+        provider_usage: Mapping[str, int] | None = None,
     ) -> None:
-        self.ledger.record(
-            Usage(
-                agent=role,
-                model=model,
-                input_tokens=estimate_tokens({"messages": messages, "tools": tools}),
-                output_tokens=estimate_tokens(output),
-            )
+        usage = TokenLedger.usage_from_provider(role, model, provider_usage) or Usage(
+            agent=role,
+            model=model,
+            input_tokens=estimate_tokens({"messages": messages, "tools": tools}),
+            output_tokens=estimate_tokens(output),
+        )
+        self.ledger.commit(reservation, usage)
+
+    def refund_turn(self, reservation: TokenReservation) -> None:
+        self.ledger.refund(reservation)
+
+    def read_artifact(
+        self, uri: str, *, offset: int = 0, limit: int | None = None
+    ) -> dict[str, object]:
+        return ArtifactResolver(self.artifacts).read(
+            uri, offset=offset, limit=limit
         )
 
     def compact(
@@ -106,7 +119,9 @@ class ServerAgentRuntime:
             max_chars=6_000,
             artifact_store=self.artifacts,
         )
-        return __import__("json").dumps(summary, ensure_ascii=False, default=str)
+        import json
+
+        return json.dumps(summary, ensure_ascii=False, default=str)
 
     def delta(self, state) -> dict[str, Any]:
         current = {
