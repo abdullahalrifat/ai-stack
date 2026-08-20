@@ -16,6 +16,7 @@ from qdrant_client.models import (
     MatchText,
     MatchValue,
     PayloadSchemaType,
+    PointIdsList,
 )
 
 from .embeddings import create_embedding
@@ -191,8 +192,22 @@ def _section_adjustment(query: str, payload: dict) -> float:
     return 0.0
 
 
+def _expired(payload: dict) -> bool:
+    value = payload.get("expires_at")
+    if not value:
+        return False
+    try:
+        expiry = datetime.fromisoformat(str(value))
+    except ValueError:
+        return True
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= expiry
+
+
 def _rerank(query: str, results: list[dict], limit: int) -> list[dict]:
     """Blend semantic, lexical, and structural relevance."""
+    results = [result for result in results if not _expired(result["memory"])]
     for result in results:
         payload = result["memory"]
         semantic = float(result.get("semantic_score", result.get("score", 0)))
@@ -406,3 +421,33 @@ def clear_memory():
     qdrant.delete_collection(COLLECTION)
     _collection_exists.cache_clear()
     _ensure_scope_index.cache_clear()
+
+
+
+def update_memory(
+    memory_id: str,
+    *,
+    text: str | None = None,
+    expires_at: str | None = None,
+    scope: str | None = None,
+) -> None:
+    payload = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if text is not None:
+        payload["text"] = text
+    if expires_at is not None:
+        datetime.fromisoformat(expires_at)
+        payload["expires_at"] = expires_at
+    if scope is not None:
+        payload["scope"] = scope
+    qdrant.set_payload(
+        collection_name=COLLECTION,
+        payload=payload,
+        points=[memory_id],
+    )
+
+
+def delete_memory(memory_id: str) -> None:
+    qdrant.delete(
+        collection_name=COLLECTION,
+        points_selector=PointIdsList(points=[memory_id]),
+    )
