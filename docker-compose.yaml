@@ -234,7 +234,10 @@ services:
   ## AI Agents
   ####################################################
   server:
-    build: ./server
+    build:
+      context: ./server
+      secrets:
+        - core_repo_token
     image: ai-stack-server:latest
     container_name: ai-stack-server
     restart: unless-stopped
@@ -502,6 +505,10 @@ services:
 
     networks:
       - ai
+
+secrets:
+  core_repo_token:
+    environment: CROSS_REPO_TOKEN
 
 networks:
   ai:
