@@ -31,6 +31,7 @@ from ..core.config import (
 )
 from ..core.evidence import evidence_prompt
 from ..core.exceptions import RunCancelled
+from ..core.instructions import instruction_prompt
 from ..core.permissions import PermissionPolicy, permissions_context, policy_for
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from ..tools.filesystem import current_workspace, resolve_path
