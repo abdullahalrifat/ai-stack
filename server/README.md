@@ -1,160 +1,153 @@
 # AI Stack Server
 
-The Server is the optional always-online control plane for Jarvis. It is not
-required to install or use the standalone Jarvis CLI.
+Server is the optional always-online control plane for Jarvis. It is not
+required to install or use the standalone CLI.
 
-Use Server when the work must be durable, shared, centrally governed, or
-reachable from clients that cannot safely run repository tools themselves,
-such as Telegram, WhatsApp, a browser, or a mobile app.
+## When to use each product
 
-## When to use it
-
-| Scenario | Recommended product |
+| Scenario | Product |
 | --- | --- |
-| Work directly in a local checkout | Jarvis CLI |
-| Use a remote GPU while keeping tools local | Jarvis CLI |
-| Continue work after a laptop disconnects | Server |
-| Queue long research/document jobs | Server |
-| Provide one agent backend to multiple users or channels | Server |
-| Enforce shared workspace, model, and permission policy | Server |
-| Store durable conversations, events, documents, and approvals | Server |
+| Work directly in a local checkout | Jarvis |
+| Keep tools/code local and use a remote GPU | Jarvis |
+| Continue after a laptop disconnects | Server |
+| Queue long research or document jobs | Server |
+| Support multiple users or channels | Server |
+| Enforce shared workspace/model/tool policy | Server |
+| Keep durable events, documents, and approvals | Server |
 
-The boundary is deliberate: Jarvis owns local tools and local approvals. Server
-owns remote workspaces, durable orchestration, shared state, queues, channel
-identity, and central policy.
+Jarvis owns local tools and approvals. Server owns remote mounted workspaces,
+durable orchestration, queues, shared state, channel identity, and central
+policy. Both consume `jarvis-agent-core`, but do not share tool implementations
+or storage policy.
 
-## Run the development stack
-
-From the repository root:
+## Development deployment
 
 ```bash
 cp .env.example .env
+docker compose config
 docker compose up -d
 docker compose ps
 ```
 
-The Compose stack is for Server development and deployment. A Jarvis-only user
-does not run it. In production, set `ARTIFACT_ROOT` to a persistent mounted volume; large tool results are content-addressed there and remain retrievable after process restarts.
+In production, use long unique service keys, mount `ARTIFACT_ROOT` on
+persistent storage, expose the API through TLS/VPN, and mount only workspaces
+the agent may access.
 
-Configure a model route before production use. Server can call an
-OpenAI-compatible open-weight model hosted by Hugging Face, vLLM, TGI, LiteLLM,
-or another controlled endpoint. Keep provider credentials on the server and
-never place them in a browser, mobile app, or bot client.
-
-Confirm the API and protocol from Jarvis:
+Configure Jarvis as a Server client:
 
 ```bash
-export JARVIS_SERVER_URL=http://127.0.0.1:8000
-export JARVIS_SERVER_API_KEY=your-agent-api-key
+export JARVIS_SERVER_URL=https://agent.example.com
+export JARVIS_SERVER_API_KEY=your-agent-key
 jarvis doctor
+jarvis run "analyze this project" --detach
 ```
 
-## Search, model routing, traces, evaluations, and MCP
+Provider credentials stay on Server. Clients and channel adapters must never
+receive them.
 
-Server and standalone Jarvis share the same evidence boundary through
-`jarvis-agent-core`. Server already provides durable conversations and
-repository analysis; it now also normalizes web results into bounded,
-citation-aware evidence and marks fetched pages as untrusted content.
+## Models and routing
 
-Configure SearXNG to let agents answer current day-to-day questions:
+Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible
+remote endpoints such as Hugging Face Inference Endpoints, vLLM, or TGI.
+`JARVIS_MODEL_PROFILES_JSON` optionally describes model capabilities; model
+`auto` selects an available profile satisfying the requested capabilities.
 
-```bash
+Routing uses one front-facing orchestrator identity and validated internal
+workflows for quick, code, research, finance, deep, and vision tasks. Router
+output cannot invent a model, grant tools, expand a workspace, or bypass
+approval.
+
+## Search and current answers
+
+```dotenv
 WEB_SEARCH_ENABLED=true
 WEB_SEARCH_URL=http://searxng:8080/search
+WEB_SEARCH_TIMEOUT_SECONDS=15
+WEB_FETCH_MAX_BYTES=8000000
 ```
 
-The included SearXNG service may enable Google and other engines. Jarvis does
-not require a paid Google Search API.
+The included SearXNG service can use Google or other engines enabled by its
+administrator; no paid Google Search API is required. Server normalizes bounded
+results through Core, retains source URLs, and labels snippets/pages as
+untrusted. `web_fetch` supports public HTML and PDF sources and enforces
+download and model-context bounds.
 
-Optional capability-aware routing uses `JARVIS_MODEL_PROFILES_JSON`. Passing
-model `auto` selects an available tool-capable profile. Redacted run traces
-are content-addressed with other durable artifacts, and
-`server/evals/platform.py` replays JSON eval fixtures.
+Research and finance policy requires external evidence. Search can still be
+partial or wrong; consequential claims must prefer primary sources and report
+gaps or contradictions.
 
-Administrators can expose fixed MCP stdio servers with
-`JARVIS_MCP_SERVERS_JSON`. Each entry is an argv array; model output can
-select a configured alias and tool, but cannot select an executable or invoke
-a shell.
+## Shared runtime, traces, and evaluations
 
-## What Server provides
+Server installs `jarvis-agent-core>=0.2,<0.3` for token enforcement,
+compaction, artifacts, evidence, capability routing, recovery, redacted traces,
+evaluations, and selective multi-agent contracts.
 
-- FastAPI control plane and OpenAI-compatible entry points;
-- durable runs, conversations, events, cancellation, replay, and client leases;
-- PostgreSQL state, Redis coordination, and Qdrant retrieval;
-- workflow routing for code, research, finance, deep reasoning, and vision;
-- document ingestion, OCR, hybrid retrieval, and evidence provenance;
-- isolated command execution and disposable Git worktrees;
-- explicit approval/discard for write diffs;
-- multi-expert dispatch and bounded tool execution;
-- Runs UI and optional Open WebUI integration;
-- versioned CLI/server protocol and advertised capabilities.
-
-## Production deployment checklist
-
-The current stack is a strong self-hosted foundation, but “world-class server”
-is an operational standard, not a label. A production release should prove all
-of the following:
-
-- **Identity:** OIDC/OAuth users, tenant isolation, scoped service tokens, and
-  channel-to-user identity mapping.
-- **Authorization:** centralized policy for tools, paths, network access,
-  connectors, models, budgets, and approvals.
-- **Reliability:** multi-replica tests, idempotent APIs and webhooks, retries
-  with dead-letter queues, graceful draining, and disaster recovery drills.
-- **Security:** signed webhooks, secret rotation, encrypted transport/storage,
-  isolated runners, dependency/SBOM scanning, and tamper-evident audit events.
-- **Observability:** OpenTelemetry traces, structured logs, SLO dashboards,
-  queue/lease saturation metrics, and per-run token/latency accounting.
-- **Scale:** admission control, tenant quotas, model fallback/circuit breakers,
-  backpressure, capacity tests, and autoscaled model/runner pools.
-- **Data governance:** retention/deletion policy, backups with restore tests,
-  export, regional controls where needed, and attachment malware scanning.
-- **Developer platform:** stable API/SDK, webhook/event schemas, compatibility
-  tests, migrations, release notes, and deprecation policy.
-- **Quality:** offline replay evals, adversarial tool/prompt-injection tests,
-  model-route benchmarks, load tests, and canary/rollback procedures.
-
-Until these gates have passing evidence, describe Server as production-oriented
-or a self-hosted platform—not as fully production-certified.
-
-## Channel integrations
-
-Telegram, WhatsApp, web, and mobile clients should be thin channel adapters.
-They must not duplicate the agent loop or receive model/provider secrets.
-
-```text
-Channel webhook or app
-        -> authenticated channel adapter
-        -> Server Runs API
-        -> durable agent execution
-        -> event stream / outbound delivery worker
-        -> channel reply
-```
-
-The detailed contract, security rules, delivery lifecycle, and staged rollout
-are documented in
-[docs/product-architecture.md](../docs/product-architecture.md).
-
-## Repository boundary
-
-Server code lives in `server/`. The shared protocol contract lives at
-`contracts/jarvis-protocol-v1.json`. Jarvis may later move to a separate
-repository. Server and Jarvis consume this versioned contract and share runtime primitives through the published `jarvis-agent-core` library.
-
-
-## Shared runtime dependency
-
-Server consumes the separately versioned
-[jarvis-core](https://github.com/abdullahalrifat/jarvis-core) package for
-token accounting and enforcement, deterministic context compaction,
-content-addressed artifacts, delta context, and common multi-agent contracts.
-
-During development, install the core checkout before Server:
+For unreleased local development:
 
 ```bash
 python -m pip install ../jarvis-core
-python -m pip install -r server/requirements.lock
+python -m pip install -r server/requirements.txt
 ```
 
-CI requires a read-only `CROSS_REPO_TOKEN` repository secret until
-`jarvis-agent-core` is published to the selected private package registry.
+For normal CI/release, publish Core first. No cross-repository Git token is
+required after the dependency is available from the configured package index.
+
+Redacted trace artifacts are retained under the configured artifact root.
+`server/evals/platform.py` replays recorded outputs against JSON cases; the
+existing live suites under `server/evals/` cover routing and agent regressions.
+
+## MCP
+
+Administrators may configure fixed stdio commands:
+
+```dotenv
+JARVIS_MCP_SERVERS_JSON={"filesystem":["python","-m","your_mcp_server"]}
+```
+
+The model chooses only a configured alias and tool name. It cannot choose the
+executable or invoke a shell. MCP output remains untrusted and cannot broaden
+Server permissions. Persistent lifecycle, HTTP/OAuth transports, per-tool
+policy, and health supervision remain future work.
+
+## Server capabilities
+
+- durable runs, conversations, events, replay, cancellation, and client leases;
+- PostgreSQL state, Redis coordination, Qdrant retrieval, and artifact storage;
+- document ingestion, OCR, hybrid retrieval, and source provenance;
+- isolated commands and disposable Git worktrees;
+- explicit approval/discard for write diffs;
+- capability routing, bounded recovery, context compaction, and token budgets;
+- multi-expert analysis for selected complex requests;
+- Runs UI and OpenAI-compatible entry points;
+- web evidence and administrator-selected MCP tools;
+- versioned client protocol and advertised feature flags.
+
+## Production gates
+
+Before describing a deployment as production-certified, prove:
+
+- OIDC/OAuth identities, tenant isolation, scoped tokens, and central policy;
+- idempotent APIs/webhooks, dead-letter handling, graceful drain, and restores;
+- runner isolation, secret rotation, signed webhooks, SBOM/provenance, and audit;
+- OpenTelemetry, SLOs, queue/lease/model saturation, tokens, latency, and cost;
+- quotas, backpressure, capacity tests, model circuit breakers, and fallback;
+- retention/deletion/export, malware scanning, backups, and disaster recovery;
+- adversarial prompt/tool tests, replay evals, route benchmarks, canaries, and
+  rollback procedures.
+
+## Channel integrations
+
+Telegram, WhatsApp, web, and mobile integrations are thin authenticated
+adapters:
+
+```text
+channel webhook/app
+  -> identity/signature adapter
+  -> Server Runs API
+  -> durable execution and approvals
+  -> queued channel-safe reply
+```
+
+They do not contain another agent loop. See
+[product architecture](../docs/product-architecture.md) for identity,
+idempotency, attachment, delivery, and approval requirements.
