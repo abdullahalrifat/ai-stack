@@ -35,5 +35,5 @@ ruff
 black
 flake8
 
-# Shared runtime; install from the separately versioned jarvis-core release.
-jarvis-agent-core>=0.2,<0.3
+# Verified shared runtime release; PyPI is not required.
+jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/releases/download/v0.2.0/jarvis_agent_core-0.2.0-py3-none-any.whl#sha256=285cddb3b5ce917d4acd406825bfd640e3bb3d1a5f66fec01580f4edbdb68bf6
