@@ -21,7 +21,8 @@ RUN apt-get update && \
 COPY requirements.txt requirements.lock ./
 
 RUN pip install --no-cache-dir \
-    -r requirements.lock
+    -r requirements.lock && \
+    pip install --no-cache-dir "jarvis-agent-core>=0.2,<0.3"
 
 
 COPY app ./app
