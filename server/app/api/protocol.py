@@ -33,10 +33,10 @@ def verify_protocol_version(
     integrations. First-party clients always send the header.
     """
 
-    if x_aistack_protocol_version is None:
+    if x_jarvis_protocol_version is None:
         return
     try:
-        requested = int(x_aistack_protocol_version)
+        requested = int(x_jarvis_protocol_version)
     except ValueError as exc:
         raise HTTPException(
             400,
