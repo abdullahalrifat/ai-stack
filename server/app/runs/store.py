@@ -182,6 +182,64 @@ class RunStore:
         return str(winner["run_id"]), False
 
 
+    def claim_channel_deliveries(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Claim terminal channel Runs for at-least-once outbound delivery."""
+
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                WITH candidates AS (
+                    SELECT e.provider, e.event_id, e.identity, e.run_id,
+                           r.answer, r.error
+                    FROM agent_channel_events e
+                    JOIN agent_runs r ON r.id = e.run_id
+                    WHERE e.provider IN ('telegram', 'whatsapp')
+                      AND e.delivery_status IN ('pending', 'retry')
+                      AND e.next_delivery_at <= NOW()
+                      AND r.status IN ('completed', 'failed', 'cancelled')
+                    ORDER BY e.created_at
+                    FOR UPDATE OF e SKIP LOCKED
+                    LIMIT %s
+                )
+                UPDATE agent_channel_events e
+                SET delivery_status='delivering',
+                    delivery_attempts=e.delivery_attempts + 1,
+                    delivery_error=NULL
+                FROM candidates c
+                WHERE e.provider=c.provider AND e.event_id=c.event_id
+                RETURNING e.provider, e.event_id, e.identity, e.run_id,
+                          c.answer, c.error, e.delivery_attempts
+                """,
+                (min(max(limit, 1), 100),),
+            )
+            return cursor.fetchall()
+
+    def finish_channel_delivery(
+        self, provider: str, event_id: str, error: str | None = None
+    ) -> None:
+        with self.connection() as connection, connection.cursor() as cursor:
+            if error is None:
+                cursor.execute(
+                    """
+                    UPDATE agent_channel_events
+                    SET delivery_status='delivered', delivered_at=NOW(),
+                        delivery_error=NULL
+                    WHERE provider=%s AND event_id=%s
+                    """,
+                    (provider, event_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE agent_channel_events
+                    SET delivery_status='retry', delivery_error=%s,
+                        next_delivery_at=NOW() +
+                          (LEAST(3600, POWER(2, delivery_attempts)) * INTERVAL '1 second')
+                    WHERE provider=%s AND event_id=%s
+                    """,
+                    (error[:2000], provider, event_id),
+                )
+
     def record_change_transaction(
         self,
         transaction_id: str,

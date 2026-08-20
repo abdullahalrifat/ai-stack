@@ -13,6 +13,7 @@ from fastapi import FastAPI
 
 from app.agent.service import shutdown_run_executor, submit_run
 from app.api.routes import router
+from app.channels.delivery import monitor_channel_deliveries
 from app.channels.router import router as channels_router
 from app.core.config import POSTGRES_URL, WORKSPACE_ROOTS, validate_settings
 from app.runs.client_leases import monitor_client_leases
@@ -65,6 +66,7 @@ async def lifespan(_: FastAPI):
 
     client_lease_monitor = None
     worker_lease_monitor = None
+    channel_delivery_monitor = None
     if POSTGRES_URL:
         store = get_run_store()
         store.initialize()
@@ -72,6 +74,7 @@ async def lifespan(_: FastAPI):
         reconcile_runs_once()
         client_lease_monitor = asyncio.create_task(monitor_client_leases())
         worker_lease_monitor = asyncio.create_task(monitor_worker_leases())
+        channel_delivery_monitor = asyncio.create_task(monitor_channel_deliveries())
     else:
         logger.warning("POSTGRES_URL not set; durable /runs endpoints are unavailable.")
     try:
@@ -81,6 +84,10 @@ async def lifespan(_: FastAPI):
             client_lease_monitor.cancel()
             with suppress(asyncio.CancelledError):
                 await client_lease_monitor
+        if channel_delivery_monitor is not None:
+            channel_delivery_monitor.cancel()
+            with suppress(asyncio.CancelledError):
+                await channel_delivery_monitor
         if worker_lease_monitor is not None:
             worker_lease_monitor.cancel()
             with suppress(asyncio.CancelledError):
