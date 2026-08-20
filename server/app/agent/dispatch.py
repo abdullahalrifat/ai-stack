@@ -25,7 +25,7 @@ from ..core.config import (
 from ..llm.client import chat
 from .parser import extract_json
 from .prompts import EXPERT_DISPATCH_PROMPT, EXPERT_ROLE_PROMPTS
-from .quality import analyze_state, expert_routes
+from .quality import expert_routes
 
 logger = logging.getLogger(__name__)
 
@@ -214,8 +214,7 @@ def dispatch_experts(
     role yields a structured "unavailable" finding instead of raising, so the
     executor always receives a mergeable ledger even when every expert fails.
     """
-    analysis = analyze_state(state)
-    roles = _select_experts(state) if analysis.needs_multi_agent else ["architecture"]
+    roles = _select_experts(state)
     if not roles:
         return []
     routes = expert_routes(roles, EXPERT_DISPATCH_MODEL)
