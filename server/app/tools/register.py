@@ -30,6 +30,7 @@ from app.tools.filesystem import (
 )
 from app.tools.git import git_blame, git_diff, git_log, git_status
 from app.tools.registry import registry
+from app.tools.mcp import mcp_call
 from app.tools.web_fetch import web_fetch
 from app.tools.web_search import web_search
 
@@ -86,3 +87,5 @@ registry.register(name="git_blame", function=git_blame)
 registry.register(name="web_search", function=web_search)
 
 registry.register(name="web_fetch", function=web_fetch)
+
+registry.register(name="mcp_call", function=mcp_call)
