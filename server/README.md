@@ -78,21 +78,21 @@ gaps or contradictions.
 
 ## Shared runtime, traces, and evaluations
 
-Server installs `jarvis-agent-core>=0.2,<0.3` for token enforcement,
+Server installs the verified `jarvis-agent-core` 0.2.0 GitHub Release wheel for token enforcement,
 compaction, artifacts, evidence, capability routing, recovery, redacted traces,
 evaluations, and selective multi-agent contracts.
 
-For unreleased local development:
+For a clean development installation:
 
 ```bash
-python -m pip install ../jarvis-core
 python -m pip install -r server/requirements.txt
 ```
 
-Until Core is available from PyPI, CI and Docker install the exact pinned
-commit from the public GitHub repository. No cross-repository token or local
-bootstrap command is required. After PyPI works, consumers can return to the
-normal versioned package-index dependency without changing Core APIs.
+The human-maintained requirements, lockfile, CI, and Docker image all consume
+the same public Core 0.2.0 wheel and verify its SHA-256. PyPI, a
+cross-repository token, a branch checkout, and a separate bootstrap command are
+not required. For unreleased Core development only, install a local Core
+checkout explicitly after the locked dependencies.
 
 Redacted trace artifacts are retained under the configured artifact root.
 `server/evals/platform.py` replays recorded outputs against JSON cases; the
