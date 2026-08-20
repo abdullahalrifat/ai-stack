@@ -34,9 +34,11 @@ jobs:
         with:
           context: server
           load: true
-          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          push: false
           tags: ghcr.io/abdullahalrifat/ai-stack-server:${{ github.ref_name }}
-          outputs: type=docker
+      - name: Publish tagged image
+        if: startsWith(github.ref, 'refs/tags/')
+        run: docker push "ghcr.io/abdullahalrifat/ai-stack-server:${GITHUB_REF_NAME}"
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0
         with:
