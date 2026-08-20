@@ -56,7 +56,7 @@ class ServerAgentRuntime:
             artifacts=FileArtifactStore(
                 ARTIFACT_ROOT
                 / hashlib.sha256(
-                    str(state.conversation_id).encode("utf-8")
+                    str(getattr(state, "conversation_id", id(state))).encode("utf-8")
                 ).hexdigest()
             ),
             previous_state={},
