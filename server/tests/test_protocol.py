@@ -11,11 +11,11 @@ from app.api import protocol as server_protocol
 def test_checked_in_contract_matches_both_implementations():
     contract = json.loads(
         (
-            Path(__file__).parents[2] / "contracts" / "aistack-protocol-v1.json"
+            Path(__file__).parents[2] / "contracts" / "jarvis-protocol-v1.json"
         ).read_text()
     )
 
-    metadata = contract["x-aistack-protocol"]
+    metadata = contract["x-jarvis-protocol"]
     assert contract["openapi"] == "3.1.0"
     assert metadata["current"] == server_protocol.PROTOCOL_VERSION
     assert metadata["current"] == cli_protocol.PROTOCOL_VERSION
