@@ -36,4 +36,4 @@ black
 flake8
 
 # Shared runtime; install from the separately versioned jarvis-core release.
-jarvis-agent-core>=0.1,<0.2
+jarvis-agent-core>=0.2,<0.3
