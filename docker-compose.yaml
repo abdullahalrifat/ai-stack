@@ -35,6 +35,32 @@ services:
       - ai
 
   ####################################################
+  ## Ollama model provisioning
+  ####################################################
+  ollama-init:
+    image: ollama/ollama:latest
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODELS: ${OLLAMA_MODELS:-qwen3:4b-instruct qwen3:8b qwen3:14b deepseek-r1:14b gemma3:12b nomic-embed-text}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        for model in $OLLAMA_MODELS; do
+          echo "Ensuring Ollama model: $model"
+          ollama pull "$model"
+        done
+        ollama list
+    volumes:
+      - ./ollama:/root/.ollama
+    networks:
+      - ai
+
+  ####################################################
   ## PostgreSQL
   ####################################################
   postgres:
@@ -142,6 +168,8 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
 
     healthcheck:
       test:
