@@ -49,8 +49,7 @@ def _is_transient_error(exc: BaseException) -> bool:
         return True
     name = type(exc).__name__.lower()
     return any(
-        token in name
-        for token in ("timeout", "connection", "unavailable", "gateway")
+        token in name for token in ("timeout", "connection", "unavailable", "gateway")
     )
 
 
@@ -240,6 +239,7 @@ def chat(
             return cached.content
 
         incr("llm.request")
+
         # Use the scheduler to smooth spikes and limit concurrency. The
         # semaphore still enforces a strict concurrency cap; the scheduler
         # serializes requests through a worker pool to stabilize load.
@@ -334,7 +334,10 @@ def chat_with_tools(
     msg = response.choices[0].message
     # Cache a lightweight dict capturing content and tool_calls if present.
     try:
-        cached_obj = {"content": getattr(msg, "content", None), "tool_calls": getattr(msg, "tool_calls", None)}
+        cached_obj = {
+            "content": getattr(msg, "content", None),
+            "tool_calls": getattr(msg, "tool_calls", None),
+        }
         default_cache.set(key, cached_obj)
     except Exception:
         # Don't let caching failures break model calls.
@@ -410,7 +413,12 @@ def chat_stream_text(
     CLI) can print partial content as it arrives.
     """
     stream_iter = chat_with_tools_stream(
-        messages, tools or [], model=model, max_tokens=max_tokens, timeout_seconds=timeout_seconds, should_cancel=should_cancel
+        messages,
+        tools or [],
+        model=model,
+        max_tokens=max_tokens,
+        timeout_seconds=timeout_seconds,
+        should_cancel=should_cancel,
     )
     # The transport yields chunk-like objects with `.choices` deltas.
     for chunk in stream_iter:
@@ -426,7 +434,11 @@ def get_llm_metrics():
     try:
         from .scheduler import get_scheduler_stats
 
-        return {"metrics": get_metrics(), "cache": get_llm_cache_stats(), "scheduler": get_scheduler_stats()}
+        return {
+            "metrics": get_metrics(),
+            "cache": get_llm_cache_stats(),
+            "scheduler": get_scheduler_stats(),
+        }
     except Exception:
         return {"metrics": get_metrics(), "cache": get_llm_cache_stats()}
 
@@ -450,7 +462,9 @@ def get_llm_instrumentation():
     return {"cache": get_llm_cache_stats(), "scheduler": scheduler}
 
 
-def chat_fast(messages, max_tokens: int | None = None, timeout_seconds: int | None = None) -> str:
+def chat_fast(
+    messages, max_tokens: int | None = None, timeout_seconds: int | None = None
+) -> str:
     """Attempt to answer short/low-latency requests using the configured
     `FAST_MODEL`. Callers can use this when they expect a small, fast reply
     (e.g., request routing, normalization, or light transformations).
@@ -465,7 +479,12 @@ def chat_fast(messages, max_tokens: int | None = None, timeout_seconds: int | No
         return chat(messages, max_tokens=max_tokens, timeout_seconds=timeout_seconds)
 
     try:
-        return chat(messages, model=FAST_MODEL, max_tokens=max_tokens, timeout_seconds=timeout_seconds)
+        return chat(
+            messages,
+            model=FAST_MODEL,
+            max_tokens=max_tokens,
+            timeout_seconds=timeout_seconds,
+        )
     except Exception:
         # If the fast model isn't available, degrade to the normal chat.
         logger.exception("FAST_MODEL fast path failed; falling back to default chat")
