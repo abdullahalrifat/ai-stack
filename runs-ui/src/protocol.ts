@@ -1,6 +1,6 @@
 export const PROTOCOL_VERSION = 1;
 export const EVENT_SCHEMA_VERSION = 1;
-export const PROTOCOL_HEADER = "X-AIStack-Protocol-Version";
+export const PROTOCOL_HEADER = "X-Jarvis-Protocol-Version";
 
 export function validateEventVersion(event: {
   schema_version?: number;
