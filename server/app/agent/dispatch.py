@@ -24,7 +24,7 @@ from ..core.config import (
 )
 from ..llm.client import chat
 from .parser import extract_json
-from .prompts import EXPERT_DISPATCH_PROMPT, EXPERT_ROLE_PROMPTS
+from .prompts import EXPERT_DISPATCH_PROMPT, EXPERT_ROLE_PROMPTS\nfrom .quality import analyze_state, expert_routes
 
 logger = logging.getLogger(__name__)
 
@@ -190,13 +190,13 @@ def _unavailable(role: str, reason: str) -> dict[str, Any]:
     }
 
 
-def _run_expert(state, role: str) -> dict[str, Any]:
+def _run_expert(state, role: str, model: str | None = None) -> dict[str, Any]:
     response = chat(
         [
             {"role": "system", "content": EXPERT_DISPATCH_PROMPT},
             {"role": "user", "content": _expert_prompt(state, role)},
         ],
-        model=EXPERT_DISPATCH_MODEL,
+        model=model or EXPERT_DISPATCH_MODEL,
         max_tokens=EXPERT_MAX_COMPLETION_TOKENS,
         timeout_seconds=EXPERT_DISPATCH_TIMEOUT_SECONDS,
     )
@@ -213,19 +213,21 @@ def dispatch_experts(
     role yields a structured "unavailable" finding instead of raising, so the
     executor always receives a mergeable ledger even when every expert fails.
     """
-    roles = _select_experts(state)
+    analysis = analyze_state(state)
+    roles = _select_experts(state) if analysis.needs_multi_agent else ["architecture"]
     if not roles:
         return []
+    routes = expert_routes(roles, EXPERT_DISPATCH_MODEL)
 
     if on_event is not None:
         on_event(
             "expert_dispatch",
-            {"roles": roles, "model": EXPERT_DISPATCH_MODEL, "total": len(roles)},
+            {"roles": roles, "models": routes, "total": len(roles), "adaptive": True},
         )
 
     findings: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_EXPERTS, len(roles))) as pool:
-        futures = {pool.submit(_run_expert, state, role): role for role in roles}
+        futures = {pool.submit(_run_expert, state, role, routes[role]): role for role in roles}
         for future in as_completed(futures):
             role = futures[future]
             try:
