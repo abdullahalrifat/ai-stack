@@ -15,34 +15,25 @@ env:
 jobs:
   server:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
     steps:
       - uses: actions/checkout@v4
-      - name: Check out pinned shared runtime
-        uses: actions/checkout@v4
-        with:
-          repository: abdullahalrifat/jarvis-core
-          ref: ${{ env.JARVIS_CORE_REF }}
-          token: ${{ secrets.CROSS_REPO_TOKEN }}
-          path: .deps/jarvis-core
-          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: server/requirements.lock
       - name: Install locked dependencies and pinned shared runtime
-        working-directory: server
         run: |
           python -m pip install -r requirements.lock
-          python -m pip install ../.deps/jarvis-core
+          python -m pip install             "jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/archive/${JARVIS_CORE_REF}.zip"
       - name: Syntax and import safety
-        working-directory: server
         run: python -m compileall -q app
       - name: Critical lint
-        working-directory: server
         run: ruff check app tests --select E9,F63,F7,F82
       - name: Tests and coverage floor
-        working-directory: server
         run: python -m pytest -q tests --cov=app --cov-report=term-missing --cov-fail-under=67
 
   runs-ui:
@@ -70,5 +61,4 @@ jobs:
           AGENT_API_KEY: ci-only-placeholder
           POSTGRES_PASSWORD: ci-only-placeholder
           LITELLM_MASTER_KEY: ci-only-placeholder
-          CROSS_REPO_TOKEN: ci-only-placeholder
         run: docker compose config --quiet
