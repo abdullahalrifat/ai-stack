@@ -68,6 +68,7 @@ from .schemas import (
     HunkApprovalRequest,
     IngestRequest,
     MemoryQuery,
+    MemoryUpdateRequest,
     OpenAIChatCompletionRequest,
     OpenAIEmbeddingRequest,
     PlanRequest,
@@ -922,6 +923,32 @@ async def memory_search(request: MemoryQuery):
 # =====================================================
 # Workspace
 # =====================================================
+
+
+
+@router.patch("/memory/{memory_id}", dependencies=[Depends(verify_api_key)])
+async def edit_memory(memory_id: str, request: MemoryUpdateRequest):
+    from app.memory.memory import update_memory
+
+    try:
+        await run_in_threadpool(
+            update_memory,
+            memory_id,
+            text=request.text,
+            expires_at=request.expires_at,
+            scope=request.scope,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": memory_id, "status": "updated"}
+
+
+@router.delete("/memory/{memory_id}", dependencies=[Depends(verify_api_key)])
+async def remove_memory(memory_id: str):
+    from app.memory.memory import delete_memory
+
+    await run_in_threadpool(delete_memory, memory_id)
+    return {"id": memory_id, "status": "deleted"}
 
 
 @router.get("/workspace/tree", dependencies=[Depends(verify_api_key)])
