@@ -874,7 +874,7 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
                     "paths": [
                         "jarvis/ROADMAP.md",
                         "jarvis/README.md",
-                        "contracts/aistack-protocol-v1.json",
+                        "contracts/jarvis-protocol-v1.json",
                         "README.md",
                         "jarvis/pyproject.toml",
                     ]
