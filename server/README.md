@@ -49,6 +49,33 @@ export JARVIS_SERVER_API_KEY=your-agent-api-key
 jarvis doctor
 ```
 
+## Search, model routing, traces, evaluations, and MCP
+
+Server and standalone Jarvis share the same evidence boundary through
+`jarvis-agent-core`. Server already provides durable conversations and
+repository analysis; it now also normalizes web results into bounded,
+citation-aware evidence and marks fetched pages as untrusted content.
+
+Configure SearXNG to let agents answer current day-to-day questions:
+
+```bash
+WEB_SEARCH_ENABLED=true
+WEB_SEARCH_URL=http://searxng:8080/search
+```
+
+The included SearXNG service may enable Google and other engines. Jarvis does
+not require a paid Google Search API.
+
+Optional capability-aware routing uses `JARVIS_MODEL_PROFILES_JSON`. Passing
+model `auto` selects an available tool-capable profile. Redacted run traces
+are content-addressed with other durable artifacts, and
+`server/evals/platform.py` replays JSON eval fixtures.
+
+Administrators can expose fixed MCP stdio servers with
+`JARVIS_MCP_SERVERS_JSON`. Each entry is an argv array; model output can
+select a configured alias and tool, but cannot select an executable or invoke
+a shell.
+
 ## What Server provides
 
 - FastAPI control plane and OpenAI-compatible entry points;
