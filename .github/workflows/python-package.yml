@@ -17,21 +17,15 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: abdullahalrifat/jarvis-core
-          ref: agent/token-runtime
-          path: jarvis-core
-          token: ${{ secrets.CROSS_REPO_TOKEN }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: server/requirements.lock
-      - name: Install shared runtime and locked dependencies
+      - name: Install locked dependencies and released shared runtime
         run: |
-          python -m pip install ../jarvis-core
           python -m pip install -r requirements.lock
+          python -m pip install "jarvis-agent-core>=0.2,<0.3"
       - name: Syntax and import safety
         run: python -m compileall -q app
       - name: Critical lint
