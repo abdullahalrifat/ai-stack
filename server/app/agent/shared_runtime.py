@@ -117,9 +117,7 @@ class ServerAgentRuntime:
     def read_artifact(
         self, uri: str, *, offset: int = 0, limit: int | None = None
     ) -> dict[str, object]:
-        return ArtifactResolver(self.artifacts).read(
-            uri, offset=offset, limit=limit
-        )
+        return ArtifactResolver(self.artifacts).read(uri, offset=offset, limit=limit)
 
     def compact(
         self,
