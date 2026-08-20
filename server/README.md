@@ -34,7 +34,7 @@ docker compose ps
 ```
 
 The Compose stack is for Server development and deployment. A Jarvis-only user
-does not run it.
+does not run it. In production, set `ARTIFACT_ROOT` to a persistent mounted volume; large tool results are content-addressed there and remain retrievable after process restarts.
 
 Configure a model route before production use. Server can call an
 OpenAI-compatible open-weight model hosted by Hugging Face, vLLM, TGI, LiteLLM,
@@ -44,8 +44,8 @@ never place them in a browser, mobile app, or bot client.
 Confirm the API and protocol from Jarvis:
 
 ```bash
-export AISTACK_URL=http://127.0.0.1:8000
-export AISTACK_API_KEY=your-agent-api-key
+export JARVIS_SERVER_URL=http://127.0.0.1:8000
+export JARVIS_SERVER_API_KEY=your-agent-api-key
 jarvis doctor
 ```
 
@@ -112,8 +112,7 @@ are documented in
 
 Server code lives in `server/`. The shared protocol contract lives at
 `contracts/jarvis-protocol-v1.json`. Jarvis may later move to a separate
-repository; Server must then consume a versioned published contract rather than
-copying it.
+repository. Server and Jarvis consume this versioned contract and share runtime primitives through the published `jarvis-agent-core` library.
 
 
 ## Shared runtime dependency
