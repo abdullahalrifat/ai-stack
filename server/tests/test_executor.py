@@ -1578,7 +1578,7 @@ def test_workspace_code_task_hides_web_tools_without_research_requirement(
         schema["function"]["name"]
         for schema in mock_chat_with_tools.call_args.kwargs["tools"]
     }
-    assert advertised == {"list_files", "read_file"}
+    assert advertised == {"list_files", "read_file", "read_artifact"}
 
 
 @patch("app.agent.executor.registry")
