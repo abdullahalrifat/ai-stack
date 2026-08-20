@@ -1,0 +1,50 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_CONTEXT_LENGTH: "8192"
+    volumes:
+      - ollama-test:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  model-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama pull qwen3:0.6b"]
+    volumes:
+      - ollama-test:/root/.ollama
+
+  litellm:
+    build: ../../litellm
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    environment:
+      LITELLM_MASTER_KEY: integration-key
+    volumes:
+      - ./litellm.yaml:/app/config.yaml:ro
+    ports:
+      - "127.0.0.1:14000:4000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket;s=socket.socket();s.connect(('127.0.0.1',4000))"
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+volumes:
+  ollama-test:
