@@ -1732,37 +1732,46 @@ explicitly instead of marking them complete without code.
                 )
 
         requested_output_tokens = getattr(state, "max_completion_tokens", None) or 3072
-        shared_runtime.reserve_turn(
+        reservation = shared_runtime.reserve_turn(
             "implementer", messages, turn_tools, requested_output_tokens
         )
+        try:
+            message = (
+                _stream_message(
+                    messages,
+                    turn_tools,
+                    state.model,
+                    getattr(state, "max_completion_tokens", None),
+                    getattr(state, "timeout_seconds", None),
+                    should_cancel,
+                    tool_choice,
+                )
+                if on_token is not None
+                else chat_with_tools(
+                    messages,
+                    tools=turn_tools,
+                    model=state.model,
+                    max_tokens=getattr(state, "max_completion_tokens", None),
+                    timeout_seconds=getattr(state, "timeout_seconds", None),
+                    tool_choice=tool_choice,
+                )
+            )
+        except BaseException:
+            shared_runtime.refund_turn(reservation)
+            raise
 
-        message = (
-            _stream_message(
-                messages,
-                turn_tools,
-                state.model,
-                getattr(state, "max_completion_tokens", None),
-                getattr(state, "timeout_seconds", None),
-                should_cancel,
-                tool_choice,
-            )
-            if on_token is not None
-            else chat_with_tools(
-                messages,
-                tools=turn_tools,
-                model=state.model,
-                max_tokens=getattr(state, "max_completion_tokens", None),
-                timeout_seconds=getattr(state, "timeout_seconds", None),
-                tool_choice=tool_choice,
-            )
+        response_metadata = getattr(message, "response_metadata", {}) or {}
+        provider_usage = getattr(message, "usage_metadata", None) or response_metadata.get(
+            "token_usage"
         )
-
         shared_runtime.record_turn(
+            reservation,
             "implementer",
             state.model,
             messages,
             turn_tools,
             getattr(message, "content", "") or "",
+            provider_usage,
         )
         on_event("token_usage", shared_runtime.ledger.to_dict()["totals"])
 
