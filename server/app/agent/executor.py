@@ -2002,15 +2002,18 @@ explicitly instead of marking them complete without code.
                             )
                         }
                     elif tool_name == "read_artifact":
-                        result = shared_runtime.read_artifact(
-                            str(args["uri"]),
-                            offset=int(args.get("offset", 0)),
-                            limit=(
-                                int(args["limit"])
-                                if args.get("limit") is not None
-                                else None
-                            ),
-                        )
+                        try:
+                            result = shared_runtime.read_artifact(
+                                str(args["uri"]),
+                                offset=int(args.get("offset", 0)),
+                                limit=(
+                                    int(args["limit"])
+                                    if args.get("limit") is not None
+                                    else None
+                                ),
+                            )
+                        except (KeyError, TypeError, ValueError) as exc:
+                            result = {"error": str(exc)}
                     elif call_index in parallel_results:
                         result = parallel_results[call_index]
                     else:
