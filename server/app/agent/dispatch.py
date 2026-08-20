@@ -24,7 +24,8 @@ from ..core.config import (
 )
 from ..llm.client import chat
 from .parser import extract_json
-from .prompts import EXPERT_DISPATCH_PROMPT, EXPERT_ROLE_PROMPTS\nfrom .quality import analyze_state, expert_routes
+from .prompts import EXPERT_DISPATCH_PROMPT, EXPERT_ROLE_PROMPTS
+from .quality import analyze_state, expert_routes
 
 logger = logging.getLogger(__name__)
 
