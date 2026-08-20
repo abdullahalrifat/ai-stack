@@ -13,6 +13,10 @@ FEATURES = [
     "cancellable_runner_jobs",
     "client_leases",
     "durable_events",
+    "capability_model_routing",
+    "citation_aware_web_search",
+    "content_addressed_traces",
+    "evaluation_replay",
     "review_sandboxes",
     "runner_job_leases",
     "stream_heartbeats",
@@ -21,7 +25,7 @@ FEATURES = [
 
 
 def verify_protocol_version(
-    x_aistack_protocol_version: str | None = Header(None),
+    x_jarvis_protocol_version: str | None = Header(None),
 ) -> None:
     """Reject an explicitly incompatible client with upgrade instructions.
 
@@ -41,7 +45,7 @@ def verify_protocol_version(
     if not MIN_CLI_PROTOCOL_VERSION <= requested <= MAX_CLI_PROTOCOL_VERSION:
         raise HTTPException(
             426,
-            "Incompatible ai-stack CLI protocol "
+            "Incompatible Jarvis CLI protocol "
             f"{requested}; server supports "
             f"{MIN_CLI_PROTOCOL_VERSION}..{MAX_CLI_PROTOCOL_VERSION}. "
             "Upgrade the CLI or server so their protocol ranges overlap.",
