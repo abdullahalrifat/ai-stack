@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from typing import Any, Mapping
 
 from jarvis_core import (
     ArtifactResolver,
-    MemoryArtifactStore,
+    FileArtifactStore,
     TokenBudget,
     TokenLedger,
     TokenReservation,
@@ -19,6 +21,7 @@ from jarvis_core import (
 from jarvis_core.tokens import estimate_tokens
 
 from ..core.config import (
+    ARTIFACT_ROOT,
     TOKEN_AGENT_INPUT_LIMIT,
     TOKEN_AGENT_OUTPUT_LIMIT,
     TOKEN_RUN_INPUT_LIMIT,
@@ -31,7 +34,7 @@ from ..core.config import (
 @dataclass
 class ServerAgentRuntime:
     ledger: TokenLedger
-    artifacts: MemoryArtifactStore
+    artifacts: FileArtifactStore
     previous_state: dict[str, Any]
 
     @classmethod
@@ -50,7 +53,12 @@ class ServerAgentRuntime:
                     max_agent_output=TOKEN_AGENT_OUTPUT_LIMIT,
                 )
             ),
-            artifacts=MemoryArtifactStore(),
+            artifacts=FileArtifactStore(
+                ARTIFACT_ROOT
+                / hashlib.sha256(
+                    str(state.conversation_id).encode("utf-8")
+                ).hexdigest()
+            ),
             previous_state={},
         )
         state.shared_runtime = runtime
@@ -119,8 +127,6 @@ class ServerAgentRuntime:
             max_chars=6_000,
             artifact_store=self.artifacts,
         )
-        import json
-
         return json.dumps(summary, ensure_ascii=False, default=str)
 
     def delta(self, state) -> dict[str, Any]:
