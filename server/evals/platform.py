@@ -32,7 +32,9 @@ def replay(path: str, outputs: str) -> dict:
     return {
         "passed": sum(result.passed for result in results),
         "total": len(results),
-        "score": sum(result.score for result in results) / len(results) if results else 0,
+        "score": (
+            sum(result.score for result in results) / len(results) if results else 0
+        ),
         "results": [result.to_dict() for result in results],
     }
 
