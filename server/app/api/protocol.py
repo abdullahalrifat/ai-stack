@@ -8,7 +8,7 @@ PROTOCOL_VERSION = 1
 MIN_CLI_PROTOCOL_VERSION = 1
 MAX_CLI_PROTOCOL_VERSION = 1
 EVENT_SCHEMA_VERSION = 1
-PROTOCOL_HEADER = "X-AIStack-Protocol-Version"
+PROTOCOL_HEADER = "X-Jarvis-Protocol-Version"
 FEATURES = [
     "cancellable_runner_jobs",
     "client_leases",
