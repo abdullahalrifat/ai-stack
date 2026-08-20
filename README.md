@@ -19,7 +19,7 @@ process durable documents, or enforce centralized policy and approvals.
 - SearXNG: optional self-hosted current-information search;
 - LiteLLM plus Ollama or remote OpenAI-compatible endpoints: inference routing;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core`: separately released shared runtime dependency.
+- `jarvis-agent-core` 0.2.0: separately released, checksum-verified shared runtime dependency.
 
 ## Start the development stack
 
@@ -52,5 +52,10 @@ recovery, tracing, evaluations, and multi-agent role/result types.
 Search uses SearXNG and can aggregate administrator-enabled engines. It does not
 require a paid Google API. Search and fetched content remain untrusted evidence,
 and source URLs must be retained.
+
+Server requirements, CI, and Docker use the same public
+[Core v0.2.0 release](https://github.com/abdullahalrifat/jarvis-core/releases/tag/v0.2.0)
+wheel. Installation is independent of PyPI and does not check out a Core branch
+or commit.
 
 See [.env.example](.env.example) for the complete configuration surface.
