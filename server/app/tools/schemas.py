@@ -327,6 +327,26 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "read_artifact",
+            "description": "Read a bounded chunk from a large tool result retained for this run.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "uri": {"type": "string"},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 64000,
+                    },
+                },
+                "required": ["uri"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": (
                 "Run a single allowlisted shell command (e.g. git, pytest, "
