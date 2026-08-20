@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  JARVIS_CORE_REF: e1aac1e25f776b0cb329424b95a419ce7a42d415
+
 jobs:
   server:
     runs-on: ubuntu-latest
@@ -22,10 +25,10 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: server/requirements.lock
-      - name: Install locked dependencies and released shared runtime
+      - name: Install locked dependencies and pinned shared runtime
         run: |
           python -m pip install -r requirements.lock
-          python -m pip install "jarvis-agent-core>=0.2,<0.3"
+          python -m pip install             "jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/archive/${JARVIS_CORE_REF}.zip"
       - name: Syntax and import safety
         run: python -m compileall -q app
       - name: Critical lint
