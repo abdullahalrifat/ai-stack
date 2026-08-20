@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from app.agent.service import submit_run
@@ -112,17 +113,15 @@ def _verify_whatsapp(raw: bytes, signature: str | None) -> None:
         raise HTTPException(401, "invalid WhatsApp signature")
 
 
-@router.get("/whatsapp/webhook")
-async def whatsapp_verify(
-    request: Request,
-) -> int:
+@router.get("/whatsapp/webhook", response_class=PlainTextResponse)
+async def whatsapp_verify(request: Request) -> str:
     query = request.query_params
     if (
         query.get("hub.mode") != "subscribe"
         or query.get("hub.verify_token") != os.getenv("WHATSAPP_VERIFY_TOKEN")
     ):
         raise HTTPException(403, "invalid WhatsApp verification token")
-    return int(query.get("hub.challenge", "0"))
+    return query.get("hub.challenge", "0")
 
 
 @router.post("/whatsapp/webhook", dependencies=[Depends(require_run_store)])
