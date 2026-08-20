@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  JARVIS_CORE_REF: e1aac1e25f776b0cb329424b95a419ce7a42d415
+
 jobs:
   server:
     runs-on: ubuntu-latest
@@ -22,39 +25,16 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: server/requirements.lock
-      - name: Install locked dependencies
-        run: python -m pip install -r requirements.lock
+      - name: Install locked dependencies and pinned shared runtime
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install             "jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/archive/${JARVIS_CORE_REF}.zip"
       - name: Syntax and import safety
         run: python -m compileall -q app
       - name: Critical lint
         run: ruff check app tests --select E9,F63,F7,F82
       - name: Tests and coverage floor
         run: python -m pytest -q tests --cov=app --cov-report=term-missing --cov-fail-under=67
-
-  jarvis:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: jarvis
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: jarvis/requirements.txt
-      - name: Install CLI and development tools
-        run: python -m pip install -e . -r requirements.txt
-      - name: Syntax and import safety
-        run: python -m compileall -q src
-      - name: Format
-        run: black --check src tests
-      - name: Critical lint
-        run: ruff check src tests --select E9,F63,F7,F82
-      - name: Tests and coverage floor
-        run: python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=70
-      - name: Build package
-        run: python -m pip wheel --no-deps . --wheel-dir /tmp/jarvis-dist
 
   runs-ui:
     runs-on: ubuntu-latest

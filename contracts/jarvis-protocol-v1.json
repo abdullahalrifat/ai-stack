@@ -1,11 +1,11 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "ai-stack terminal protocol",
+    "title": "Jarvis agent protocol",
     "version": "1.0.0",
     "description": "Versioned contract for resources shared by the CLI, Runs UI, and agent server."
   },
-  "x-aistack-protocol": {
+  "x-jarvis-protocol": {
     "current": 1,
     "minimum_cli": 1,
     "maximum_cli": 1,

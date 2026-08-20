@@ -34,3 +34,6 @@ mypy
 ruff
 black
 flake8
+
+# Shared runtime; install from the separately versioned jarvis-core release.
+jarvis-agent-core>=0.2,<0.3

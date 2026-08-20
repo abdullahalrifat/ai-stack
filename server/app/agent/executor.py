@@ -49,7 +49,8 @@ from .completion import (
 from .completion import (
     record_tool_progress as _record_tool_progress,
 )
-from .context_budget import estimate_tokens, fit_user_context, summarize_tool_result
+from .context_budget import estimate_tokens, fit_user_context
+from .shared_runtime import ServerAgentRuntime
 from .dispatch import dispatch_experts, findings_context
 from .graph import transition_graph
 from .parser import parse_tool_arguments
@@ -187,6 +188,7 @@ QUICK_WORKSPACE_TOOLS = {
     "inspect_files",
     "analyze_task_context",
     "inspect_code",
+    "read_artifact",
 }
 
 WORKSPACE_PREFETCH_TOOLS = (("list_files", {"directory": "."}),)
@@ -213,6 +215,7 @@ NOOP_MUTATION_RECOVERY = (
 )
 HYBRID_RESEARCH_TOOLS = QUICK_WORKSPACE_TOOLS | {"web_search", "web_fetch"}
 CACHEABLE_READ_TOOLS = HYBRID_RESEARCH_TOOLS | {
+    "read_artifact",
     "inspect_test_environment",
     "workspace_root",
 }
@@ -871,7 +874,7 @@ def _prefetch_workspace(state, available_tools: list[str], on_event):
                     "paths": [
                         "jarvis/ROADMAP.md",
                         "jarvis/README.md",
-                        "contracts/aistack-protocol-v1.json",
+                        "contracts/jarvis-protocol-v1.json",
                         "README.md",
                         "jarvis/pyproject.toml",
                     ]
@@ -1008,7 +1011,11 @@ def _parallel_read_only_calls(tool_calls, available_tools, tool_result_cache):
     candidates = []
     for index, call in enumerate(tool_calls):
         tool_name = call.function.name
-        if tool_name in WRITE_TOOLS or tool_name not in available_tools:
+        if (
+            tool_name in WRITE_TOOLS
+            or tool_name == "read_artifact"
+            or tool_name not in available_tools
+        ):
             continue
         raw_args = parse_tool_arguments(call.function.arguments)
         args = normalize_tool_args(tool_name, raw_args)
@@ -1349,6 +1356,7 @@ def execute_plan(
 
     on_event = on_event or _noop_event
     should_cancel = should_cancel or (lambda: False)
+    shared_runtime = ServerAgentRuntime.for_state(state)
     if not getattr(state, "original_model", ""):
         state.original_model = state.model
     transition_graph(state, "analyzing", reason="execution started", on_event=on_event)
@@ -1385,7 +1393,7 @@ def execute_plan(
         on_event("final_answer", payload)
         return answer
 
-    available_tools = registry.list_tools()
+    available_tools = [*registry.list_tools(), "read_artifact"]
     if not state.allow_write:
         available_tools = [t for t in available_tools if t not in WRITE_TOOLS]
 
@@ -1537,7 +1545,7 @@ Execution brief:
 {_bounded_context(getattr(state, "execution_brief", ""), 3_500)}
 
 Recent conversation:
-{_bounded_context(state.history[-4:], 1_200)}
+{_bounded_context(shared_runtime.delta(state), 1_200)}
 
 Relevant memory:
 {_bounded_context(state.memories[:3], 1_000)}
@@ -1715,37 +1723,63 @@ explicitly instead of marking them complete without code.
 
         if _needs_compaction(messages, system_prompt, turn_tools):
             before = len(messages)
-            messages = _compact_history(
+            messages, saved_tokens = shared_runtime.compact(
                 messages,
-                state.model,
                 goal=f"{state.user_message}\nPlan: {state.plan}",
             )
             if len(messages) < before:
                 on_event(
                     "context_compacted",
-                    {"messages_before": before, "messages_after": len(messages)},
+                    {
+                        "messages_before": before,
+                        "messages_after": len(messages),
+                        "tokens_saved": saved_tokens,
+                    },
                 )
 
-        message = (
-            _stream_message(
-                messages,
-                turn_tools,
-                state.model,
-                getattr(state, "max_completion_tokens", None),
-                getattr(state, "timeout_seconds", None),
-                should_cancel,
-                tool_choice,
-            )
-            if on_token is not None
-            else chat_with_tools(
-                messages,
-                tools=turn_tools,
-                model=state.model,
-                max_tokens=getattr(state, "max_completion_tokens", None),
-                timeout_seconds=getattr(state, "timeout_seconds", None),
-                tool_choice=tool_choice,
-            )
+        requested_output_tokens = getattr(state, "max_completion_tokens", None) or 3072
+        reservation = shared_runtime.reserve_turn(
+            "implementer", messages, turn_tools, requested_output_tokens
         )
+        try:
+            message = (
+                _stream_message(
+                    messages,
+                    turn_tools,
+                    state.model,
+                    getattr(state, "max_completion_tokens", None),
+                    getattr(state, "timeout_seconds", None),
+                    should_cancel,
+                    tool_choice,
+                )
+                if on_token is not None
+                else chat_with_tools(
+                    messages,
+                    tools=turn_tools,
+                    model=state.model,
+                    max_tokens=getattr(state, "max_completion_tokens", None),
+                    timeout_seconds=getattr(state, "timeout_seconds", None),
+                    tool_choice=tool_choice,
+                )
+            )
+        except BaseException:
+            shared_runtime.refund_turn(reservation)
+            raise
+
+        response_metadata = getattr(message, "response_metadata", {}) or {}
+        provider_usage = getattr(message, "usage_metadata", None) or response_metadata.get(
+            "token_usage"
+        )
+        shared_runtime.record_turn(
+            reservation,
+            "implementer",
+            state.model,
+            messages,
+            turn_tools,
+            getattr(message, "content", "") or "",
+            provider_usage,
+        )
+        on_event("token_usage", shared_runtime.ledger.to_dict()["totals"])
 
         tool_calls = getattr(message, "tool_calls", None)
 
@@ -1967,6 +2001,19 @@ explicitly instead of marking them complete without code.
                                 "relevant test; cosmetic arguments do not justify a rerun."
                             )
                         }
+                    elif tool_name == "read_artifact":
+                        try:
+                            result = shared_runtime.read_artifact(
+                                str(args["uri"]),
+                                offset=int(args.get("offset", 0)),
+                                limit=(
+                                    int(args["limit"])
+                                    if args.get("limit") is not None
+                                    else None
+                                ),
+                            )
+                        except (KeyError, TypeError, ValueError) as exc:
+                            result = {"error": str(exc)}
                     elif call_index in parallel_results:
                         result = parallel_results[call_index]
                     else:
@@ -2166,7 +2213,7 @@ explicitly instead of marking them complete without code.
                     if tool_name in PATH_TOOLS:
                         path_denial_failures.clear()
 
-                result_text = summarize_tool_result(tool_name, result)
+                result_text = shared_runtime.summarize(tool_name, result)
 
                 messages.append(
                     {
