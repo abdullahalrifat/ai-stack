@@ -89,8 +89,11 @@ python -m pip install ../jarvis-core
 python -m pip install -r server/requirements.txt
 ```
 
-For normal CI/release, publish Core first. No cross-repository Git token is
-required after the dependency is available from the configured package index.
+Until Core is available from a public package index, CI checks out the exact
+Core commit using the read-only `CROSS_REPO_TOKEN` Actions secret. The Docker
+build receives the same value through a BuildKit secret; it is never stored in
+an image layer. This one-time repository credential is required because Core is
+private. It can be removed after PyPI works or Core becomes public.
 
 Redacted trace artifacts are retained under the configured artifact root.
 `server/evals/platform.py` replays recorded outputs against JSON cases; the
