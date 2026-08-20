@@ -2,11 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Prevent Python buffering in Docker logs
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install system dependencies
+ARG JARVIS_CORE_REF=e1aac1e25f776b0cb329424b95a419ce7a42d415
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
@@ -17,25 +17,16 @@ RUN apt-get update && \
     tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
-
 COPY requirements.txt requirements.lock ./
 
-RUN pip install --no-cache-dir \
-    -r requirements.lock && \
-    pip install --no-cache-dir "jarvis-agent-core>=0.2,<0.3"
-
+RUN pip install --no-cache-dir -r requirements.lock && \
+    pip install --no-cache-dir \
+      "jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/archive/${JARVIS_CORE_REF}.zip"
 
 COPY app ./app
 COPY evals ./evals
 
-# -----------------------------
-# Build validation
-# -----------------------------
-
-# Check Python syntax
 RUN python -m compileall app
-
-# Create workspace mount point
 RUN mkdir -p /workspace
 
 EXPOSE 8000
