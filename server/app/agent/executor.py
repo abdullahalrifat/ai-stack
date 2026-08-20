@@ -188,6 +188,7 @@ QUICK_WORKSPACE_TOOLS = {
     "inspect_files",
     "analyze_task_context",
     "inspect_code",
+    "read_artifact",
 }
 
 WORKSPACE_PREFETCH_TOOLS = (("list_files", {"directory": "."}),)
@@ -214,6 +215,7 @@ NOOP_MUTATION_RECOVERY = (
 )
 HYBRID_RESEARCH_TOOLS = QUICK_WORKSPACE_TOOLS | {"web_search", "web_fetch"}
 CACHEABLE_READ_TOOLS = HYBRID_RESEARCH_TOOLS | {
+    "read_artifact",
     "inspect_test_environment",
     "workspace_root",
 }
@@ -1009,7 +1011,11 @@ def _parallel_read_only_calls(tool_calls, available_tools, tool_result_cache):
     candidates = []
     for index, call in enumerate(tool_calls):
         tool_name = call.function.name
-        if tool_name in WRITE_TOOLS or tool_name not in available_tools:
+        if (
+            tool_name in WRITE_TOOLS
+            or tool_name == "read_artifact"
+            or tool_name not in available_tools
+        ):
             continue
         raw_args = parse_tool_arguments(call.function.arguments)
         args = normalize_tool_args(tool_name, raw_args)
@@ -1387,7 +1393,7 @@ def execute_plan(
         on_event("final_answer", payload)
         return answer
 
-    available_tools = registry.list_tools()
+    available_tools = [*registry.list_tools(), "read_artifact"]
     if not state.allow_write:
         available_tools = [t for t in available_tools if t not in WRITE_TOOLS]
 
@@ -1995,6 +2001,16 @@ explicitly instead of marking them complete without code.
                                 "relevant test; cosmetic arguments do not justify a rerun."
                             )
                         }
+                    elif tool_name == "read_artifact":
+                        result = shared_runtime.read_artifact(
+                            str(args["uri"]),
+                            offset=int(args.get("offset", 0)),
+                            limit=(
+                                int(args["limit"])
+                                if args.get("limit") is not None
+                                else None
+                            ),
+                        )
                     elif call_index in parallel_results:
                         result = parallel_results[call_index]
                     else:
