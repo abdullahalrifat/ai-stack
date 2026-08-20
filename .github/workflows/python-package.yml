@@ -70,4 +70,5 @@ jobs:
           AGENT_API_KEY: ci-only-placeholder
           POSTGRES_PASSWORD: ci-only-placeholder
           LITELLM_MASTER_KEY: ci-only-placeholder
+          CROSS_REPO_TOKEN: ci-only-placeholder
         run: docker compose config --quiet
