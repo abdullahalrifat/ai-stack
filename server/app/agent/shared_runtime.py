@@ -13,6 +13,7 @@ from jarvis_core import (
     TokenBudget,
     TokenLedger,
     TokenReservation,
+    TraceRecorder,
     Usage,
     compact_messages,
     delta_context,
@@ -36,6 +37,7 @@ class ServerAgentRuntime:
     ledger: TokenLedger
     artifacts: FileArtifactStore
     previous_state: dict[str, Any]
+    trace: TraceRecorder
 
     @classmethod
     def for_state(cls, state) -> "ServerAgentRuntime":
@@ -60,6 +62,7 @@ class ServerAgentRuntime:
                 ).hexdigest()
             ),
             previous_state={},
+            trace=TraceRecorder(),
         )
         state.shared_runtime = runtime
         return runtime
@@ -71,6 +74,11 @@ class ServerAgentRuntime:
         tools: object,
         max_output_tokens: int,
     ) -> TokenReservation:
+        self.trace.record(
+            "model_reservation",
+            role=role,
+            max_output_tokens=max_output_tokens,
+        )
         return self.ledger.reserve(
             role,
             estimate_tokens({"messages": messages, "tools": tools}),
@@ -94,9 +102,17 @@ class ServerAgentRuntime:
             output_tokens=estimate_tokens(output),
         )
         self.ledger.commit(reservation, usage)
+        self.trace.record(
+            "model_usage",
+            role=role,
+            model=model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+        )
 
     def refund_turn(self, reservation: TokenReservation) -> None:
         self.ledger.refund(reservation)
+        self.trace.record("model_reservation_refunded", agent=reservation.agent)
 
     def read_artifact(
         self, uri: str, *, offset: int = 0, limit: int | None = None
@@ -128,6 +144,17 @@ class ServerAgentRuntime:
             artifact_store=self.artifacts,
         )
         return json.dumps(summary, ensure_ascii=False, default=str)
+
+    def store_trace(self) -> dict[str, object]:
+        payload = "\n".join(
+            json.dumps(event.to_dict(), default=str) for event in self.trace.events
+        )
+        artifact = self.artifacts.put(payload, "application/x-ndjson")
+        return {
+            "uri": artifact.uri,
+            "sha256": artifact.digest,
+            "events": len(self.trace.events),
+        }
 
     def delta(self, state) -> dict[str, Any]:
         current = {
