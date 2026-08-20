@@ -93,3 +93,7 @@ class MemoryUpdateRequest(BaseModel):
     text: str | None = None
     expires_at: str | None = None
     scope: str | None = None
+
+
+class ClaimVerificationRequest(BaseModel):
+    claims: list[dict]
