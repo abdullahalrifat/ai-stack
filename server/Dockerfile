@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -21,17 +19,9 @@ RUN apt-get update && \
 
 COPY requirements.txt requirements.lock ./
 
-RUN pip install --no-cache-dir -r requirements.lock
-
-# Core is private. BuildKit mounts the read-only GitHub token for this command
-# only; it is not copied into the image, build arguments, or layer history.
-RUN --mount=type=secret,id=core_repo_token,required=true \
-    git -c "http.extraHeader=Authorization: Bearer $(cat /run/secrets/core_repo_token)" \
-      clone --filter=blob:none --no-checkout \
-      https://github.com/abdullahalrifat/jarvis-core.git /tmp/jarvis-core && \
-    git -C /tmp/jarvis-core checkout "${JARVIS_CORE_REF}" && \
-    pip install --no-cache-dir /tmp/jarvis-core && \
-    rm -rf /tmp/jarvis-core
+RUN pip install --no-cache-dir -r requirements.lock && \
+    pip install --no-cache-dir \
+      "jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/archive/${JARVIS_CORE_REF}.zip"
 
 COPY app ./app
 COPY evals ./evals
