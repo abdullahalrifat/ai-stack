@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
+from threading import Lock
 
-from jarvis_core import CapabilityRegistry, ModelCapabilities, ModelProfile
+from jarvis_core import (
+    BenchmarkObservation,
+    BenchmarkRegistry,
+    CapabilityRegistry,
+    ModelCapabilities,
+    ModelProfile,
+    ProviderHealth,
+)
 
 
 def model_registry(available: list[str]) -> CapabilityRegistry:
@@ -52,14 +61,60 @@ def model_registry(available: list[str]) -> CapabilityRegistry:
     return registry
 
 
+_lock = Lock()
+_health: dict[str, ProviderHealth] = {}
+
+
+def _benchmark_registry() -> BenchmarkRegistry:
+    registry = BenchmarkRegistry()
+    path = Path(os.getenv("JARVIS_MODEL_BENCHMARKS", "/tmp/jarvis-model-benchmarks.jsonl"))
+    if not path.exists():
+        return registry
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            registry.record(BenchmarkObservation(**json.loads(line)))
+    return registry
+
+
+def record_model_observation(observation: BenchmarkObservation) -> None:
+    path = Path(os.getenv("JARVIS_MODEL_BENCHMARKS", "/tmp/jarvis-model-benchmarks.jsonl"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _lock, path.open("a", encoding="utf-8") as output:
+        from dataclasses import asdict
+
+        output.write(json.dumps(asdict(observation)) + "\n")
+
+
+def record_model_health(model: str, *, success: bool, latency_ms: float = 0) -> None:
+    health = _health.setdefault(model, ProviderHealth(model))
+    if success:
+        health.record_success(latency_ms)
+    else:
+        health.record_failure()
+
+
 def route_model(
     available: list[str],
     *,
     preferred: str | None = "auto",
     required: tuple[str, ...] = ("tool_calling",),
+    task: str = "general",
 ) -> str:
-    profile = model_registry(available).select(
-        preferred=preferred,
-        required=required,
-    )
-    return profile.model
+    registry = model_registry(available)
+    if preferred not in {None, "auto"}:
+        return registry.select(preferred=preferred, required=required).model
+    candidates = [
+        item
+        for item in registry.list()
+        if item.capabilities.supports(required)
+        and _health.setdefault(item.model, ProviderHealth(item.model)).state.value != "open"
+    ]
+    if not candidates:
+        raise LookupError("no healthy model satisfies the required capabilities")
+    benchmarks = _benchmark_registry()
+    if benchmarks.observations:
+        return benchmarks.select(candidates, task).model
+    return max(
+        candidates,
+        key=lambda item: (_health[item.model].score, item.priority, item.name),
+    ).model

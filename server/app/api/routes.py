@@ -63,10 +63,13 @@ from .protocol import (
 )
 from .schemas import (
     ChatRequest,
+    ClaimVerificationRequest,
     ExecuteRequest,
     ImageGenerationRequest,
+    HunkApprovalRequest,
     IngestRequest,
     MemoryQuery,
+    MemoryUpdateRequest,
     OpenAIChatCompletionRequest,
     OpenAIEmbeddingRequest,
     PlanRequest,
@@ -100,6 +103,17 @@ def capabilities():
         "features": FEATURES,
         "deprecations": [],
     }
+
+
+
+@router.post("/evidence/verify", dependencies=[Depends(verify_api_key)])
+async def verify_evidence(request: ClaimVerificationRequest):
+    from app.core.claim_verification import verify_claims
+
+    try:
+        return {"claims": await run_in_threadpool(verify_claims, request.claims)}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(400, f"Invalid claim evidence: {exc}") from exc
 
 
 @router.get("/metrics/runs", dependencies=[Depends(verify_api_key)])
@@ -476,6 +490,63 @@ async def approve(run_id: str):
     except Exception as e:
         logger.exception("Failed to approve run %s", run_id)
         raise HTTPException(500, f"Could not merge changes: {e}") from e
+
+
+
+@router.get(
+    "/runs/{run_id}/review",
+    dependencies=[Depends(verify_api_key), Depends(require_run_store)],
+)
+async def review_hunks(run_id: str):
+    from app.runs.review import review_run
+
+    try:
+        transaction = await run_in_threadpool(review_run, run_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "base_revision": transaction.base_revision,
+        "hunks": [
+            {
+                "id": hunk.id,
+                "path": hunk.path,
+                "patch": hunk.patch,
+                "evidence": list(hunk.evidence),
+                "state": hunk.state.value,
+            }
+            for hunk in transaction.hunks
+        ],
+    }
+
+
+@router.post(
+    "/runs/{run_id}/approve-hunks",
+    dependencies=[Depends(verify_api_key), Depends(require_run_store)],
+)
+async def approve_selected_hunks(run_id: str, request: HunkApprovalRequest):
+    from app.runs.review import apply_hunks
+
+    try:
+        return await run_in_threadpool(apply_hunks, run_id, set(request.hunk_ids))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post(
+    "/transactions/{transaction_id}/undo",
+    dependencies=[Depends(verify_api_key), Depends(require_run_store)],
+)
+async def undo_change_transaction(transaction_id: str):
+    from app.runs.review import undo_transaction
+
+    try:
+        return await run_in_threadpool(undo_transaction, transaction_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.post(
@@ -864,6 +935,32 @@ async def memory_search(request: MemoryQuery):
 # =====================================================
 # Workspace
 # =====================================================
+
+
+
+@router.patch("/memory/{memory_id}", dependencies=[Depends(verify_api_key)])
+async def edit_memory(memory_id: str, request: MemoryUpdateRequest):
+    from app.memory.memory import update_memory
+
+    try:
+        await run_in_threadpool(
+            update_memory,
+            memory_id,
+            text=request.text,
+            expires_at=request.expires_at,
+            scope=request.scope,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": memory_id, "status": "updated"}
+
+
+@router.delete("/memory/{memory_id}", dependencies=[Depends(verify_api_key)])
+async def remove_memory(memory_id: str):
+    from app.memory.memory import delete_memory
+
+    await run_in_threadpool(delete_memory, memory_id)
+    return {"id": memory_id, "status": "deleted"}
 
 
 @router.get("/workspace/tree", dependencies=[Depends(verify_api_key)])

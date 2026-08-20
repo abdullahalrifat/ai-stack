@@ -13,6 +13,7 @@ from fastapi import FastAPI
 
 from app.agent.service import shutdown_run_executor, submit_run
 from app.api.routes import router
+from app.channels.router import router as channels_router
 from app.core.config import POSTGRES_URL, WORKSPACE_ROOTS, validate_settings
 from app.runs.client_leases import monitor_client_leases
 from app.runs.sandbox import remove_sandbox
@@ -96,3 +97,4 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(router)
+app.include_router(channels_router)

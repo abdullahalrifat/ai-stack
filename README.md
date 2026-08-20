@@ -59,3 +59,12 @@ wheel. Installation is independent of PyPI and does not check out a Core branch
 or commit.
 
 See [.env.example](.env.example) for the complete configuration surface.
+
+
+## World-class runtime parity (0.3 preview)
+
+Server uses the same Core resilience, evidence, benchmark, policy, and review contracts as the CLI. The 0.3 preview adds health-aware model routing, structured claim verification, per-hunk approval and transactional undo, hierarchical workspace instructions, expiring memory, supervised permission-controlled MCP, and durable web, Telegram, and WhatsApp ingress.
+
+Channel adapters only authenticate, normalize, deduplicate, and enqueue Runs. They never create a second agent implementation. Configure `TELEGRAM_WEBHOOK_SECRET`, `WHATSAPP_APP_SECRET`, and `WHATSAPP_VERIFY_TOKEN` before enabling public webhooks. MCP tools must be explicitly allowed; the old list-only configuration does not imply wildcard access.
+
+Release tags build the Server image, generate an SPDX SBOM, and attach provenance. The temporary Core dependency is pinned to an immutable public commit while 0.3 is under review; it will be replaced with the signed 0.3 release artifact before this feature set is marked stable.

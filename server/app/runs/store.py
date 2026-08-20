@@ -122,6 +122,107 @@ class RunStore:
         self.append_event(run_id, "queued", {"message": "Run queued"})
         return run_id
 
+
+    def create_channel_run(
+        self,
+        *,
+        provider: str,
+        event_id: str,
+        identity: str,
+        payload: dict[str, Any],
+        task: str,
+        model: str,
+        workspace: str,
+        conversation_id: str | None = None,
+    ) -> tuple[str, bool]:
+        """Create exactly one run for a retried channel webhook."""
+
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT run_id FROM agent_channel_events
+                   WHERE provider=%s AND event_id=%s""",
+                (provider, event_id),
+            )
+            existing = cursor.fetchone()
+            if existing and existing["run_id"]:
+                return str(existing["run_id"]), False
+            cursor.execute(
+                """INSERT INTO agent_channel_events
+                   (provider, event_id, identity, payload)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (provider, event_id) DO NOTHING""",
+                (provider, event_id, identity, Jsonb(_postgres_safe_json(payload))),
+            )
+        run_id = self.create_run(
+            task=task,
+            model=model,
+            workspace=workspace,
+            conversation_id=conversation_id,
+            document_scope=None,
+            project_id=None,
+            allow_write=False,
+            client_id=f"{provider}:{identity}",
+        )
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_channel_events SET run_id=%s
+                   WHERE provider=%s AND event_id=%s AND run_id IS NULL
+                   RETURNING run_id""",
+                (run_id, provider, event_id),
+            )
+            updated = cursor.fetchone()
+            if updated:
+                return run_id, True
+            cursor.execute(
+                """SELECT run_id FROM agent_channel_events
+                   WHERE provider=%s AND event_id=%s""",
+                (provider, event_id),
+            )
+            winner = cursor.fetchone()
+        return str(winner["run_id"]), False
+
+
+    def record_change_transaction(
+        self,
+        transaction_id: str,
+        run_id: str,
+        base_revision: str,
+        applied_revision: str,
+        approved_patch: str,
+    ) -> None:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO agent_change_transactions
+                   (id, run_id, base_revision, applied_revision, approved_patch, status)
+                   VALUES (%s, %s, %s, %s, %s, 'applied')""",
+                (
+                    transaction_id,
+                    run_id,
+                    base_revision,
+                    applied_revision,
+                    approved_patch,
+                ),
+            )
+
+    def get_change_transaction(self, transaction_id: str) -> dict[str, Any] | None:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM agent_change_transactions WHERE id=%s",
+                (transaction_id,),
+            )
+            return cursor.fetchone()
+
+    def revert_change_transaction(self, transaction_id: str) -> None:
+        with self.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_change_transactions
+                   SET status='reverted', reverted_at=NOW()
+                   WHERE id=%s AND status='applied'""",
+                (transaction_id,),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Change transaction is not applied")
+
     def append_event(
         self, run_id: str, event_type: str, payload: dict[str, Any]
     ) -> dict[str, Any]:

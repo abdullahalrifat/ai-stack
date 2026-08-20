@@ -83,3 +83,17 @@ class ImageGenerationRequest(BaseModel):
     height: int = 1024
     steps: int = 28
     seed: int = -1
+
+
+class HunkApprovalRequest(BaseModel):
+    hunk_ids: list[str]
+
+
+class MemoryUpdateRequest(BaseModel):
+    text: str | None = None
+    expires_at: str | None = None
+    scope: str | None = None
+
+
+class ClaimVerificationRequest(BaseModel):
+    claims: list[dict]

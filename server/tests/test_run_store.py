@@ -61,11 +61,13 @@ def test_initialize_applies_versioned_migrations_once():
     assert any("CREATE TABLE IF NOT EXISTS agent_runs" in query for query in executed)
     assert cursor.execute.call_args_list[-1].args == (
         "INSERT INTO agent_schema_migrations (version) VALUES (%s)",
-        ("003",),
+        ("005",),
     )
     assert (MIGRATIONS_DIR / "001_initial.sql").is_file()
     assert (MIGRATIONS_DIR / "002_client_leases.sql").is_file()
     assert (MIGRATIONS_DIR / "003_client_lease_sweeping.sql").is_file()
+    assert (MIGRATIONS_DIR / "004_channel_events.sql").is_file()
+    assert (MIGRATIONS_DIR / "005_change_transactions.sql").is_file()
 
 
 def test_heartbeat_requires_the_current_worker():

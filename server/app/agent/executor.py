@@ -31,6 +31,7 @@ from ..core.config import (
 )
 from ..core.evidence import evidence_prompt
 from ..core.exceptions import RunCancelled
+from ..core.instructions import instruction_prompt
 from ..core.permissions import PermissionPolicy, permissions_context, policy_for
 from ..llm.client import chat, chat_with_tools, chat_with_tools_stream
 from ..tools.filesystem import current_workspace, resolve_path
@@ -1589,6 +1590,7 @@ explicitly instead of marking them complete without code.
     system_prompt = executor_prompt(
         getattr(state, "prompt_mode", "code"), research_mode
     )
+    system_prompt += instruction_prompt(state.workspace)
     task_context, budget = fit_user_context(system_prompt, tools, task_context)
     if budget["trimmed"]:
         on_event("context_budgeted", budget)
