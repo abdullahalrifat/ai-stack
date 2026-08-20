@@ -48,13 +48,13 @@ test("source URLs are unique and punctuation is removed", () => {
 test("Runs UI constants match the shared OpenAPI contract", () => {
   const contract = JSON.parse(
     readFileSync(
-      new URL("../../contracts/aistack-protocol-v1.json", import.meta.url),
+      new URL("../../contracts/jarvis-protocol-v1.json", import.meta.url),
       "utf8",
     ),
   );
-  assert.equal(contract["x-aistack-protocol"].current, PROTOCOL_VERSION);
+  assert.equal(contract["x-jarvis-protocol"].current, PROTOCOL_VERSION);
   assert.equal(
-    contract["x-aistack-protocol"].event_schema,
+    contract["x-jarvis-protocol"].event_schema,
     EVENT_SCHEMA_VERSION,
   );
 });
