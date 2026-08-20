@@ -87,3 +87,9 @@ class ImageGenerationRequest(BaseModel):
 
 class HunkApprovalRequest(BaseModel):
     hunk_ids: list[str]
+
+
+class MemoryUpdateRequest(BaseModel):
+    text: str | None = None
+    expires_at: str | None = None
+    scope: str | None = None
