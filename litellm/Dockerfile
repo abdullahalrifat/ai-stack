@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir --upgrade pip
 
 RUN pip install --no-cache-dir \
     "litellm[proxy]" \
+    "fastapi==0.128.0" \
     async_generator
 
 COPY direct_client_guard.py /app/direct_client_guard.py
