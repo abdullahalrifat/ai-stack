@@ -153,3 +153,24 @@ channel webhook/app
 They do not contain another agent loop. See
 [product architecture](../docs/product-architecture.md) for identity,
 idempotency, attachment, delivery, and approval requirements.
+
+
+## Model and provider readiness
+
+On a clean deployment, the `ollama-init` service pulls every model named in
+`OLLAMA_MODELS` and must finish successfully before LiteLLM starts. This makes a
+healthy stack mean that configured local models are actually available, rather
+than merely that the Ollama process is reachable.
+
+The model-integration workflow starts real Ollama and LiteLLM containers, pulls
+the small `qwen3:0.6b` fixture model, and requires a native function call.
+Remote OpenAI-compatible and Anthropic probes run weekly or manually when their
+repository secrets are configured.
+
+## Channel delivery
+
+Telegram and WhatsApp webhooks create idempotent durable Runs. A background
+delivery worker claims terminal channel Runs, sends their answer through the
+provider API, records delivery, and retries failures with bounded exponential
+backoff. Configure both the ingress verification secrets and outbound API
+credentials from `.env.example`.
