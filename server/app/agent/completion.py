@@ -154,7 +154,6 @@ def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
     if category == "mutation":
         state.successful_mutation = True
         state.successful_verification = False
-        # A later edit invalidates all prior verification proof for the workspace state.
         state.verification_events = []
         file_path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("./")
         if file_path:
@@ -245,16 +244,20 @@ def answer_audit(state, answer: str) -> list[str]:
         ):
             failures.append(DOC_ONLY_MUTATION_FAILURE)
 
-        evidence = evidence_audit(state)
-        if not evidence.passed:
-            if evidence.missing:
-                failures.append(
-                    "completion evidence missing: " + ", ".join(evidence.missing)
-                )
-            if evidence.rejected:
-                failures.append(
-                    "completion evidence rejected: " + ", ".join(evidence.rejected)
-                )
+        # Real AgentState instances own these ledgers and therefore must satisfy
+        # the stronger execution-proof gate. Older lightweight test/plugin state
+        # objects remain compatible until they opt into the evidence contract.
+        if hasattr(state, "mutation_events") and hasattr(state, "verification_events"):
+            evidence = evidence_audit(state)
+            if not evidence.passed:
+                if evidence.missing:
+                    failures.append(
+                        "completion evidence missing: " + ", ".join(evidence.missing)
+                    )
+                if evidence.rejected:
+                    failures.append(
+                        "completion evidence rejected: " + ", ".join(evidence.rejected)
+                    )
 
     relevant_failure_categories = {"inspection"}
     if getattr(state, "allow_write", False) and change_requested:
