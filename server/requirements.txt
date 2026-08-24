@@ -39,4 +39,4 @@ black
 flake8
 
 # Verified shared runtime release; PyPI is not required.
-jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/releases/download/v0.4.0/jarvis_agent_core-0.4.0-py3-none-any.whl#sha256=858ff087102d49bc38b6e89697dc9dfa1e967a613d144a2c1a93d7dd8d086a7b
+jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/releases/download/v0.7.0/jarvis_agent_core-0.7.0-py3-none-any.whl#sha256=9990b631fb012a86ceab5e0d004bc958d821c3ceee6c6f96c7cac383ff60f7f7
