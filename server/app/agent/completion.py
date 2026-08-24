@@ -1,6 +1,10 @@
 """Deterministic execution-progress tracking and final-answer acceptance."""
 
+import hashlib
+import json
 import re
+
+from .quality import evidence_audit
 
 _CHANGE_REQUEST = re.compile(
     r"\b(?:add|build|change|create|edit|fix|implement|improve|modify|"
@@ -21,25 +25,15 @@ _VERIFICATION_COMMANDS = {
     "ruff",
 }
 
-# A request that asks for real implementation work. Marking TODO/README
-# checkboxes is never a valid completion for these.
 _IMPLEMENTATION_INTENT = re.compile(
     r"\b(?:implement|build|refactor|fix|repair|develop|create)\b",
     re.IGNORECASE,
 )
-
-# Requests that are genuinely about documentation are exempt from the
-# documentation-only guard, so "update the README" still works.
 _DOCUMENTATION_REQUEST = re.compile(
     r"\b(?:document|readme|changelog|docs?|write(?:ing)? (?:a|the|up) )\b",
     re.IGNORECASE,
 )
-
 _DOCUMENTATION_SUFFIXES = (".md", ".rst", ".txt")
-
-# Audit failure raised when an implementation request only touched
-# documentation/marker files. Runs rejected for this reason must not surface
-# a pending diff for approval, so the executor marks the diff as blocked.
 DOC_ONLY_MUTATION_FAILURE = (
     "change only modified documentation/marker files "
     "(TODO/README/roadmap); an implementation request must change "
@@ -48,8 +42,6 @@ DOC_ONLY_MUTATION_FAILURE = (
 
 
 def is_implementation_request(message: str) -> bool:
-    """Return whether a request requires source implementation, not docs alone."""
-
     return bool(
         _IMPLEMENTATION_INTENT.search(message)
         and not _DOCUMENTATION_REQUEST.search(message)
@@ -57,15 +49,11 @@ def is_implementation_request(message: str) -> bool:
 
 
 def is_documentation_path(path: str) -> bool:
-    """Return whether a mutation target is documentation or a marker file."""
-
     normalized = str(path).strip().lstrip("./").casefold()
     return normalized.endswith(_DOCUMENTATION_SUFFIXES)
 
 
 def tool_result_failed(result) -> bool:
-    """Recognize registry errors and non-zero command exit codes."""
-
     if not result:
         return True
     if not isinstance(result, dict):
@@ -91,8 +79,6 @@ def tool_result_failed(result) -> bool:
 
 
 def requires_workspace_change(message: str) -> bool:
-    """Return whether the user requested a concrete workspace mutation."""
-
     return bool(_CHANGE_REQUEST.search(message))
 
 
@@ -110,9 +96,46 @@ def _tool_category(tool_name: str, args: dict) -> str:
     return "inspection"
 
 
-def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
-    """Update deterministic completion state from an observed tool result."""
+def _digest(value) -> str:
+    raw = json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()
 
+
+def _record_execution_evidence(state, category: str, tool_name: str, args: dict, result) -> None:
+    """Append immutable evidence derived from observed tool execution."""
+    if category == "mutation":
+        path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("./")
+        if not path:
+            path = "workspace"
+        events = list(getattr(state, "mutation_events", []) or [])
+        events.append(
+            {
+                "success": True,
+                "tool": tool_name,
+                "path": path,
+                "args_sha256": _digest(args),
+                "result_sha256": _digest(result),
+            }
+        )
+        state.mutation_events = events
+    elif category == "verification":
+        exit_code = result.get("exit_code", 0) if isinstance(result, dict) else 0
+        events = list(getattr(state, "verification_events", []) or [])
+        events.append(
+            {
+                "kind": "test" if tool_name == "run_tests" else "command",
+                "tool": tool_name,
+                "command": str(args.get("command") or tool_name),
+                "exit_code": exit_code,
+                "args_sha256": _digest(args),
+                "stdout_sha256": _digest(result),
+            }
+        )
+        state.verification_events = events
+
+
+def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
+    """Update completion state and execution-backed evidence from a tool result."""
     category = _tool_category(tool_name, args)
     pending = set(getattr(state, "pending_failure_categories", set()))
     successful = set(getattr(state, "successful_tool_categories", set()))
@@ -126,12 +149,13 @@ def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
     state.successful_tool_categories = successful
     pending.discard(category)
     state.pending_failure_categories = pending
+    _record_execution_evidence(state, category, tool_name, args, result)
+
     if category == "mutation":
         state.successful_mutation = True
-        # Verification proves a particular workspace state. Any later edit
-        # invalidates that proof and must be followed by a fresh check.
         state.successful_verification = False
-        file_path = str(args.get("file_path") or "").strip().lstrip("./")
+        state.verification_events = []
+        file_path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("./")
         if file_path:
             mutated = set(getattr(state, "successful_mutation_paths", set()))
             mutated.add(file_path)
@@ -143,9 +167,6 @@ def record_tool_progress(state, tool_name: str, args: dict, result) -> None:
 def _criterion_satisfied(state, criterion: str, answer: str) -> bool:
     lowered = criterion.casefold()
     if re.search(r"\b(?:report|summary|synthesi[sz]\w*|recommend\w*)\b", lowered):
-        # A report is a final-answer deliverable, not a tool-side effect. Treat
-        # a substantive evidence-backed answer as completion even when the
-        # planner used a different inflection (synthesize vs. synthesized).
         return len(answer.strip()) >= 80 and bool(state.observations)
     if _VERIFICATION_REQUEST.search(lowered):
         return getattr(state, "successful_verification", False)
@@ -174,8 +195,6 @@ def _criterion_satisfied(state, criterion: str, answer: str) -> bool:
 
 
 def _has_successful_verification(state) -> bool:
-    """Return whether state or durable observations prove a check succeeded."""
-
     if getattr(state, "successful_verification", False):
         return True
     for observation in reversed(getattr(state, "observations", []) or []):
@@ -191,7 +210,6 @@ def _has_successful_verification(state) -> bool:
 
 def answer_audit(state, answer: str) -> list[str]:
     """Check observable route requirements before accepting a final answer."""
-
     lowered = answer.casefold()
     failures: list[str] = []
     if re.search(r"\b(?:tests?|suite|lint|build)\b.{0,40}\bpass", lowered):
@@ -216,16 +234,8 @@ def answer_audit(state, answer: str) -> list[str]:
     if getattr(state, "allow_write", False) and change_requested:
         if not getattr(state, "successful_mutation", False):
             failures.append("requested workspace change has not been made")
-        # A completed mutation is not accepted until a verification tool
-        # (run_tests, or a build/lint/test run_command) succeeds. This is
-        # deterministic rather than derived from the wording of the request:
-        # an edit the model has not proven works is not a finished outcome.
         if not getattr(state, "successful_verification", False):
             failures.append("requested verification has not completed successfully")
-        # Checklist-gaming guard: an implementation request whose only
-        # mutation is a TODO/README/roadmap markdown file (e.g. flipping
-        # "- [ ]" to "- [x]") is not an implementation. Require at least one
-        # non-documentation file to have been written.
         mutation_paths = getattr(state, "successful_mutation_paths", set()) or set()
         if (
             mutation_paths
@@ -233,6 +243,21 @@ def answer_audit(state, answer: str) -> list[str]:
             and all(is_documentation_path(path) for path in mutation_paths)
         ):
             failures.append(DOC_ONLY_MUTATION_FAILURE)
+
+        # Real AgentState instances own these ledgers and therefore must satisfy
+        # the stronger execution-proof gate. Older lightweight test/plugin state
+        # objects remain compatible until they opt into the evidence contract.
+        if hasattr(state, "mutation_events") and hasattr(state, "verification_events"):
+            evidence = evidence_audit(state)
+            if not evidence.passed:
+                if evidence.missing:
+                    failures.append(
+                        "completion evidence missing: " + ", ".join(evidence.missing)
+                    )
+                if evidence.rejected:
+                    failures.append(
+                        "completion evidence rejected: " + ", ".join(evidence.rejected)
+                    )
 
     relevant_failure_categories = {"inspection"}
     if getattr(state, "allow_write", False) and change_requested:
@@ -272,18 +297,18 @@ def answer_audit(state, answer: str) -> list[str]:
         if not complete:
             failures.append(f"task completion criteria not met: {task_id}")
 
-    evidence = getattr(state, "document_evidence", {}) or {}
-    if evidence and evidence.get("provenance_required"):
+    document_evidence = getattr(state, "document_evidence", {}) or {}
+    if document_evidence and document_evidence.get("provenance_required"):
         sources = {
             str(record.get("source")).casefold()
-            for record in evidence.get("records", [])
+            for record in document_evidence.get("records", [])
             if record.get("source")
         }
         if sources and not any(source in lowered for source in sources):
             failures.append("document provenance is not cited")
         excluded_entities = [
             entity
-            for entity in evidence.get("excluded_entities", [])
+            for entity in document_evidence.get("excluded_entities", [])
             if len(entity) >= 5 and entity.casefold() in lowered
         ]
         if excluded_entities:

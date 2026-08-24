@@ -19,7 +19,7 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull qwen3:0.6b"]
+    command: ["ollama pull qwen3:1.7b"]
     volumes:
       - ollama-test:/root/.ollama
 

@@ -12,9 +12,15 @@ payload = {
     "messages": [
         {
             "role": "system",
-            "content": "Call capability_probe exactly once with value ok.",
+            "content": (
+                "You are testing native function calling. Do not answer with text. "
+                "Invoke capability_probe exactly once with JSON argument {\"value\":\"ok\"}."
+            ),
         },
-        {"role": "user", "content": "Run the probe now."},
+        {
+            "role": "user",
+            "content": "Call capability_probe now. Return only the function call.",
+        },
     ],
     "tools": [
         {
@@ -26,15 +32,20 @@ payload = {
                     "type": "object",
                     "properties": {"value": {"type": "string", "enum": ["ok"]}},
                     "required": ["value"],
+                    "additionalProperties": False,
                 },
             },
         }
     ],
-    "tool_choice": "required",
-    "max_tokens": 256,
+    "tool_choice": {
+        "type": "function",
+        "function": {"name": "capability_probe"},
+    },
+    "temperature": 0,
+    "max_tokens": 128,
 }
 last_error = None
-for _ in range(6):
+for _ in range(3):
     try:
         request = Request(
             f"{url}/chat/completions",
@@ -47,13 +58,13 @@ for _ in range(6):
         with urlopen(request, timeout=180) as response:
             result = json.loads(response.read())
         calls = result["choices"][0]["message"].get("tool_calls") or []
-        assert calls, result
+        assert len(calls) == 1, result
         call = calls[0]["function"]
         assert call["name"] == "capability_probe", result
-        assert json.loads(call["arguments"])["value"] == "ok", result
+        assert json.loads(call["arguments"]) == {"value": "ok"}, result
         print("real Ollama/LiteLLM tool-call smoke test passed")
         raise SystemExit(0)
     except Exception as exc:
         last_error = exc
-        time.sleep(5)
+        time.sleep(3)
 raise SystemExit(f"integration failed: {last_error}")

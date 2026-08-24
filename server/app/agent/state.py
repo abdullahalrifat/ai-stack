@@ -63,6 +63,13 @@ class AgentState:
 
     successful_verification: bool = False
 
+    # Immutable execution-derived proof used by the v0.4 completion gate.
+    # These records are populated only by observed successful tool execution;
+    # the model never writes them directly.
+    mutation_events: list[dict[str, Any]] = field(default_factory=list)
+
+    verification_events: list[dict[str, Any]] = field(default_factory=list)
+
     # When an implementation request finalizes with only doc/marker-file
     # mutations, the run must not offer a pending diff for approval. The
     # executor sets this flag so the service layer discards the sandbox.
@@ -150,6 +157,8 @@ class AgentState:
         self.plan.clear()
         self.observations.clear()
         self.messages.clear()
+        self.mutation_events.clear()
+        self.verification_events.clear()
 
 
 @dataclass
