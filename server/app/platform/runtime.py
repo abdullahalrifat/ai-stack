@@ -1,4 +1,4 @@
-"""Background platform reconciliation and empirical routing calibration."""
+"""Background platform reconciliation, telemetry, and empirical routing."""
 
 from __future__ import annotations
 
@@ -19,6 +19,40 @@ from .telemetry import telemetry
 logger = logging.getLogger(__name__)
 PLATFORM_RECONCILE_SECONDS = 5
 TERMINAL = {"completed", "awaiting_approval", "failed", "discarded", "cancelled"}
+
+
+def install_agent_telemetry() -> None:
+    """Wrap the existing executor/tool registry without creating a second engine."""
+    from app.agent import executor, service
+    from app.tools.registry import registry
+
+    if getattr(executor, "_V06_TELEMETRY_INSTALLED", False):
+        return
+    original_plan = executor.execute_plan
+    original_tool_execute = registry.execute
+
+    def traced_plan(state, *args, **kwargs):
+        with telemetry.span(
+            "jarvis.agent.execute_plan",
+            model=str(getattr(state, "model", "unknown")),
+            workspace=str(getattr(state, "workspace", "")),
+            allow_write=bool(getattr(state, "allow_write", False)),
+            prompt_mode=str(getattr(state, "prompt_mode", "")),
+        ):
+            return original_plan(state, *args, **kwargs)
+
+    def traced_tool(name: str, args: dict):
+        with telemetry.span(
+            "jarvis.agent.tool",
+            tool=name,
+            argument_keys=sorted(str(key) for key in args),
+        ):
+            return original_tool_execute(name, args)
+
+    executor.execute_plan = traced_plan
+    service.execute_plan = traced_plan
+    registry.execute = traced_tool
+    executor._V06_TELEMETRY_INSTALLED = True
 
 
 def _category(task: str) -> str:
@@ -158,9 +192,7 @@ def install_empirical_routing() -> None:
             if not row:
                 calibrated.append(candidate)
                 continue
-            success = max(
-                0.0, min(1.0, float(row.get("success_rate") or 0))
-            )
+            success = max(0.0, min(1.0, float(row.get("success_rate") or 0)))
             incorrect = max(
                 0.0, min(1.0, float(row.get("incorrect_rate") or 0))
             )
