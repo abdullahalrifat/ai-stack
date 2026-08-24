@@ -20,7 +20,7 @@ from app.platform.efficiency_v07 import install_v07_efficiency
 from app.platform.failure_runtime_v07 import install_failure_runtime
 from app.platform.failure_store_v07 import install_failure_store
 from app.platform.router import router as platform_router
-from app.platform.runtime import install_empirical_routing, monitor_platform
+from app.platform.runtime import monitor_platform
 from app.runs.client_leases import monitor_client_leases
 from app.runs.sandbox import remove_sandbox
 from app.runs.store import get_run_store
@@ -77,13 +77,12 @@ async def lifespan(_: FastAPI):
         store = get_run_store()
         store.initialize()
         logger.info("Durable run store initialized.")
-        install_empirical_routing()
         install_failure_store()
+        # v0.7 replaces the v0.6 code-only empirical wrapper with task-category
+        # calibration and failure/risk-aware escalation.
         install_v07_efficiency()
         install_failure_runtime()
         reconcile_runs_once()
-        # failure_runtime wraps the module-global reconciler; call it through the
-        # module so the initial pass and monitor use identical semantics.
         from app.platform import runtime as platform_runtime
 
         platform_runtime.tick_platform_once()
