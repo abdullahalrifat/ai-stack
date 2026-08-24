@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from app.api.protocol import FEATURES
 from app.platform.router import (
@@ -32,14 +33,15 @@ def test_server_cron_uses_standard_dom_dow_or_and_sunday_seven():
 
 
 def test_cloud_requests_require_lease_fence_for_heartbeat_and_completion():
+    lease_id = uuid4()
     heartbeat = CloudHeartbeatRequest(
         worker_id="worker",
-        lease_id="lease",
+        lease_id=lease_id,
         lease_seconds=60,
     )
-    complete = CloudCompleteRequest(worker_id="worker", lease_id="lease")
-    assert heartbeat.lease_id == "lease"
-    assert complete.lease_id == "lease"
+    complete = CloudCompleteRequest(worker_id="worker", lease_id=lease_id)
+    assert heartbeat.lease_id == lease_id
+    assert complete.lease_id == lease_id
 
 
 def test_cloud_submission_accepts_idempotency_key():
