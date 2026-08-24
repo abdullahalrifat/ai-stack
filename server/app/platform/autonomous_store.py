@@ -77,6 +77,24 @@ class AutonomousPlatformStore(BasePlatformStore):
             )
             return dict(cursor.fetchone())
 
+    def heartbeat_cloud(
+        self,
+        task_id: str,
+        worker_id: str,
+        lease_id: str,
+        lease_seconds: int = 60,
+    ) -> bool:
+        lease = max(15, min(600, lease_seconds))
+        with self.runs.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_cloud_tasks
+                   SET lease_expires_at=NOW()+(%s*INTERVAL '1 second')
+                   WHERE id=%s AND status='running' AND worker_id=%s
+                     AND lease_id=%s AND lease_expires_at>=NOW()""",
+                (lease, task_id, worker_id, lease_id),
+            )
+            return cursor.rowcount == 1
+
     def update_cloud_state(
         self,
         task_id: str,
@@ -99,13 +117,48 @@ class AutonomousPlatformStore(BasePlatformStore):
                 return False
             current = str(row["execution_state"])
             if state not in _ALLOWED_WORKER_TRANSITIONS.get(current, set()):
-                raise ValueError(f"invalid cloud execution transition: {current} -> {state}")
+                raise ValueError(
+                    f"invalid cloud execution transition: {current} -> {state}"
+                )
             cursor.execute(
-                """UPDATE agent_cloud_tasks SET execution_state=%s, proof=COALESCE(%s,proof)
+                """UPDATE agent_cloud_tasks
+                   SET execution_state=%s, proof=COALESCE(%s,proof)
                    WHERE id=%s AND status='running' AND worker_id=%s AND lease_id=%s
                      AND lease_expires_at>=NOW()""",
                 (
                     state,
+                    Jsonb(proof) if proof is not None else None,
+                    task_id,
+                    worker_id,
+                    lease_id,
+                ),
+            )
+            return cursor.rowcount == 1
+
+    def finish_cloud(
+        self,
+        task_id: str,
+        worker_id: str,
+        lease_id: str,
+        *,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        proof: dict[str, Any] | None = None,
+    ) -> bool:
+        status = "failed" if error else "completed"
+        with self.runs.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE agent_cloud_tasks
+                   SET status=%s, execution_state=%s, result=%s, error=%s,
+                       proof=COALESCE(%s,proof), completed_at=NOW(),
+                       lease_expires_at=NULL, lease_id=NULL
+                   WHERE id=%s AND status='running' AND worker_id=%s
+                     AND lease_id=%s AND lease_expires_at>=NOW()""",
+                (
+                    status,
+                    status,
+                    Jsonb(result or {}),
+                    error[:4000] if error else None,
                     Jsonb(proof) if proof is not None else None,
                     task_id,
                     worker_id,
