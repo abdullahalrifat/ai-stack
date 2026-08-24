@@ -3,23 +3,17 @@ from pathlib import Path
 
 CORE_VERSION = "0.8.0"
 CORE_SHA256 = "d9569b69385e58a681ea01e900eb81c395d3f202a09a92878eb82bf4d4b8618a"
-
-
-def _repo_file(path: str) -> Path:
-    local = Path(path)
-    if local.exists():
-        return local
-    return Path("server").parent / path
+SERVER_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = SERVER_ROOT.parent
 
 
 def test_server_package_image_and_ci_use_same_core_release():
-    requirements = _repo_file("requirements.txt").read_text(encoding="utf-8")
-    lockfile = _repo_file("requirements.lock").read_text(encoding="utf-8")
-    dockerfile = _repo_file("Dockerfile").read_text(encoding="utf-8")
-    workflow_path = Path("../.github/workflows/python-package.yml")
-    if not workflow_path.exists():
-        workflow_path = Path(".github/workflows/python-package.yml")
-    workflow = workflow_path.read_text(encoding="utf-8")
+    requirements = (SERVER_ROOT / "requirements.txt").read_text(encoding="utf-8")
+    lockfile = (SERVER_ROOT / "requirements.lock").read_text(encoding="utf-8")
+    dockerfile = (SERVER_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github/workflows/python-package.yml").read_text(
+        encoding="utf-8"
+    )
 
     expected_asset = (
         f"releases/download/v{CORE_VERSION}/"
