@@ -1,15 +1,30 @@
+from uuid import uuid4
+
 from pydantic import ValidationError
 import pytest
 
-from app.platform.router import CloudStateRequest, CloudTaskRequest
+from app.platform.router import (
+    CloudCompleteRequest,
+    CloudStateRequest,
+    CloudTaskRequest,
+)
 
 
 def test_cloud_state_request_rejects_unknown_state():
     with pytest.raises(ValidationError):
         CloudStateRequest(
             worker_id="worker",
-            lease_id="lease",
+            lease_id=uuid4(),
             state="completed",
+        )
+
+
+def test_cloud_state_request_rejects_invalid_lease_uuid():
+    with pytest.raises(ValidationError):
+        CloudStateRequest(
+            worker_id="worker",
+            lease_id="not-a-uuid",
+            state="running",
         )
 
 
@@ -50,3 +65,27 @@ def test_cloud_task_accepts_idempotency_and_exact_commit():
     assert request.git_ref == "main"
     assert request.git_commit == "abcdef1"
     assert request.idempotency_key == "request-1234"
+
+
+def test_cloud_task_rejects_whitespace_idempotency_key_after_normalization():
+    with pytest.raises(ValidationError):
+        CloudTaskRequest(
+            task="x",
+            workspace="/workspace",
+            idempotency_key="        ",
+        )
+
+
+def test_cloud_task_metadata_and_completion_payloads_are_bounded():
+    with pytest.raises(ValidationError):
+        CloudTaskRequest(
+            task="x",
+            workspace="/workspace",
+            metadata={"blob": "x" * (65 * 1024)},
+        )
+    with pytest.raises(ValidationError):
+        CloudCompleteRequest(
+            worker_id="worker",
+            lease_id=uuid4(),
+            result={"blob": "x" * (1600 * 1024)},
+        )
