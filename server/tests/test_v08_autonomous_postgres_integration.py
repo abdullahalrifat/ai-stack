@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -26,13 +27,16 @@ def _delete(store: AutonomousPlatformStore, task_ids: set[str]) -> None:
     if not task_ids:
         return
     with store.runs.connection() as connection, connection.cursor() as cursor:
-        cursor.execute("DELETE FROM agent_cloud_tasks WHERE id = ANY(%s::uuid[])", (list(task_ids),))
+        cursor.execute(
+            "DELETE FROM agent_cloud_tasks WHERE id = ANY(%s::uuid[])",
+            (list(task_ids),),
+        )
 
 
 def test_concurrent_idempotent_submission_creates_one_task():
     store = _store()
     task_ids: set[str] = set()
-    key = "integration-idempotency-v08"
+    key = f"integration-idempotency-v08-{uuid.uuid4()}"
     try:
         with ThreadPoolExecutor(max_workers=4) as executor:
             rows = list(
@@ -60,7 +64,12 @@ def test_lease_fence_rejects_wrong_worker_and_stale_attempt():
         lease_a = str(first["lease_id"])
         assert store.heartbeat_cloud(task_id, "worker-a", lease_a, 30)
         assert not store.heartbeat_cloud(task_id, "worker-b", lease_a, 30)
-        assert not store.heartbeat_cloud(task_id, "worker-a", "00000000-0000-0000-0000-000000000000", 30)
+        assert not store.heartbeat_cloud(
+            task_id,
+            "worker-a",
+            "00000000-0000-0000-0000-000000000000",
+            30,
+        )
 
         with store.runs.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -70,6 +79,7 @@ def test_lease_fence_rejects_wrong_worker_and_stale_attempt():
 
         second = store.claim_cloud("worker-b", 30)
         assert second is not None
+        assert str(second["id"]) == task_id
         lease_b = str(second["lease_id"])
         assert lease_b != lease_a
         assert not store.heartbeat_cloud(task_id, "worker-a", lease_a, 30)
@@ -91,6 +101,7 @@ def test_cloud_state_machine_and_fenced_completion():
     try:
         claimed = store.claim_cloud("worker-state", 30)
         assert claimed is not None
+        assert str(claimed["id"]) == task_id
         lease_id = str(claimed["lease_id"])
         for state in (
             "preparing_workspace",
@@ -128,6 +139,7 @@ def test_cancelled_task_is_terminal_and_never_reclaimed():
     try:
         claimed = store.claim_cloud("worker-cancel", 30)
         assert claimed is not None
+        assert str(claimed["id"]) == task_id
         lease_id = str(claimed["lease_id"])
         assert store.cancel_cloud(task_id)
         assert not store.heartbeat_cloud(task_id, "worker-cancel", lease_id, 30)
@@ -142,7 +154,13 @@ def test_cancelled_task_is_terminal_and_never_reclaimed():
         assert row["status"] == "cancelled"
         assert row["execution_state"] == "cancelled"
         assert row["lease_id"] is None
-        assert store.claim_cloud("worker-next", 30) is None
+        with store.runs.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) AS count FROM agent_cloud_tasks "
+                "WHERE id=%s AND (status='queued' OR status='running')",
+                (task_id,),
+            )
+            assert int(cursor.fetchone()["count"]) == 0
     finally:
         _delete(store, {task_id})
 
@@ -154,6 +172,7 @@ def test_expired_lease_cannot_complete_without_reclaim():
     try:
         claimed = store.claim_cloud("worker-expired", 30)
         assert claimed is not None
+        assert str(claimed["id"]) == task_id
         lease_id = str(claimed["lease_id"])
         with store.runs.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
