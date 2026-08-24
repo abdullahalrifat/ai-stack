@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -19,6 +20,27 @@ router = APIRouter(
     tags=["platform"],
     dependencies=[Depends(verify_api_key), Depends(require_run_store)],
 )
+
+_GIT_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
+
+
+def _validate_git_ref(value: str | None) -> str | None:
+    if value is None:
+        return None
+    ref = value.strip()
+    if not ref:
+        return None
+    if (
+        not _GIT_REF.fullmatch(ref)
+        or ".." in ref
+        or "@{" in ref
+        or "//" in ref
+        or ref.endswith(("/", "."))
+        or ref.startswith("-")
+        or any(part in {".", ".."} for part in ref.split("/"))
+    ):
+        raise ValueError("git_ref is not a safe Git branch/tag/ref name")
+    return ref
 
 
 class ScheduledRunRequest(BaseModel):
@@ -58,10 +80,17 @@ class CloudTaskRequest(BaseModel):
                 )
             if parsed.query or parsed.fragment:
                 raise ValueError("repository_url must not contain query or fragment data")
+            self.git_ref = _validate_git_ref(self.git_ref)
+        elif self.git_ref or self.git_commit:
+            raise ValueError("git_ref/git_commit require repository_url")
         if self.git_commit:
             value = self.git_commit.strip().lower()
-            if not (7 <= len(value) <= 64 and all(ch in "0123456789abcdef" for ch in value)):
+            if not (
+                7 <= len(value) <= 64
+                and all(ch in "0123456789abcdef" for ch in value)
+            ):
                 raise ValueError("git_commit must be a hexadecimal Git object id")
+            self.git_commit = value
         return self
 
 
