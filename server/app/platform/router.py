@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -12,7 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.api.dependencies import require_run_store, verify_api_key
 from app.tools.filesystem import resolve_request_workspace
 
-from .store import PlatformStore
+from .autonomous_store import AutonomousPlatformStore as PlatformStore
 from .telemetry import telemetry
 
 router = APIRouter(
@@ -22,6 +24,13 @@ router = APIRouter(
 )
 
 _GIT_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
+_MAX_METADATA_BYTES = 64 * 1024
+_MAX_PROOF_BYTES = 1536 * 1024
+_MAX_RESULT_BYTES = 1536 * 1024
+
+
+def _json_bytes(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
 
 
 def _validate_git_ref(value: str | None) -> str | None:
@@ -56,18 +65,25 @@ class ScheduledRunRequest(BaseModel):
 
 
 class CloudTaskRequest(BaseModel):
-    task: str
-    workspace: str | None = None
-    repository_url: str | None = None
-    git_ref: str | None = None
-    git_commit: str | None = None
-    model: str = "auto"
+    task: str = Field(min_length=1, max_length=100_000)
+    workspace: str | None = Field(default=None, max_length=4096)
+    repository_url: str | None = Field(default=None, max_length=4096)
+    git_ref: str | None = Field(default=None, max_length=255)
+    git_commit: str | None = Field(default=None, max_length=64)
+    model: str = Field(default="auto", min_length=1, max_length=200)
     allow_write: bool = False
-    project_id: str | None = None
+    project_id: str | None = Field(default=None, max_length=256)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_workspace_source(self):
+        self.task = self.task.strip()
+        self.model = self.model.strip()
+        if not self.task:
+            raise ValueError("task is required")
+        if not self.model:
+            raise ValueError("model is required")
         if bool(self.workspace) == bool(self.repository_url):
             raise ValueError("choose exactly one of workspace or repository_url")
         if self.repository_url:
@@ -79,36 +95,70 @@ class CloudTaskRequest(BaseModel):
                     "repository_url must not embed credentials; configure worker Git credentials separately"
                 )
             if parsed.query or parsed.fragment:
-                raise ValueError(
-                    "repository_url must not contain query or fragment data"
-                )
+                raise ValueError("repository_url must not contain query or fragment data")
             self.git_ref = _validate_git_ref(self.git_ref)
         elif self.git_ref or self.git_commit:
             raise ValueError("git_ref/git_commit require repository_url")
         if self.git_commit:
             value = self.git_commit.strip().lower()
             if not (
-                7 <= len(value) <= 64 and all(ch in "0123456789abcdef" for ch in value)
+                7 <= len(value) <= 64
+                and all(ch in "0123456789abcdef" for ch in value)
             ):
                 raise ValueError("git_commit must be a hexadecimal Git object id")
             self.git_commit = value
+        if self.idempotency_key is not None:
+            self.idempotency_key = self.idempotency_key.strip()
+            if len(self.idempotency_key) < 8:
+                raise ValueError("idempotency_key must contain at least 8 non-space characters")
+        if _json_bytes(self.metadata) > _MAX_METADATA_BYTES:
+            raise ValueError("cloud task metadata exceeds the 64 KiB safety limit")
         return self
 
 
 class CloudClaimRequest(BaseModel):
-    worker_id: str
+    worker_id: str = Field(min_length=1, max_length=128)
     lease_seconds: int = Field(default=60, ge=15, le=600)
 
 
 class CloudHeartbeatRequest(BaseModel):
-    worker_id: str
+    worker_id: str = Field(min_length=1, max_length=128)
+    lease_id: UUID
     lease_seconds: int = Field(default=60, ge=15, le=600)
 
 
+class CloudStateRequest(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=128)
+    lease_id: UUID
+    state: Literal[
+        "preparing_workspace",
+        "running",
+        "verifying",
+        "uploading_result",
+    ]
+    proof: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_proof_size(self):
+        if self.proof is not None and _json_bytes(self.proof) > _MAX_PROOF_BYTES:
+            raise ValueError("cloud proof exceeds the 1.5 MiB safety limit")
+        return self
+
+
 class CloudCompleteRequest(BaseModel):
-    worker_id: str
+    worker_id: str = Field(min_length=1, max_length=128)
+    lease_id: UUID
     result: dict[str, Any] = Field(default_factory=dict)
-    error: str | None = None
+    error: str | None = Field(default=None, max_length=4000)
+    proof: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_result_sizes(self):
+        if _json_bytes(self.result) > _MAX_RESULT_BYTES:
+            raise ValueError("cloud result exceeds the 1.5 MiB safety limit")
+        if self.proof is not None and _json_bytes(self.proof) > _MAX_PROOF_BYTES:
+            raise ValueError("cloud proof exceeds the 1.5 MiB safety limit")
+        return self
 
 
 @router.post("/schedules")
@@ -156,8 +206,6 @@ def disable_schedule(schedule_id: str):
 
 @router.post("/cloud/tasks")
 def submit_cloud_task(request: CloudTaskRequest):
-    if not request.task.strip():
-        raise HTTPException(400, "task is required")
     workspace: str | None = None
     workspace_spec: dict[str, Any]
     if request.repository_url:
@@ -178,17 +226,21 @@ def submit_cloud_task(request: CloudTaskRequest):
     with telemetry.span(
         "jarvis.cloud.submit", workspace=workspace_label, model=request.model
     ):
-        return PlatformStore().submit_cloud(
-            {
-                "task": request.task,
-                "workspace": workspace,
-                "workspace_spec": workspace_spec,
-                "model": request.model,
-                "allow_write": request.allow_write,
-                "project_id": request.project_id,
-                "metadata": request.metadata,
-            }
-        )
+        try:
+            return PlatformStore().submit_cloud(
+                {
+                    "task": request.task,
+                    "workspace": workspace,
+                    "workspace_spec": workspace_spec,
+                    "model": request.model,
+                    "allow_write": request.allow_write,
+                    "project_id": request.project_id,
+                    "metadata": request.metadata,
+                },
+                idempotency_key=request.idempotency_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
 
 @router.post("/cloud/claim")
@@ -202,28 +254,57 @@ def claim_cloud_task(request: CloudClaimRequest):
 
 
 @router.post("/cloud/tasks/{task_id}/heartbeat")
-def heartbeat_cloud_task(task_id: str, request: CloudHeartbeatRequest):
+def heartbeat_cloud_task(task_id: UUID, request: CloudHeartbeatRequest):
     if not PlatformStore().heartbeat_cloud(
-        task_id, request.worker_id, request.lease_seconds
+        task_id,
+        request.worker_id,
+        request.lease_id,
+        request.lease_seconds,
     ):
-        raise HTTPException(409, "cloud task lease is not owned by this worker")
+        raise HTTPException(409, "cloud task lease fence is stale or not owned")
+    return {"ok": True}
+
+
+@router.post("/cloud/tasks/{task_id}/state")
+def update_cloud_task_state(task_id: UUID, request: CloudStateRequest):
+    try:
+        updated = PlatformStore().update_cloud_state(
+            task_id,
+            request.worker_id,
+            request.lease_id,
+            request.state,
+            request.proof,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not updated:
+        raise HTTPException(409, "cloud task lease fence is stale or not owned")
     return {"ok": True}
 
 
 @router.post("/cloud/tasks/{task_id}/complete")
-def complete_cloud_task(task_id: str, request: CloudCompleteRequest):
+def complete_cloud_task(task_id: UUID, request: CloudCompleteRequest):
     if not PlatformStore().finish_cloud(
         task_id,
         request.worker_id,
+        request.lease_id,
         result=request.result,
         error=request.error,
+        proof=request.proof,
     ):
-        raise HTTPException(409, "cloud task lease is not owned by this worker")
+        raise HTTPException(409, "cloud task lease fence is stale or not owned")
+    return {"ok": True}
+
+
+@router.post("/cloud/tasks/{task_id}/cancel")
+def cancel_cloud_task(task_id: UUID):
+    if not PlatformStore().cancel_cloud(task_id):
+        raise HTTPException(404, "cloud task not found or already terminal")
     return {"ok": True}
 
 
 @router.get("/cloud/tasks/{task_id}")
-def get_cloud_task(task_id: str):
+def get_cloud_task(task_id: UUID):
     task = PlatformStore().get_cloud(task_id)
     if task is None:
         raise HTTPException(404, "cloud task not found")
