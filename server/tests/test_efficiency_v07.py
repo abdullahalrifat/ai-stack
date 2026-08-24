@@ -10,7 +10,10 @@ from app.platform.efficiency_v07 import (
     retry_action,
     task_category,
 )
-from app.platform.failure_store_v07 import failure_fingerprint
+from app.platform.failure_store_v07 import (
+    _record_failure_signature,
+    failure_fingerprint,
+)
 
 
 def test_task_category_and_failure_taxonomy():
@@ -84,3 +87,49 @@ def test_v07_failure_migration_is_idempotent_and_indexed():
     assert "fingerprint TEXT PRIMARY KEY" in migration
     assert "run_id TEXT PRIMARY KEY" in migration
     assert "idx_agent_failure_signatures_category" in migration
+
+
+def test_failure_store_seeds_signature_before_fk_observation():
+    calls = []
+
+    class Cursor:
+        rowcount = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, sql, params):
+            calls.append((" ".join(sql.split()), params))
+            self.rowcount = 1 if "agent_failure_run_observations" in sql else 0
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def cursor(self):
+            return Cursor()
+
+    class Runs:
+        def connection(self):
+            return Connection()
+
+    owner = SimpleNamespace(runs=Runs())
+    assert _record_failure_signature(
+        owner,
+        run_id="run-1",
+        fingerprint="abc",
+        kind="test",
+        category="bugfix",
+        route="coder",
+        detail="assertion failed",
+        recovery="inspect_assertion",
+    )
+    assert "INSERT INTO agent_failure_signatures" in calls[0][0]
+    assert "INSERT INTO agent_failure_run_observations" in calls[1][0]
+    assert "UPDATE agent_failure_signatures" in calls[2][0]
