@@ -1,5 +1,9 @@
 from datetime import datetime, timezone
 
+import pytest
+from fastapi import HTTPException
+
+from app.platform import router as platform_router
 from app.platform import runtime
 from app.platform.store import cron_matches, next_cron
 
@@ -36,3 +40,46 @@ def test_incorrect_completion_uses_answer_audit(monkeypatch):
     monkeypatch.setattr(runtime, "get_run_store", lambda: Store())
     assert runtime._incorrect_completion("run-2", "completed")
     assert not runtime._incorrect_completion("run-2", "failed")
+
+
+def test_cloud_lease_rejects_wrong_worker(monkeypatch):
+    class Store:
+        def heartbeat_cloud(self, task_id, worker_id, lease_seconds):
+            return worker_id == "owner"
+
+        def finish_cloud(self, task_id, worker_id, result=None, error=None):
+            return worker_id == "owner"
+
+    monkeypatch.setattr(platform_router, "PlatformStore", lambda: Store())
+    heartbeat = platform_router.CloudHeartbeatRequest(worker_id="intruder", lease_seconds=30)
+    with pytest.raises(HTTPException) as heartbeat_error:
+        platform_router.heartbeat_cloud_task("task-1", heartbeat)
+    assert heartbeat_error.value.status_code == 409
+
+    completion = platform_router.CloudCompleteRequest(
+        worker_id="intruder", result={"ok": True}
+    )
+    with pytest.raises(HTTPException) as completion_error:
+        platform_router.complete_cloud_task("task-1", completion)
+    assert completion_error.value.status_code == 409
+
+
+def test_cloud_lease_owner_can_heartbeat_and_complete(monkeypatch):
+    class Store:
+        def heartbeat_cloud(self, task_id, worker_id, lease_seconds):
+            return task_id == "task-1" and worker_id == "owner"
+
+        def finish_cloud(self, task_id, worker_id, result=None, error=None):
+            return (
+                task_id == "task-1"
+                and worker_id == "owner"
+                and result == {"ok": True}
+            )
+
+    monkeypatch.setattr(platform_router, "PlatformStore", lambda: Store())
+    heartbeat = platform_router.CloudHeartbeatRequest(worker_id="owner", lease_seconds=30)
+    assert platform_router.heartbeat_cloud_task("task-1", heartbeat) == {"ok": True}
+    completion = platform_router.CloudCompleteRequest(
+        worker_id="owner", result={"ok": True}
+    )
+    assert platform_router.complete_cloud_task("task-1", completion) == {"ok": True}
