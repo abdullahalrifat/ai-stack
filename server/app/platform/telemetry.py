@@ -10,10 +10,38 @@ from time import perf_counter, time
 from typing import Any, Iterator
 import uuid
 
+_OTEL_CONFIGURED = False
+
+
+def configure_otel(service: str) -> None:
+    global _OTEL_CONFIGURED
+    if _OTEL_CONFIGURED:
+        return
+    endpoint = os.getenv("JARVIS_OTEL_ENDPOINT") or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint:
+        _OTEL_CONFIGURED = True
+        return
+    try:
+        from opentelemetry import trace  # type: ignore
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore
+        from opentelemetry.sdk.resources import Resource  # type: ignore
+        from opentelemetry.sdk.trace import TracerProvider  # type: ignore
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
+
+        current = trace.get_tracer_provider()
+        if not current.__class__.__module__.startswith("opentelemetry.sdk"):
+            provider = TracerProvider(resource=Resource.create({"service.name": service}))
+            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+            trace.set_tracer_provider(provider)
+    except Exception:
+        pass
+    _OTEL_CONFIGURED = True
+
 
 class ServerTelemetry:
     def __init__(self, service: str = "jarvis-server") -> None:
         self.service = service
+        configure_otel(service)
         configured = os.getenv("JARVIS_OTEL_JSONL")
         self.path = Path(configured) if configured else Path("/tmp/jarvis-server-telemetry.jsonl")
         self.tracer = None
@@ -44,11 +72,13 @@ class ServerTelemetry:
                     native.set_attribute(key, value)
                 except Exception:
                     pass
+        error_info = (None, None, None)
         try:
             yield record
         except BaseException as exc:
             record["status"] = "error"
             record["error"] = str(exc)[:4000]
+            error_info = (type(exc), exc, exc.__traceback__)
             if native is not None:
                 try:
                     native.record_exception(exc)
@@ -61,7 +91,7 @@ class ServerTelemetry:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
             if cm:
-                cm.__exit__(None, None, None)
+                cm.__exit__(*error_info)
 
 
 telemetry = ServerTelemetry()
