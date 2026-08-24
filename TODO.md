@@ -24,6 +24,7 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Replay evaluations | INTEGRATED |
 | Benchmark-calibrated adaptive routing | INTEGRATED |
 | Shared team/job/schedule/remote contracts | INTEGRATED |
+| Deterministic v0.7 execution policy | INTEGRATED |
 
 ## Jarvis CLI parity
 
@@ -47,6 +48,14 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Background jobs + scheduler | INTEGRATED |
 | OpenTelemetry + automatic route calibration | INTEGRATED |
 | Python SDK + remote/cloud execution | INTEGRATED |
+| Structural context compiler | INTEGRATED |
+| Selective speculative explorers | INTEGRATED |
+| Failure-driven escalation and hybrid routing | INTEGRATED |
+| Verifier isolation + evidence confidence | INTEGRATED |
+| Structured failure memory + deterministic retries | INTEGRATED |
+| Impact-aware verification and patch-scope guard | INTEGRATED |
+| Tool-result deduplication + patch minimization | INTEGRATED |
+| Adversarial reliability benchmark | FOUNDATION |
 
 ## Server / AI Stack
 
@@ -66,22 +75,27 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Lease-based cloud task queue + external workers | INTEGRATED |
 | OpenTelemetry agent/tool/platform/cloud traces | INTEGRATED |
 | Automatic route calibration from durable Run outcomes | INTEGRATED |
+| Task-category measured expert routing | INTEGRATED |
+| Persistent failure signatures | INTEGRATED |
+| Failure/risk-aware verifier and risk-agent escalation | INTEGRATED |
+| Execution-ledger confidence events | INTEGRATED |
 | Per-run cost accounting | FOUNDATION |
 | OIDC/OAuth tenant isolation | NOT STARTED |
 | Quotas/admission/capacity load gates | NOT STARTED |
 | Retention/deletion, backup/restore and DR drills | NOT STARTED |
 
-## P0 — release proof for v0.6
+## P0 — release proof for v0.7
 
-1. Restore executable CI and run the Python/package/Postgres/browser matrix.
-2. Run seeded benchmark corpora across Ollama plus a configured remote provider and retain baselines.
-3. Run Postgres lease-reclaim and multi-replica scheduler tests under concurrency.
-4. Verify OTLP traces against a collector and assert route/tool/agent/cloud span attributes.
-5. Release the shared Core v0.6 artifact and pin both consumers to the immutable wheel/checksum.
+1. Run Core Black/Ruff/pytest/coverage/build/Twine gates.
+2. Run the Jarvis Python compatibility/package matrix plus targeted v0.7 regressions.
+3. Run Server Validate, Postgres integration, Supply Chain and Ollama/LiteLLM integration.
+4. Run the normal plus adversarial benchmark corpora on local Ollama and at least one configured remote provider; compare false-completion, success, tokens/task and latency.
+5. Validate failure-signature idempotency and migration `008_efficiency_reliability.sql` against a real Postgres instance.
+6. Release immutable Core artifacts in dependency order and pin consumers only after a release wheel/checksum exists.
 
 ## P1 — production hardening
 
-1. Per-run token/cost/latency accounting and fallback/tool-failure dashboards.
+1. Per-run token/cost/latency accounting and fallback/tool-failure/escalation dashboards.
 2. Signed publisher trust roots for plugins beyond checksum integrity.
 3. Interactive team/job/browser panes and remote job attachment in the TUI.
 4. Native Windows AppContainer sandbox support.

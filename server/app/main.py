@@ -16,8 +16,11 @@ from app.api.routes import router
 from app.channels.delivery import monitor_channel_deliveries
 from app.channels.router import router as channels_router
 from app.core.config import POSTGRES_URL, WORKSPACE_ROOTS, validate_settings
+from app.platform.efficiency_v07 import install_v07_efficiency
+from app.platform.failure_runtime_v07 import install_failure_runtime
+from app.platform.failure_store_v07 import install_failure_store
 from app.platform.router import router as platform_router
-from app.platform.runtime import install_empirical_routing, monitor_platform, tick_platform_once
+from app.platform.runtime import monitor_platform
 from app.runs.client_leases import monitor_client_leases
 from app.runs.sandbox import remove_sandbox
 from app.runs.store import get_run_store
@@ -74,15 +77,23 @@ async def lifespan(_: FastAPI):
         store = get_run_store()
         store.initialize()
         logger.info("Durable run store initialized.")
-        install_empirical_routing()
+        install_failure_store()
+        # v0.7 replaces the v0.6 code-only empirical wrapper with task-category
+        # calibration and failure/risk-aware escalation.
+        install_v07_efficiency()
+        install_failure_runtime()
         reconcile_runs_once()
-        tick_platform_once()
+        from app.platform import runtime as platform_runtime
+
+        platform_runtime.tick_platform_once()
         client_lease_monitor = asyncio.create_task(monitor_client_leases())
         worker_lease_monitor = asyncio.create_task(monitor_worker_leases())
         channel_delivery_monitor = asyncio.create_task(monitor_channel_deliveries())
         platform_monitor = asyncio.create_task(monitor_platform())
     else:
-        logger.warning("POSTGRES_URL not set; durable /runs and /platform endpoints are unavailable.")
+        logger.warning(
+            "POSTGRES_URL not set; durable /runs and /platform endpoints are unavailable."
+        )
     try:
         yield
     finally:
@@ -110,7 +121,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Local AI Engineering Agent",
     description="Private autonomous coding agent running in homelab",
-    version="3.1",
+    version="3.2",
     lifespan=lifespan,
 )
 app.include_router(router)
