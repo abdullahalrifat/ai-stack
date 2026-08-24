@@ -48,7 +48,12 @@ class AutonomousPlatformStore(BasePlatformStore):
                        VALUES(%s,%s,'queued') RETURNING *""",
                     (task_id, Jsonb(payload)),
                 )
-            return dict(cursor.fetchone())
+            row = dict(cursor.fetchone())
+            if idempotency_key and dict(row.get("payload") or {}) != payload:
+                raise ValueError(
+                    "idempotency key is already bound to a different cloud task payload"
+                )
+            return row
 
     def claim_cloud(
         self, worker_id: str, lease_seconds: int = 60
