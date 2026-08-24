@@ -25,6 +25,9 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Benchmark-calibrated adaptive routing | INTEGRATED |
 | Shared team/job/schedule/remote contracts | INTEGRATED |
 | Deterministic v0.7 execution policy | INTEGRATED |
+| v0.8 execution state + lease fencing contracts | INTEGRATED |
+| v0.8 proof + permission contracts | INTEGRATED |
+| Standard cron semantics | INTEGRATED |
 
 ## Jarvis CLI parity
 
@@ -45,9 +48,17 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Agent-team board + parallel worktrees | INTEGRATED |
 | Browser/Playwright verification agent | INTEGRATED |
 | Capability-scoped plugin packaging | INTEGRATED |
-| Background jobs + scheduler | INTEGRATED |
+| Background jobs + standard cron scheduler | INTEGRATED |
+| Process-tree background-job cancellation | INTEGRATED |
 | OpenTelemetry + automatic route calibration | INTEGRATED |
-| Python SDK + remote/cloud execution | INTEGRATED |
+| Python SDK + reviewed remote Runs | INTEGRATED |
+| Portable Git cloud workspaces | INTEGRATED |
+| Lease-fenced cancellable cloud workers | INTEGRATED |
+| Idempotent cloud task submission | INTEGRATED |
+| Cloud model/profile propagation | INTEGRATED |
+| Durable execution proof ledger | INTEGRATED |
+| Deterministic allow/ask/deny permissions | INTEGRATED |
+| Autonomous proof/team/job dashboard | INTEGRATED |
 | Structural context compiler | INTEGRATED |
 | Selective speculative explorers | INTEGRATED |
 | Failure-driven escalation and hybrid routing | INTEGRATED |
@@ -72,26 +83,33 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Heterogeneous expert route metadata | INTEGRATED |
 | Execution-backed evidence gate | INTEGRATED |
 | Durable schedules submitting normal reviewed Runs | INTEGRATED |
-| Lease-based cloud task queue + external workers | INTEGRATED |
+| Standard UTC cron semantics | INTEGRATED |
+| Portable cloud task queue + external workers | INTEGRATED |
+| Lease fencing per cloud attempt | INTEGRATED |
+| Idempotent cloud submissions | INTEGRATED |
+| Durable cloud execution state machine | INTEGRATED |
+| Terminal cloud cancellation + stale-result rejection | INTEGRATED |
+| Cloud execution proof persistence | INTEGRATED |
 | OpenTelemetry agent/tool/platform/cloud traces | INTEGRATED |
 | Automatic route calibration from durable Run outcomes | INTEGRATED |
 | Task-category measured expert routing | INTEGRATED |
 | Persistent failure signatures | INTEGRATED |
 | Failure/risk-aware verifier and risk-agent escalation | INTEGRATED |
 | Execution-ledger confidence events | INTEGRATED |
+| Cross-repository Core/CLI/Server Postgres gate | INTEGRATED |
 | Per-run cost accounting | FOUNDATION |
 | OIDC/OAuth tenant isolation | NOT STARTED |
 | Quotas/admission/capacity load gates | NOT STARTED |
 | Retention/deletion, backup/restore and DR drills | NOT STARTED |
 
-## P0 — release proof for v0.7
+## P0 — release proof for v0.8
 
-1. Run Core Black/Ruff/pytest/coverage/build/Twine gates.
-2. Run the Jarvis Python compatibility/package matrix plus targeted v0.7 regressions.
-3. Run Server Validate, Postgres integration, Supply Chain and Ollama/LiteLLM integration.
-4. Run the normal plus adversarial benchmark corpora on local Ollama and at least one configured remote provider; compare false-completion, success, tokens/task and latency.
-5. Validate failure-signature idempotency and migration `008_efficiency_reliability.sql` against a real Postgres instance.
-6. Release immutable Core artifacts in dependency order and pin consumers only after a release wheel/checksum exists.
+1. Core Black/Ruff/pytest/coverage/build/Twine must be green on the exact Core v0.8 head.
+2. Jarvis Python 3.10/3.12/3.13, all-runtime Black, package build and clean-wheel installation must execute on the exact CLI head.
+3. Server Validate, real Postgres fencing integration, Supply Chain, Compose/UI and Ollama/LiteLLM integration must execute on the exact Server head.
+4. Cross Repo Autonomous Smoke must check out the coordinated branch on PRs and `main` after merge and exercise Core + CLI + Server against real Postgres.
+5. Release Core 0.8.0 first, calculate the immutable wheel SHA-256, then update both consumer dependency/lock/container/CI pins before they merge.
+6. Retain benchmark and chaos evidence for longer-running network-partition/reclaim/cancellation scenarios as measured production proof.
 
 ## P1 — production hardening
 
