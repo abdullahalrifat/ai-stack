@@ -22,6 +22,17 @@ def _record_failure_signature(
     recovery: str | None,
 ) -> bool:
     with self.runs.connection() as connection, connection.cursor() as cursor:
+        # Seed the referenced signature before the per-run observation so the
+        # foreign key is valid even for the first occurrence. Occurrences start
+        # at zero and are incremented only after this run claims its idempotency
+        # row successfully.
+        cursor.execute(
+            """INSERT INTO agent_failure_signatures
+               (fingerprint,kind,category,route,detail,recovery,occurrences)
+               VALUES(%s,%s,%s,%s,%s,%s,0)
+               ON CONFLICT(fingerprint) DO NOTHING""",
+            (fingerprint, kind, category, route, detail[:4000], recovery),
+        )
         cursor.execute(
             """INSERT INTO agent_failure_run_observations(run_id,fingerprint)
                VALUES(%s,%s) ON CONFLICT(run_id) DO NOTHING""",
@@ -31,24 +42,26 @@ def _record_failure_signature(
         if not inserted:
             return False
         cursor.execute(
-            """INSERT INTO agent_failure_signatures
-               (fingerprint,kind,category,route,detail,recovery,first_run_id,last_run_id)
-               VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
-               ON CONFLICT(fingerprint) DO UPDATE SET
-                 occurrences=agent_failure_signatures.occurrences+1,
-                 last_run_id=EXCLUDED.last_run_id,
+            """UPDATE agent_failure_signatures SET
+                 occurrences=occurrences+1,
+                 first_run_id=COALESCE(first_run_id,%s),
+                 last_run_id=%s,
                  last_seen=NOW(),
-                 recovery=COALESCE(EXCLUDED.recovery,agent_failure_signatures.recovery),
-                 route=COALESCE(EXCLUDED.route,agent_failure_signatures.route)""",
+                 detail=%s,
+                 recovery=COALESCE(%s,recovery),
+                 route=COALESCE(%s,route),
+                 category=%s,
+                 kind=%s
+               WHERE fingerprint=%s""",
             (
-                fingerprint,
-                kind,
-                category,
-                route,
+                run_id,
+                run_id,
                 detail[:4000],
                 recovery,
-                run_id,
-                run_id,
+                route,
+                category,
+                kind,
+                fingerprint,
             ),
         )
         return True
