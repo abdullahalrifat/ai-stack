@@ -22,7 +22,8 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Heterogeneous role/model routing | INTEGRATED |
 | Execution-backed completion evidence | INTEGRATED |
 | Replay evaluations | INTEGRATED |
-| Benchmark-calibrated adaptive routing | FOUNDATION |
+| Benchmark-calibrated adaptive routing | INTEGRATED |
+| Shared team/job/schedule/remote contracts | INTEGRATED |
 
 ## Jarvis CLI parity
 
@@ -35,14 +36,17 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Per-hunk review and transactional undo | INTEGRATED |
 | Hierarchical instructions and durable memory | INTEGRATED |
 | MCP lifecycle and explicit tool policy | INTEGRATED |
-| Keyring and secure update foundation | INTEGRATED |
 | Adaptive multi-agent selection | INTEGRATED |
-| Incremental repository/symbol index | FOUNDATION |
-| Real stdio LSP analysis | FOUNDATION |
-| Worktree/branch helpers | FOUNDATION |
-| Plan-only mode and layered managed permissions | FOUNDATION |
-| Rich keyboard-driven TUI | NOT STARTED |
-| End-to-end repository graph (LSP/imports/tests/Git) | NOT STARTED |
+| Repository graph + persistent LSP | INTEGRATED |
+| Enforced plan mode and OS/network sandbox | INTEGRATED |
+| Rich TUI | INTEGRATED |
+| Skills and lifecycle Hooks | INTEGRATED |
+| Agent-team board + parallel worktrees | INTEGRATED |
+| Browser/Playwright verification agent | INTEGRATED |
+| Capability-scoped plugin packaging | INTEGRATED |
+| Background jobs + scheduler | INTEGRATED |
+| OpenTelemetry + automatic route calibration | INTEGRATED |
+| Python SDK + remote/cloud execution | INTEGRATED |
 
 ## Server / AI Stack
 
@@ -58,32 +62,30 @@ This tracker uses maturity levels rather than binary checkboxes:
 | Hierarchical instructions and persistent memory | INTEGRATED |
 | Heterogeneous expert route metadata | INTEGRATED |
 | Execution-backed evidence gate | INTEGRATED |
-| OpenTelemetry traces and SLO dashboards | NOT STARTED |
-| Per-run cost accounting | NOT STARTED |
+| Durable schedules submitting normal reviewed Runs | INTEGRATED |
+| Lease-based cloud task queue + external workers | INTEGRATED |
+| OpenTelemetry agent/tool/platform/cloud traces | INTEGRATED |
+| Automatic route calibration from durable Run outcomes | INTEGRATED |
+| Per-run cost accounting | FOUNDATION |
 | OIDC/OAuth tenant isolation | NOT STARTED |
 | Quotas/admission/capacity load gates | NOT STARTED |
 | Retention/deletion, backup/restore and DR drills | NOT STARTED |
 
-## P0 — measured intelligence
+## P0 — release proof for v0.6
 
-1. Build end-to-end adaptive-agent evaluations spanning coding, research, tool use,
-   recovery, security-sensitive changes and prompt injection.
-2. Gate releases on task success, test-pass rate, incorrect-completion rate,
-   latency/task, tokens/task and tool-failure rate.
-3. Build a repository intelligence graph combining structural index, LSP,
-   imports/references, tests and Git history; prefer it over embedding-only retrieval.
-4. Feed replay observations back into route calibration so simple tasks stay cheap
-   while complex/risky work earns independent exploration and verification.
-5. Persist immutable mutation and command/test evidence with digests and surface it
-   in run traces and completion audits.
+1. Restore executable CI and run the Python/package/Postgres/browser matrix.
+2. Run seeded benchmark corpora across Ollama plus a configured remote provider and retain baselines.
+3. Run Postgres lease-reclaim and multi-replica scheduler tests under concurrency.
+4. Verify OTLP traces against a collector and assert route/tool/agent/cloud span attributes.
+5. Release the shared Core v0.6 artifact and pin both consumers to the immutable wheel/checksum.
 
-## P1 — operations and UX
+## P1 — production hardening
 
-1. OpenTelemetry across route selection, inference, tools, verification and channels.
-2. Per-run token/cost/latency accounting and fallback/tool-failure dashboards.
-3. Rich TUI with live tool stream, pageable per-hunk diff review and plan-only mode.
-4. Full worktree orchestration: parallel owners, cleanup/recovery and approved PR flow.
-5. Typed hooks, signed skills/plugins and connector actions with explicit capabilities.
+1. Per-run token/cost/latency accounting and fallback/tool-failure dashboards.
+2. Signed publisher trust roots for plugins beyond checksum integrity.
+3. Interactive team/job/browser panes and remote job attachment in the TUI.
+4. Native Windows AppContainer sandbox support.
+5. TypeScript SDK parity and compatibility/deprecation tests.
 
 ## P2 — production platform
 
@@ -91,12 +93,8 @@ This tracker uses maturity levels rather than binary checkboxes:
 2. Quotas, admission control, circuit breakers and capacity/load tests.
 3. Tamper-evident audit events, secret rotation and release signing.
 4. Retention/deletion, malware scanning, backup/restore and DR drills.
-5. Stable SDK/webhook schemas with compatibility and deprecation tests.
-6. GPU/quantized-model capacity planning and autoscaling runners when scale requires it.
+5. GPU/quantized-model capacity planning and autoscaling runners when scale requires it.
 
 ## Completion rule
 
-A feature is not considered complete merely because a helper/class exists. It must
-be integrated through the real execution path and covered for cancellation,
-timeout, malformed input, permission denial, recovery and compatibility before it
-can be promoted to PRODUCTION-READY.
+A feature is not considered complete merely because a helper/class exists. It must be integrated through the real execution path and covered for cancellation, timeout, malformed input, permission denial, recovery and compatibility before it can be promoted to PRODUCTION-READY.
