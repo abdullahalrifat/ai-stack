@@ -5,10 +5,38 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from psycopg.types.json import Jsonb
+
 from .store import PlatformStore as BasePlatformStore
 
 
 class AutonomousPlatformStore(BasePlatformStore):
+    def submit_cloud(
+        self,
+        payload: dict[str, Any],
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        task_id = str(uuid.uuid4())
+        with self.runs.connection() as connection, connection.cursor() as cursor:
+            if idempotency_key:
+                cursor.execute(
+                    """INSERT INTO agent_cloud_tasks
+                       (id,payload,idempotency_key,execution_state)
+                       VALUES(%s,%s,%s,'queued')
+                       ON CONFLICT (idempotency_key)
+                       WHERE idempotency_key IS NOT NULL
+                       DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
+                       RETURNING *""",
+                    (task_id, Jsonb(payload), idempotency_key),
+                )
+            else:
+                cursor.execute(
+                    """INSERT INTO agent_cloud_tasks(id,payload,execution_state)
+                       VALUES(%s,%s,'queued') RETURNING *""",
+                    (task_id, Jsonb(payload)),
+                )
+            return dict(cursor.fetchone())
+
     def claim_cloud(
         self, worker_id: str, lease_seconds: int = 60
     ) -> dict[str, Any] | None:
