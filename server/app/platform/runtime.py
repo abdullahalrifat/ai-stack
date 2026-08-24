@@ -42,6 +42,35 @@ def _latency_ms(run: dict[str, Any]) -> float:
     return 0.0
 
 
+def _effective_route(run_id: str, fallback: str) -> str:
+    """Prefer the effective model recorded after Auto routing, not requested alias."""
+    try:
+        events = get_run_store().events_after(run_id, 0)
+    except Exception:
+        return fallback
+    for event in reversed(events):
+        if str(event.get("event_type")) != "route_selected":
+            continue
+        payload = event.get("payload") or {}
+        if isinstance(payload, dict):
+            model = str(payload.get("model") or "").strip()
+            if model:
+                return model
+    return fallback
+
+
+def _incorrect_completion(run_id: str, status: str) -> bool:
+    if status not in {"completed", "awaiting_approval"}:
+        return False
+    try:
+        return any(
+            str(event.get("event_type")) == "answer_audit_failed"
+            for event in get_run_store().events_after(run_id, 0)
+        )
+    except Exception:
+        return False
+
+
 def tick_platform_once() -> dict[str, int]:
     platform = PlatformStore()
     scheduled = observed = 0
@@ -61,25 +90,34 @@ def tick_platform_once() -> dict[str, int]:
             submit_run(run_id)
             scheduled += 1
         except Exception:
-            logger.exception("Could not submit scheduled agent run %s", schedule.get("id"))
+            logger.exception(
+                "Could not submit scheduled agent run %s", schedule.get("id")
+            )
 
     for run in get_run_store().list_runs(250):
         status = str(run.get("status") or "")
         if status not in TERMINAL:
             continue
-        success = status in {"completed", "awaiting_approval"}
+        run_id = str(run["id"])
+        incorrect = _incorrect_completion(run_id, status)
+        success = status in {"completed", "awaiting_approval"} and not incorrect
+        route = _effective_route(run_id, str(run.get("model") or "unknown"))
         try:
             if platform.record_route_observation(
-                run_id=str(run["id"]),
-                route=str(run.get("model") or "unknown"),
+                run_id=run_id,
+                route=route,
                 category=_category(str(run.get("task") or "")),
                 success=success,
-                incorrect_completion=False,
+                incorrect_completion=incorrect,
                 latency_ms=_latency_ms(run),
             ):
                 observed += 1
         except Exception:
-            logger.warning("Could not record route observation for run %s", run.get("id"), exc_info=True)
+            logger.warning(
+                "Could not record route observation for run %s",
+                run.get("id"),
+                exc_info=True,
+            )
     return {"scheduled_runs": scheduled, "new_observations": observed}
 
 
@@ -109,15 +147,23 @@ def install_empirical_routing() -> None:
             scores = PlatformStore().route_scores("code")
         except Exception:
             return base
-        measured = {str(row["route"]): row for row in scores if int(row.get("samples") or 0) >= 3}
+        measured = {
+            str(row["route"]): row
+            for row in scores
+            if int(row.get("samples") or 0) >= 3
+        }
         calibrated = []
         for candidate in base:
             row = measured.get(candidate.profile) or measured.get(candidate.model)
             if not row:
                 calibrated.append(candidate)
                 continue
-            success = max(0.0, min(1.0, float(row.get("success_rate") or 0)))
-            incorrect = max(0.0, min(1.0, float(row.get("incorrect_rate") or 0)))
+            success = max(
+                0.0, min(1.0, float(row.get("success_rate") or 0))
+            )
+            incorrect = max(
+                0.0, min(1.0, float(row.get("incorrect_rate") or 0))
+            )
             latency_ms = max(0.0, float(row.get("latency_ms") or 0))
             latency_score = 1.0 / (1.0 + latency_ms / 10000.0)
             calibrated.append(
