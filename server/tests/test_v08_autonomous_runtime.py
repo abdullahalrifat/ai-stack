@@ -1,10 +1,7 @@
 from datetime import datetime, timezone
-
-from fastapi.testclient import TestClient
-import pytest
+from pathlib import Path
 
 from app.api.protocol import FEATURES
-from app.platform import router as platform_router
 from app.platform.router import (
     CloudCompleteRequest,
     CloudHeartbeatRequest,
@@ -35,7 +32,11 @@ def test_server_cron_uses_standard_dom_dow_or_and_sunday_seven():
 
 
 def test_cloud_requests_require_lease_fence_for_heartbeat_and_completion():
-    heartbeat = CloudHeartbeatRequest(worker_id="worker", lease_id="lease", lease_seconds=60)
+    heartbeat = CloudHeartbeatRequest(
+        worker_id="worker",
+        lease_id="lease",
+        lease_seconds=60,
+    )
     complete = CloudCompleteRequest(worker_id="worker", lease_id="lease")
     assert heartbeat.lease_id == "lease"
     assert complete.lease_id == "lease"
@@ -50,9 +51,7 @@ def test_cloud_submission_accepts_idempotency_key():
     assert request.idempotency_key == "request-12345678"
 
 
-def test_migration_adds_fencing_and_idempotency_columns():
-    from pathlib import Path
-
+def test_migration_adds_fencing_and_safe_upgrade_contract():
     migration = Path("app/runs/migrations/009_autonomous_runtime.sql")
     if not migration.exists():
         migration = Path("server/app/runs/migrations/009_autonomous_runtime.sql")
@@ -62,3 +61,8 @@ def test_migration_adds_fencing_and_idempotency_columns():
     assert "execution_state TEXT" in text
     assert "proof JSONB" in text
     assert "idx_agent_cloud_tasks_idempotency" in text
+    assert "agent_cloud_tasks_execution_state_check" in text
+    assert "status = 'running' AND lease_id IS NULL" in text
+    assert "lease_expires_at = NOW()" in text
+    assert "WHEN 'completed' THEN 'completed'" in text
+    assert "WHEN 'cancelled' THEN 'cancelled'" in text
