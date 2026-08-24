@@ -79,15 +79,16 @@ class CloudTaskRequest(BaseModel):
                     "repository_url must not embed credentials; configure worker Git credentials separately"
                 )
             if parsed.query or parsed.fragment:
-                raise ValueError("repository_url must not contain query or fragment data")
+                raise ValueError(
+                    "repository_url must not contain query or fragment data"
+                )
             self.git_ref = _validate_git_ref(self.git_ref)
         elif self.git_ref or self.git_commit:
             raise ValueError("git_ref/git_commit require repository_url")
         if self.git_commit:
             value = self.git_commit.strip().lower()
             if not (
-                7 <= len(value) <= 64
-                and all(ch in "0123456789abcdef" for ch in value)
+                7 <= len(value) <= 64 and all(ch in "0123456789abcdef" for ch in value)
             ):
                 raise ValueError("git_commit must be a hexadecimal Git object id")
             self.git_commit = value
