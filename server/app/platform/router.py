@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.dependencies import require_run_store, verify_api_key
 from app.tools.filesystem import resolve_request_workspace
@@ -34,11 +35,34 @@ class ScheduledRunRequest(BaseModel):
 
 class CloudTaskRequest(BaseModel):
     task: str
-    workspace: str
+    workspace: str | None = None
+    repository_url: str | None = None
+    git_ref: str | None = None
+    git_commit: str | None = None
     model: str = "auto"
     allow_write: bool = False
     project_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_workspace_source(self):
+        if bool(self.workspace) == bool(self.repository_url):
+            raise ValueError("choose exactly one of workspace or repository_url")
+        if self.repository_url:
+            parsed = urlparse(self.repository_url)
+            if parsed.scheme != "https" or not parsed.hostname:
+                raise ValueError("cloud repository_url must be an https Git URL")
+            if parsed.username or parsed.password:
+                raise ValueError(
+                    "repository_url must not embed credentials; configure worker Git credentials separately"
+                )
+            if parsed.query or parsed.fragment:
+                raise ValueError("repository_url must not contain query or fragment data")
+        if self.git_commit:
+            value = self.git_commit.strip().lower()
+            if not (7 <= len(value) <= 64 and all(ch in "0123456789abcdef" for ch in value)):
+                raise ValueError("git_commit must be a hexadecimal Git object id")
+        return self
 
 
 class CloudClaimRequest(BaseModel):
@@ -104,15 +128,31 @@ def disable_schedule(schedule_id: str):
 def submit_cloud_task(request: CloudTaskRequest):
     if not request.task.strip():
         raise HTTPException(400, "task is required")
-    try:
-        workspace = resolve_request_workspace(request.workspace, request.task)
-    except (PermissionError, ValueError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    with telemetry.span("jarvis.cloud.submit", workspace=workspace, model=request.model):
+    workspace: str | None = None
+    workspace_spec: dict[str, Any]
+    if request.repository_url:
+        workspace_spec = {
+            "kind": "git",
+            "repository_url": request.repository_url,
+            "git_ref": request.git_ref,
+            "git_commit": request.git_commit,
+        }
+        workspace_label = "git:" + str(urlparse(request.repository_url).hostname)
+    else:
+        try:
+            workspace = resolve_request_workspace(str(request.workspace), request.task)
+        except (PermissionError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        workspace_spec = {"kind": "existing", "path": workspace}
+        workspace_label = workspace
+    with telemetry.span(
+        "jarvis.cloud.submit", workspace=workspace_label, model=request.model
+    ):
         return PlatformStore().submit_cloud(
             {
                 "task": request.task,
                 "workspace": workspace,
+                "workspace_spec": workspace_spec,
                 "model": request.model,
                 "allow_write": request.allow_write,
                 "project_id": request.project_id,
@@ -124,19 +164,30 @@ def submit_cloud_task(request: CloudTaskRequest):
 @router.post("/cloud/claim")
 def claim_cloud_task(request: CloudClaimRequest):
     with telemetry.span("jarvis.cloud.claim", worker_id=request.worker_id):
-        return {"task": PlatformStore().claim_cloud(request.worker_id, request.lease_seconds)}
+        return {
+            "task": PlatformStore().claim_cloud(
+                request.worker_id, request.lease_seconds
+            )
+        }
 
 
 @router.post("/cloud/tasks/{task_id}/heartbeat")
 def heartbeat_cloud_task(task_id: str, request: CloudHeartbeatRequest):
-    if not PlatformStore().heartbeat_cloud(task_id, request.worker_id, request.lease_seconds):
+    if not PlatformStore().heartbeat_cloud(
+        task_id, request.worker_id, request.lease_seconds
+    ):
         raise HTTPException(409, "cloud task lease is not owned by this worker")
     return {"ok": True}
 
 
 @router.post("/cloud/tasks/{task_id}/complete")
 def complete_cloud_task(task_id: str, request: CloudCompleteRequest):
-    if not PlatformStore().finish_cloud(task_id, request.worker_id, result=request.result, error=request.error):
+    if not PlatformStore().finish_cloud(
+        task_id,
+        request.worker_id,
+        result=request.result,
+        error=request.error,
+    ):
         raise HTTPException(409, "cloud task lease is not owned by this worker")
     return {"ok": True}
 
@@ -151,4 +202,7 @@ def get_cloud_task(task_id: str):
 
 @router.get("/calibration")
 def calibration(category: str = "code"):
-    return {"category": category, "routes": PlatformStore().route_scores(category)}
+    return {
+        "category": category,
+        "routes": PlatformStore().route_scores(category),
+    }
