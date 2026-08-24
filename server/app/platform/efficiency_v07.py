@@ -82,7 +82,13 @@ def _observed_failures(state) -> int:
                     1
                     for row in rows
                     if isinstance(row, dict)
-                    and (row.get("success") is False or ("exit_code" in row and row.get("exit_code") not in {0, None}))
+                    and (
+                        row.get("success") is False
+                        or (
+                            "exit_code" in row
+                            and row.get("exit_code") not in {0, None}
+                        )
+                    )
                 )
     return failures
 
@@ -92,7 +98,15 @@ def _risk_score(state) -> float:
     score = 0.1
     score += 0.18 * sum(
         token in text
-        for token in ("security", "auth", "permission", "payment", "migration", "production", "delete")
+        for token in (
+            "security",
+            "auth",
+            "permission",
+            "payment",
+            "migration",
+            "production",
+            "delete",
+        )
     )
     score += min(_observed_failures(state), 3) * 0.12
     return min(1.0, score)
@@ -118,10 +132,16 @@ def _measured_candidates(default_model: str, category: str):
             result.append(candidate)
             continue
         success = max(0.0, min(1.0, float(row.get("success_rate") or 0)))
-        incorrect = max(0.0, min(1.0, float(row.get("incorrect_rate") or 0)))
-        latency = max(0.0, float(row.get("latency_ms") or 0))
+        incorrect = max(
+            0.0, min(1.0, float(row.get("incorrect_rate") or 0))
+        )
+        latency_ms = max(0.0, float(row.get("latency_ms") or 0))
         tokens = max(0.0, float(row.get("tokens") or 0))
         reliability = max(0.0, success - incorrect * 0.85)
+        # RouteCandidate.score subtracts latency and cost. Therefore these values
+        # must be increasing penalties, not "fastness"/"cheapness" scores.
+        latency_penalty = min(1.0, latency_ms / 30_000.0)
+        token_penalty = min(1.0, tokens / 100_000.0)
         result.append(
             RouteCandidate(
                 profile=candidate.profile,
@@ -130,8 +150,8 @@ def _measured_candidates(default_model: str, category: str):
                 quality=reliability,
                 tool_success=max(candidate.tool_success * 0.25, success),
                 structured_success=candidate.structured_success,
-                latency=1.0 / (1.0 + latency / 10000.0),
-                cost=max(0.0, candidate.cost - min(tokens / 100000.0, 0.35)),
+                latency=latency_penalty,
+                cost=max(candidate.cost, token_penalty),
                 roles=candidate.roles,
             )
         )
@@ -144,24 +164,51 @@ def evidence_confidence(state) -> float:
     tests_ok = sum(
         1
         for row in verification
-        if isinstance(row, dict) and row.get("kind") == "test" and row.get("exit_code") == 0
+        if isinstance(row, dict)
+        and row.get("kind") == "test"
+        and row.get("exit_code") == 0
     )
     tests_bad = sum(
         1
         for row in verification
-        if isinstance(row, dict) and row.get("kind") == "test" and row.get("exit_code") not in {0, None}
+        if isinstance(row, dict)
+        and row.get("kind") == "test"
+        and row.get("exit_code") not in {0, None}
     )
-    mutations_ok = sum(1 for row in mutation if isinstance(row, dict) and row.get("success") is True)
+    mutations_ok = sum(
+        1
+        for row in mutation
+        if isinstance(row, dict) and row.get("success") is True
+    )
     test_score = tests_ok / max(1, tests_ok + tests_bad)
-    mutation_score = 1.0 if not getattr(state, "allow_write", False) else min(1.0, mutations_ok)
+    mutation_score = (
+        1.0
+        if not getattr(state, "allow_write", False)
+        else min(1.0, mutations_ok)
+    )
     failures = _observed_failures(state)
-    return max(0.0, min(1.0, 0.55 * test_score + 0.30 * mutation_score + 0.15 / (1.0 + failures)))
+    return max(
+        0.0,
+        min(
+            1.0,
+            0.55 * test_score
+            + 0.30 * mutation_score
+            + 0.15 / (1.0 + failures),
+        ),
+    )
 
 
-def record_failure(run_id: str, task: str, error: str, route: str | None = None) -> None:
+def record_failure(
+    run_id: str,
+    task: str,
+    error: str,
+    route: str | None = None,
+) -> None:
     normalized = " ".join(error.casefold().split())[:1200]
     kind = failure_kind(error)
-    fingerprint = hashlib.sha256(f"{kind}|{route or ''}|{normalized}".encode()).hexdigest()[:24]
+    fingerprint = hashlib.sha256(
+        f"{kind}|{route or ''}|{normalized}".encode()
+    ).hexdigest()[:24]
     try:
         PlatformStore().record_failure_signature(
             run_id=run_id,
@@ -218,9 +265,20 @@ def install_v07_efficiency() -> None:
         return roles[:4]
 
     def dispatch_experts(state, on_event=None):
-        category = task_category(str(getattr(state, "user_message", "") or ""))
+        category = task_category(
+            str(getattr(state, "user_message", "") or "")
+        )
         token = _CATEGORY.set(category)
         try:
+            if on_event is not None:
+                on_event(
+                    "evidence_confidence",
+                    {
+                        "score": evidence_confidence(state),
+                        "category": category,
+                        "source": "execution_ledger",
+                    },
+                )
             return base_dispatch(state, on_event=on_event)
         finally:
             _CATEGORY.reset(token)
