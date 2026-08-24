@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import threading
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from jarvis_core import (
-    ClaimProof, CompletionRequirement, EvidenceGate, ProofKind,
-    QualityMetrics, RouteCandidate, Scope, TaskAnalysis, adaptive_plan,
-    route_roles, stable_cache_key,
+    ClaimProof,
+    CompletionRequirement,
+    EvidenceGate,
+    ProofKind,
+    RouteCandidate,
+    Scope,
+    TaskAnalysis,
+    route_roles,
+    stable_cache_key,
 )
 
 
@@ -26,59 +33,152 @@ def _number(value: Any, default: float) -> float:
         return default
 
 
+@dataclass(frozen=True)
+class ExpertRoute:
+    role: str
+    profile: str
+    model: str
+    provider: str
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def configured_candidates(default_model: str) -> tuple[RouteCandidate, ...]:
-    """Load bounded route metrics without treating model-provided scores as truth."""
+    """Load benchmark-derived route metrics from trusted configuration."""
     try:
         raw = json.loads(os.getenv("QUALITY_MODEL_ROUTES", "[]"))
     except json.JSONDecodeError:
         raw = []
-    candidates = []
+    candidates: list[RouteCandidate] = []
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict) or not item.get("model"):
             continue
-        candidates.append(RouteCandidate(
-            profile=str(item.get("profile") or item["model"]),
-            model=str(item["model"]),
-            provider=str(item.get("provider", "openai")),
-            quality=_number(item.get("quality"), .5),
-            tool_success=_number(item.get("tool_success"), .5),
-            structured_success=_number(item.get("structured_success"), .5),
-            latency=_number(item.get("latency"), .5),
-            cost=_number(item.get("cost"), .5),
-            roles=tuple(str(role) for role in item.get("roles", ())),
-        ))
+        candidates.append(
+            RouteCandidate(
+                profile=str(item.get("profile") or item["model"]),
+                model=str(item["model"]),
+                provider=str(item.get("provider", "openai")),
+                quality=_number(item.get("quality"), 0.5),
+                tool_success=_number(item.get("tool_success"), 0.5),
+                structured_success=_number(item.get("structured_success"), 0.5),
+                latency=_number(item.get("latency"), 0.5),
+                cost=_number(item.get("cost"), 0.5),
+                roles=tuple(str(role) for role in item.get("roles", ())),
+            )
+        )
     if not candidates:
-        candidates.append(RouteCandidate(
-            "default", default_model, "openai", .6, .6, .6, .5, .2,
-        ))
+        candidates.append(
+            RouteCandidate("default", default_model, "openai", 0.6, 0.6, 0.6, 0.5, 0.2)
+        )
     return tuple(candidates)
 
 
-def expert_routes(roles: list[str], default_model: str) -> dict[str, str]:
+def expert_routes(roles: list[str], default_model: str) -> dict[str, ExpertRoute]:
+    """Return complete role routes instead of collapsing routing to model names."""
     selected = route_roles(roles, configured_candidates(default_model), diverse=True)
-    return {item.role: item.model for item in selected}
+    return {
+        item.role: ExpertRoute(
+            role=item.role,
+            profile=item.profile,
+            model=item.model,
+            provider=item.provider,
+            score=item.score,
+        )
+        for item in selected
+    }
 
 
 def analyze_state(state) -> TaskAnalysis:
     message = str(getattr(state, "user_message", "") or "")
-    risk = .75 if re.search(r"\b(auth|credential|migration|payment|permission|security)\b", message, re.I) else .2
-    complexity = .75 if re.search(r"\b(across|architecture|entire|multi[- ]|refactor|repository)\b", message, re.I) else .3
+    risk = (
+        0.75
+        if re.search(
+            r"\b(auth|credential|migration|payment|permission|security)\b",
+            message,
+            re.I,
+        )
+        else 0.2
+    )
+    complexity = (
+        0.75
+        if re.search(
+            r"\b(across|architecture|entire|multi[- ]|refactor|repository)\b",
+            message,
+            re.I,
+        )
+        else 0.3
+    )
     write = bool(getattr(state, "allow_write", False))
-    roles = ("architecture", "implementation", "verification") if write else ("architecture",)
-    return TaskAnalysis(complexity, risk, Scope.MULTI_MODULE if complexity > .5 else Scope.SINGLE_FILE, write, bool(getattr(state, "requires_external_evidence", False)), ("tests",) if write else (), roles)
+    roles = (
+        ("architecture", "implementation", "verification")
+        if write
+        else ("architecture",)
+    )
+    return TaskAnalysis(
+        complexity,
+        risk,
+        Scope.MULTI_MODULE if complexity > 0.5 else Scope.SINGLE_FILE,
+        write,
+        bool(getattr(state, "requires_external_evidence", False)),
+        ("tests",) if write else (),
+        roles,
+    )
+
+
+def _ledger_entries(state, name: str) -> list[dict[str, Any]]:
+    value = getattr(state, name, None)
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    ledger = getattr(state, "execution_ledger", None)
+    if isinstance(ledger, dict) and isinstance(ledger.get(name), list):
+        return [item for item in ledger[name] if isinstance(item, dict)]
+    return []
+
+
+def _digest_entry(entry: dict[str, Any]) -> str:
+    payload = json.dumps(entry, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 def evidence_audit(state):
-    requirements = []
-    proofs = []
-    if getattr(state, "successful_mutation", False):
-        proofs.append(ClaimProof("workspace mutation", ProofKind.MUTATION, "tool-ledger"))
-    elif analyze_state(state).requires_write:
-        requirements.append(CompletionRequirement("workspace mutation", (ProofKind.MUTATION,)))
-    if analyze_state(state).requires_write:
-        requirements.append(CompletionRequirement("verification", (ProofKind.TEST, ProofKind.COMMAND)))
-        if getattr(state, "successful_verification", False):
-            proofs.append(ClaimProof("verification", ProofKind.TEST, "verification-ledger"))
+    """Require immutable execution records for write and verification claims."""
+    analysis = analyze_state(state)
+    requirements: list[CompletionRequirement] = []
+    proofs: list[ClaimProof] = []
+    mutation_entries = _ledger_entries(state, "mutation_events")
+    verification_entries = _ledger_entries(state, "verification_events")
+
+    if analysis.requires_write:
+        requirements.append(
+            CompletionRequirement("workspace mutation", (ProofKind.MUTATION,))
+        )
+        for entry in mutation_entries:
+            if entry.get("success") is True and entry.get("path"):
+                proofs.append(
+                    ClaimProof(
+                        "workspace mutation",
+                        ProofKind.MUTATION,
+                        f"mutation:{_digest_entry(entry)}",
+                        digest=str(entry.get("after_sha256") or "") or None,
+                    )
+                )
+
+        requirements.append(
+            CompletionRequirement("verification", (ProofKind.TEST, ProofKind.COMMAND))
+        )
+        for entry in verification_entries:
+            if entry.get("exit_code") == 0:
+                proofs.append(
+                    ClaimProof(
+                        "verification",
+                        ProofKind.TEST if entry.get("kind") == "test" else ProofKind.COMMAND,
+                        f"execution:{_digest_entry(entry)}",
+                        digest=str(entry.get("stdout_sha256") or "") or None,
+                    )
+                )
+
     return EvidenceGate().audit(requirements, proofs)
 
 
@@ -102,7 +202,7 @@ class ResultCache:
 
 
 class WorktreePool:
-    """One branch and worktree per implementation owner."""
+    """One unique branch and worktree per implementation owner."""
 
     def __init__(self, repository: Path, root: Path) -> None:
         self.repository, self.root = repository.resolve(), root.resolve()
@@ -111,7 +211,24 @@ class WorktreePool:
         safe = re.sub(r"[^A-Za-z0-9._-]", "-", task_id).strip("-")
         if not safe:
             raise ValueError("invalid task id")
-        target = self.root / safe
+        suffix = hashlib.sha256(f"{safe}:{time.time_ns()}".encode()).hexdigest()[:8]
+        name = f"{safe}-{suffix}"
+        target = self.root / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "-C", str(self.repository), "worktree", "add", "-b", f"agent/{safe}", str(target), base], check=True, capture_output=True, text=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repository),
+                "worktree",
+                "add",
+                "-b",
+                f"agent/{name}",
+                str(target),
+                base,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         return target
