@@ -25,6 +25,9 @@ python-dotenv
 pathspec
 psycopg[binary]
 psycopg-pool
+opentelemetry-api>=1.36,<2
+opentelemetry-sdk>=1.36,<2
+opentelemetry-exporter-otlp>=1.36,<2
 
 # These are intentionally installed in the runner image because they are
 # present in ALLOWED_COMMANDS and run_tests.
