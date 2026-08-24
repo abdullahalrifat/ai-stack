@@ -1,5 +1,7 @@
+from pathlib import Path
 from types import SimpleNamespace
 
+from app.api.protocol import FEATURES
 from app.platform.efficiency_v07 import (
     _observed_failures,
     _risk_score,
@@ -56,3 +58,29 @@ def test_failure_fingerprint_is_stable_and_route_specific():
     other = failure_fingerprint("test", "reasoning", "assertion failed")
     assert first == second
     assert first != other
+
+
+def test_v07_protocol_features_are_advertised():
+    expected = {
+        "adaptive_context_compilation",
+        "failure_driven_escalation",
+        "evidence_confidence",
+        "persistent_failure_memory",
+        "task_category_route_calibration",
+    }
+    assert expected.issubset(set(FEATURES))
+
+
+def test_v07_failure_migration_is_idempotent_and_indexed():
+    migration = (
+        Path(__file__).parents[1]
+        / "app"
+        / "runs"
+        / "migrations"
+        / "008_efficiency_reliability.sql"
+    ).read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS agent_failure_signatures" in migration
+    assert "CREATE TABLE IF NOT EXISTS agent_failure_run_observations" in migration
+    assert "fingerprint TEXT PRIMARY KEY" in migration
+    assert "run_id TEXT PRIMARY KEY" in migration
+    assert "idx_agent_failure_signatures_category" in migration
