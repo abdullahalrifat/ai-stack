@@ -10,6 +10,7 @@ MAX_CLI_PROTOCOL_VERSION = 1
 EVENT_SCHEMA_VERSION = 1
 PROTOCOL_HEADER = "X-Jarvis-Protocol-Version"
 FEATURES = [
+    "adaptive_context_compiler",
     "background_schedules",
     "cancellable_runner_jobs",
     "client_leases",
@@ -18,12 +19,17 @@ FEATURES = [
     "capability_model_routing",
     "citation_aware_web_search",
     "content_addressed_traces",
+    "dynamic_model_escalation",
     "empirical_route_calibration",
+    "evidence_confidence",
     "evaluation_replay",
+    "failure_signature_memory",
+    "independent_verification",
     "opentelemetry",
     "review_sandboxes",
     "runner_job_leases",
     "stream_heartbeats",
+    "task_category_route_calibration",
     "versioned_events",
 ]
 
