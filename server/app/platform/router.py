@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -111,7 +111,12 @@ class CloudHeartbeatRequest(BaseModel):
 class CloudStateRequest(BaseModel):
     worker_id: str
     lease_id: str
-    state: str
+    state: Literal[
+        "preparing_workspace",
+        "running",
+        "verifying",
+        "uploading_result",
+    ]
     proof: dict[str, Any] | None = None
 
 
@@ -228,13 +233,17 @@ def heartbeat_cloud_task(task_id: str, request: CloudHeartbeatRequest):
 
 @router.post("/cloud/tasks/{task_id}/state")
 def update_cloud_task_state(task_id: str, request: CloudStateRequest):
-    if not PlatformStore().update_cloud_state(
-        task_id,
-        request.worker_id,
-        request.lease_id,
-        request.state,
-        request.proof,
-    ):
+    try:
+        updated = PlatformStore().update_cloud_state(
+            task_id,
+            request.worker_id,
+            request.lease_id,
+            request.state,
+            request.proof,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not updated:
         raise HTTPException(409, "cloud task lease fence is stale or not owned")
     return {"ok": True}
 
