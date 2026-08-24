@@ -9,6 +9,19 @@ from psycopg.types.json import Jsonb
 
 from .store import PlatformStore as BasePlatformStore
 
+_WORKER_STATES = {
+    "preparing_workspace",
+    "running",
+    "verifying",
+    "uploading_result",
+}
+_ALLOWED_WORKER_TRANSITIONS = {
+    "leased": {"preparing_workspace"},
+    "preparing_workspace": {"running"},
+    "running": {"verifying"},
+    "verifying": {"uploading_result"},
+}
+
 
 class AutonomousPlatformStore(BasePlatformStore):
     def submit_cloud(
@@ -46,7 +59,8 @@ class AutonomousPlatformStore(BasePlatformStore):
             cursor.execute(
                 """SELECT id FROM agent_cloud_tasks
                    WHERE (status='queued' AND execution_state='queued')
-                      OR (status='running' AND execution_state NOT IN ('cancel_requested','cancelled')
+                      OR (status='running'
+                          AND execution_state NOT IN ('cancel_requested','cancelled')
                           AND lease_expires_at<NOW())
                    ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"""
             )
@@ -62,6 +76,43 @@ class AutonomousPlatformStore(BasePlatformStore):
                 (worker_id, lease_id, lease, row["id"]),
             )
             return dict(cursor.fetchone())
+
+    def update_cloud_state(
+        self,
+        task_id: str,
+        worker_id: str,
+        lease_id: str,
+        state: str,
+        proof: dict[str, Any] | None = None,
+    ) -> bool:
+        if state not in _WORKER_STATES:
+            raise ValueError(f"unsupported worker execution state: {state}")
+        with self.runs.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT execution_state FROM agent_cloud_tasks
+                   WHERE id=%s AND status='running' AND worker_id=%s AND lease_id=%s
+                     AND lease_expires_at>=NOW() FOR UPDATE""",
+                (task_id, worker_id, lease_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return False
+            current = str(row["execution_state"])
+            if state not in _ALLOWED_WORKER_TRANSITIONS.get(current, set()):
+                raise ValueError(f"invalid cloud execution transition: {current} -> {state}")
+            cursor.execute(
+                """UPDATE agent_cloud_tasks SET execution_state=%s, proof=COALESCE(%s,proof)
+                   WHERE id=%s AND status='running' AND worker_id=%s AND lease_id=%s
+                     AND lease_expires_at>=NOW()""",
+                (
+                    state,
+                    Jsonb(proof) if proof is not None else None,
+                    task_id,
+                    worker_id,
+                    lease_id,
+                ),
+            )
+            return cursor.rowcount == 1
 
     def cancel_cloud(self, task_id: str) -> bool:
         with self.runs.connection() as connection, connection.cursor() as cursor:
