@@ -15,6 +15,7 @@ FEATURES = [
     "cancellable_runner_jobs",
     "client_leases",
     "cloud_worker_leases",
+    "cloud_git_workspaces",
     "durable_events",
     "capability_model_routing",
     "citation_aware_web_search",
