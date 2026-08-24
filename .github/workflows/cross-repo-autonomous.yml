@@ -1,0 +1,127 @@
+name: Cross Repo Autonomous Smoke
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  autonomous-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: jarvis
+          POSTGRES_PASSWORD: jarvis-ci
+          POSTGRES_DB: jarvis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jarvis -d jarvis"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      POSTGRES_URL: postgresql://jarvis:jarvis-ci@127.0.0.1:5432/jarvis
+      AGENT_API_KEY: cross-repo-ci-agent-key
+      RUNNER_API_KEY: cross-repo-ci-runner-key
+      WORKSPACE_DIR: /tmp/jarvis-cross-workspace
+      DEFAULT_WORKSPACE_DIR: /tmp/jarvis-cross-workspace
+    steps:
+      - name: Require sibling-repository credential
+        env:
+          CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+        run: |
+          if [ -z "$CROSS_REPO_TOKEN" ]; then
+            echo "::error::CROSS_REPO_TOKEN is required to validate the private Jarvis repository."
+            exit 1
+          fi
+
+      - name: Check out AI Stack candidate
+        uses: actions/checkout@v4
+        with:
+          path: ai-stack
+
+      - name: Check out coordinated Core candidate
+        uses: actions/checkout@v4
+        with:
+          repository: abdullahalrifat/jarvis-core
+          ref: ${{ github.head_ref || 'main' }}
+          path: jarvis-core
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+
+      - name: Check out coordinated Jarvis candidate
+        uses: actions/checkout@v4
+        with:
+          repository: abdullahalrifat/jarvis
+          ref: ${{ github.head_ref || 'main' }}
+          path: jarvis
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ai-stack/server/requirements.lock
+
+      - name: Prepare workspace
+        run: mkdir -p "$WORKSPACE_DIR"
+
+      - name: Install Server and coordinated candidates
+        run: |
+          python -m pip install -r ai-stack/server/requirements.lock
+          python -m pip install -e ./jarvis-core
+          python -m pip install -e ./jarvis --no-deps
+
+      - name: Verify candidate identities
+        run: |
+          python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.8.0'"
+          python -c "import jarvis_cli; assert jarvis_cli.__version__ == '0.8.0'"
+
+      - name: Run Jarvis autonomous contract tests
+        env:
+          PYTHONPATH: jarvis/src
+        run: python -m pytest -q jarvis/tests/test_v08_autonomous_runtime.py
+
+      - name: Run Server autonomous contract and PostgreSQL tests
+        working-directory: ai-stack/server
+        run: >-
+          python -m pytest -q
+          tests/test_v08_autonomous_runtime.py
+          tests/test_v08_platform_contracts.py
+          tests/test_v08_autonomous_postgres_integration.py
+
+      - name: Cross-repository import and migration smoke
+        working-directory: ai-stack/server
+        run: |
+          python - <<'PY'
+          import jarvis_core
+          import jarvis_cli
+          from app.platform.autonomous_store import AutonomousPlatformStore
+
+          store = AutonomousPlatformStore()
+          store.runs.initialize()
+          task = store.submit_cloud(
+              {"task": "cross-repo smoke", "model": "auto"},
+              idempotency_key="cross-repo-smoke-v08",
+          )
+          claimed = store.claim_cloud("cross-repo-worker", 30)
+          assert claimed and str(claimed["id"]) == str(task["id"])
+          lease_id = str(claimed["lease_id"])
+          assert store.heartbeat_cloud(str(task["id"]), "cross-repo-worker", lease_id, 30)
+          assert store.update_cloud_state(
+              str(task["id"]),
+              "cross-repo-worker",
+              lease_id,
+              "preparing_workspace",
+              {"smoke": True},
+          )
+          assert jarvis_core.__name__ == "jarvis_core"
+          assert jarvis_cli.__version__ == "0.8.0"
+          PY
