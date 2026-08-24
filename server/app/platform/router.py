@@ -64,6 +64,7 @@ class CloudTaskRequest(BaseModel):
     model: str = "auto"
     allow_write: bool = False
     project_id: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -79,19 +80,20 @@ class CloudTaskRequest(BaseModel):
                     "repository_url must not embed credentials; configure worker Git credentials separately"
                 )
             if parsed.query or parsed.fragment:
-                raise ValueError(
-                    "repository_url must not contain query or fragment data"
-                )
+                raise ValueError("repository_url must not contain query or fragment data")
             self.git_ref = _validate_git_ref(self.git_ref)
         elif self.git_ref or self.git_commit:
             raise ValueError("git_ref/git_commit require repository_url")
         if self.git_commit:
             value = self.git_commit.strip().lower()
             if not (
-                7 <= len(value) <= 64 and all(ch in "0123456789abcdef" for ch in value)
+                7 <= len(value) <= 64
+                and all(ch in "0123456789abcdef" for ch in value)
             ):
                 raise ValueError("git_commit must be a hexadecimal Git object id")
             self.git_commit = value
+        if self.idempotency_key:
+            self.idempotency_key = self.idempotency_key.strip()
         return self
 
 
@@ -102,13 +104,23 @@ class CloudClaimRequest(BaseModel):
 
 class CloudHeartbeatRequest(BaseModel):
     worker_id: str
+    lease_id: str
     lease_seconds: int = Field(default=60, ge=15, le=600)
+
+
+class CloudStateRequest(BaseModel):
+    worker_id: str
+    lease_id: str
+    state: str
+    proof: dict[str, Any] | None = None
 
 
 class CloudCompleteRequest(BaseModel):
     worker_id: str
+    lease_id: str
     result: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    proof: dict[str, Any] | None = None
 
 
 @router.post("/schedules")
@@ -187,7 +199,8 @@ def submit_cloud_task(request: CloudTaskRequest):
                 "allow_write": request.allow_write,
                 "project_id": request.project_id,
                 "metadata": request.metadata,
-            }
+            },
+            idempotency_key=request.idempotency_key,
         )
 
 
@@ -204,9 +217,25 @@ def claim_cloud_task(request: CloudClaimRequest):
 @router.post("/cloud/tasks/{task_id}/heartbeat")
 def heartbeat_cloud_task(task_id: str, request: CloudHeartbeatRequest):
     if not PlatformStore().heartbeat_cloud(
-        task_id, request.worker_id, request.lease_seconds
+        task_id,
+        request.worker_id,
+        request.lease_id,
+        request.lease_seconds,
     ):
-        raise HTTPException(409, "cloud task lease is not owned by this worker")
+        raise HTTPException(409, "cloud task lease fence is stale or not owned")
+    return {"ok": True}
+
+
+@router.post("/cloud/tasks/{task_id}/state")
+def update_cloud_task_state(task_id: str, request: CloudStateRequest):
+    if not PlatformStore().update_cloud_state(
+        task_id,
+        request.worker_id,
+        request.lease_id,
+        request.state,
+        request.proof,
+    ):
+        raise HTTPException(409, "cloud task lease fence is stale or not owned")
     return {"ok": True}
 
 
@@ -215,10 +244,19 @@ def complete_cloud_task(task_id: str, request: CloudCompleteRequest):
     if not PlatformStore().finish_cloud(
         task_id,
         request.worker_id,
+        request.lease_id,
         result=request.result,
         error=request.error,
+        proof=request.proof,
     ):
-        raise HTTPException(409, "cloud task lease is not owned by this worker")
+        raise HTTPException(409, "cloud task lease fence is stale or not owned")
+    return {"ok": True}
+
+
+@router.post("/cloud/tasks/{task_id}/cancel")
+def cancel_cloud_task(task_id: str):
+    if not PlatformStore().cancel_cloud(task_id):
+        raise HTTPException(404, "cloud task not found or already terminal")
     return {"ok": True}
 
 
