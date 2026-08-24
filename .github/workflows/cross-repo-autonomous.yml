@@ -39,9 +39,32 @@ jobs:
           CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
         run: |
           if [ -z "$CROSS_REPO_TOKEN" ]; then
-            echo "::error::CROSS_REPO_TOKEN is required to validate the private Jarvis repository."
+            echo "::error::CROSS_REPO_TOKEN is required to validate private sibling repositories."
             exit 1
           fi
+
+      - name: Resolve coordinated sibling refs
+        id: refs
+        env:
+          CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+          CANDIDATE_REF: ${{ github.head_ref || 'main' }}
+        run: |
+          resolve_ref() {
+            repo="$1"
+            output="$2"
+            encoded=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$CANDIDATE_REF")
+            status=$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $CROSS_REPO_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$repo/branches/$encoded")
+            if [ "$status" = "200" ]; then
+              echo "$output=$CANDIDATE_REF" >> "$GITHUB_OUTPUT"
+            else
+              echo "$output=main" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          resolve_ref abdullahalrifat/jarvis-core core_ref
+          resolve_ref abdullahalrifat/jarvis jarvis_ref
 
       - name: Check out AI Stack candidate
         uses: actions/checkout@v4
@@ -52,7 +75,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: abdullahalrifat/jarvis-core
-          ref: ${{ github.head_ref || 'main' }}
+          ref: ${{ steps.refs.outputs.core_ref }}
           path: jarvis-core
           token: ${{ secrets.CROSS_REPO_TOKEN }}
 
@@ -60,7 +83,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: abdullahalrifat/jarvis
-          ref: ${{ github.head_ref || 'main' }}
+          ref: ${{ steps.refs.outputs.jarvis_ref }}
           path: jarvis
           token: ${{ secrets.CROSS_REPO_TOKEN }}
 
