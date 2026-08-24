@@ -54,6 +54,29 @@ def test_concurrent_idempotent_submission_creates_one_task():
         _delete(store, task_ids)
 
 
+def test_idempotency_key_rejects_different_payload():
+    store = _store()
+    key = f"integration-idempotency-mismatch-v08-{uuid.uuid4()}"
+    created = store.submit_cloud(
+        {"task": "first task", "model": "auto"},
+        idempotency_key=key,
+    )
+    task_id = str(created["id"])
+    try:
+        repeated = store.submit_cloud(
+            {"task": "first task", "model": "auto"},
+            idempotency_key=key,
+        )
+        assert str(repeated["id"]) == task_id
+        with pytest.raises(ValueError, match="different cloud task payload"):
+            store.submit_cloud(
+                {"task": "different task", "model": "auto"},
+                idempotency_key=key,
+            )
+    finally:
+        _delete(store, {task_id})
+
+
 def test_lease_fence_rejects_wrong_worker_and_stale_attempt():
     store = _store()
     created = store.submit_cloud({"task": "fenced task", "model": "auto"})
