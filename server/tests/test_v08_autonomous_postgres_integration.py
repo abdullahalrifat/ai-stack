@@ -33,6 +33,27 @@ def _delete(store: AutonomousPlatformStore, task_ids: set[str]) -> None:
         )
 
 
+
+def _proof(task_id: str, lease_id: str, attempt: int = 1):
+    return {
+        "schema_version": 1,
+        "task_id": task_id,
+        "lease_id": lease_id,
+        "attempt": attempt,
+        "workspace_digest": "a" * 64,
+        "route": "coding",
+        "model": "test-model",
+        "mutation_digest": "b" * 64,
+        "verifications": [{
+            "command": "pytest -q",
+            "status": "passed",
+            "exit_code": 0,
+            "output_digest": "c" * 64,
+        }],
+        "artifact_hashes": {},
+    }
+
+
 def test_concurrent_idempotent_submission_creates_one_task():
     store = _store()
     task_ids: set[str] = set()
@@ -133,7 +154,7 @@ def test_successful_completion_requires_upload_state_and_proof():
             "worker-proof",
             lease_id,
             result={"premature": True},
-            proof={"verified": True},
+            proof=_proof(task_id, lease_id),
         )
 
         for state in (
@@ -161,7 +182,7 @@ def test_successful_completion_requires_upload_state_and_proof():
             "worker-proof",
             lease_id,
             result={"ok": True},
-            proof={"verified": True},
+            proof=_proof(task_id, lease_id),
         )
     finally:
         _delete(store, {task_id})
