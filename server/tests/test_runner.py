@@ -35,6 +35,9 @@ def configured_runner(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "RUNNER_API_KEY", "secret")
     monkeypatch.setattr(runner, "ALLOWED", {"python3"})
     monkeypatch.setattr(runner, "TERMINATE_GRACE_SECONDS", 0.2)
+    # Job lifecycle tests do not exercise namespace creation. Dedicated tests
+    # below cover the fail-closed isolation wrapper.
+    monkeypatch.setattr(runner, "_command_argv", lambda parts, _tier: parts)
     runner._jobs.clear()
     yield worktree
     for job in list(runner._jobs.values()):
@@ -187,18 +190,26 @@ def test_command_argv_wraps_isolated_tier_in_netns_when_available(monkeypatch):
     monkeypatch.setattr(runner, "_netns_available", lambda: True)
 
     argv = runner._command_argv(["python3", "-c", "x"], "isolated")
-    assert argv == ["/usr/bin/unshare", "-n", "python3", "-c", "x"]
-
-
-def test_command_argv_skips_netns_when_unavailable(monkeypatch):
-    monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
-    monkeypatch.setattr(runner, "_netns_available", lambda: False)
-
-    assert runner._command_argv(["python3", "-c", "x"], "isolated") == [
+    assert argv == [
+        "/usr/bin/unshare",
+        "--map-root-user",
+        "--net",
         "python3",
         "-c",
         "x",
     ]
+
+
+def test_command_argv_fails_closed_when_netns_is_unavailable(monkeypatch):
+    monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
+    monkeypatch.setattr(runner.shutil, "which", lambda _name: "/usr/bin/unshare")
+    monkeypatch.setattr(runner, "_netns_available", lambda: False)
+
+    with pytest.raises(HTTPException) as error:
+        runner._command_argv(["python3", "-c", "x"], "isolated")
+
+    assert error.value.status_code == 503
+    assert "private network namespace" in error.value.detail
 
 
 def test_command_argv_network_tier_is_not_wrapped(monkeypatch):
@@ -213,14 +224,14 @@ def test_command_argv_network_tier_is_not_wrapped(monkeypatch):
     ]
 
 
-def test_command_argv_netns_disabled_by_config(monkeypatch):
+def test_command_argv_fails_closed_when_netns_is_disabled(monkeypatch):
     monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", False)
 
-    assert runner._command_argv(["python3", "-c", "x"], "isolated") == [
-        "python3",
-        "-c",
-        "x",
-    ]
+    with pytest.raises(HTTPException) as error:
+        runner._command_argv(["python3", "-c", "x"], "isolated")
+
+    assert error.value.status_code == 503
+    assert "enforcement is disabled" in error.value.detail
 
 
 def test_runner_applies_tier_resource_limits_in_child(configured_runner):

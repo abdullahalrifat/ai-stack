@@ -151,6 +151,11 @@ class AutonomousPlatformStore(BasePlatformStore):
         proof: dict[str, Any] | None = None,
     ) -> bool:
         status = "failed" if error else "completed"
+        # A successful result is publishable only after the worker has entered
+        # uploading_result and supplied a non-empty execution proof. Failures
+        # remain publishable from any fenced active state for diagnostics.
+        completion_has_proof = bool(error) or bool(proof)
+        failure_completion = bool(error)
         with self.runs.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """UPDATE agent_cloud_tasks
@@ -158,7 +163,9 @@ class AutonomousPlatformStore(BasePlatformStore):
                        proof=COALESCE(%s,proof), completed_at=NOW(),
                        lease_expires_at=NULL, lease_id=NULL
                    WHERE id=%s AND status='running' AND worker_id=%s
-                     AND lease_id=%s AND lease_expires_at>=NOW()""",
+                     AND lease_id=%s AND lease_expires_at>=NOW()
+                     AND %s
+                     AND (%s OR execution_state='uploading_result')""",
                 (
                     status,
                     status,
@@ -168,6 +175,8 @@ class AutonomousPlatformStore(BasePlatformStore):
                     task_id,
                     worker_id,
                     lease_id,
+                    completion_has_proof,
+                    failure_completion,
                 ),
             )
             return cursor.rowcount == 1

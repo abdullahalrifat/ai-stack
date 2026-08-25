@@ -5,9 +5,9 @@ it for the duration of every tool call. Write tools and the command runner
 enforce the active policy as a second gate after path validation, so a policy
 is never bypassed by calling a tool outside the executor.
 
-The ContextVar default is a full-write policy (minus always-denied sensitive
-files) so direct tool callers and unit tests keep working, while every
-production run is explicitly scoped through ``permissions_context``.
+The ContextVar default is read-only. Mutation and command execution require an
+explicit run-scoped policy installed through ``permissions_context``, so a
+missed wrapper, plugin callback, or context propagation bug fails closed.
 """
 
 from contextlib import contextmanager
@@ -92,15 +92,19 @@ class PermissionPolicy:
             )
 
     def check_command(self, executable: str) -> None:
-        """Raise PermissionError when *executable* is outside this scope."""
+        """Raise PermissionError unless this scope explicitly permits commands."""
 
+        if self.scope == READ:
+            raise PermissionError(
+                "Command execution is not permitted for a read-only request."
+            )
         if self.command_allowlist and executable not in self.command_allowlist:
             raise PermissionError(
                 f"'{executable}' is outside the request's command allowlist."
             )
 
 
-_default_policy = PermissionPolicy(scope=FULL_WRITE)
+_default_policy = PermissionPolicy(scope=READ)
 
 _permission_scope: ContextVar[PermissionPolicy] = ContextVar(
     "permission_scope", default=_default_policy

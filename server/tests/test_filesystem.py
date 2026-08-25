@@ -390,7 +390,9 @@ def test_inspect_files_balances_content_across_large_files(workspace, monkeypatc
 
 
 def test_write_edit_and_read_stay_inside_workspace(workspace):
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE)
+    ), filesystem.workspace_context(str(workspace)):
         assert (
             filesystem.write_file.invoke(
                 {"file_path": "src/example.txt", "content": "before"}
@@ -429,7 +431,9 @@ def test_run_command_enforces_policy_before_execution(workspace, monkeypatch):
         },
     )
 
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE)
+    ), filesystem.workspace_context(str(workspace)):
         assert (
             "not permitted"
             in filesystem.run_command.invoke({"command": "echo ok; echo unsafe"})[
@@ -800,7 +804,9 @@ def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):
             "output": "ok",
         },
     )
-    policy = PermissionPolicy(command_allowlist=frozenset({"echo"}))
+    policy = PermissionPolicy(
+        scope=FULL_WRITE, command_allowlist=frozenset({"echo"})
+    )
     with permissions_context(policy), filesystem.workspace_context(str(workspace)):
         allowed = filesystem.run_command.invoke({"command": "echo hi"})
         denied = filesystem.run_command.invoke({"command": "git status"})
@@ -809,7 +815,9 @@ def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):
     assert "command allowlist" in denied["error"]
 
 
-def test_run_tests_does_not_hit_runner_under_read_scope(workspace, monkeypatch):
+def test_run_tests_is_denied_and_does_not_hit_runner_under_read_scope(
+    workspace, monkeypatch
+):
     monkeypatch.setattr(filesystem, "SANDBOX_ROOT", workspace.parent)
     calls = []
     monkeypatch.setattr(
@@ -821,8 +829,8 @@ def test_run_tests_does_not_hit_runner_under_read_scope(workspace, monkeypatch):
     with permissions_context(policy), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke({"kind": "pytest"})
 
-    assert result["kind"] == "pytest"
-    assert calls == ["isolated"]
+    assert "not permitted" in result["error"]
+    assert calls == []
 
 
 def test_run_tests_supports_focused_pytest_node(workspace, monkeypatch):

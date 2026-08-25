@@ -38,10 +38,9 @@ TERMINAL_STATUSES = {"completed", "cancelled", "timed_out", "kill_failed"}
 
 # Sandbox tiers: per-tier network access and kernel resource limits applied to
 # every command. The "isolated" tier is the default for review worktrees and
-# blocks egress whenever a network namespace is available; the "network" tier
-# keeps CPU/memory/open-file limits but allows the command to reach the
-# network. Compose already places this runner on an internal network, so the
-# netns wrapper is defense in depth, not the only boundary.
+# requires a private network namespace. It fails closed when that boundary
+# cannot be created. The explicit "network" tier keeps CPU/memory/open-file
+# limits but allows the command to reach the runner network.
 RUNNER_CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "90"))
 RUNNER_MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "2048"))
 RUNNER_MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
@@ -180,7 +179,7 @@ def _netns_available() -> bool:
         if unshare:
             try:
                 probe = subprocess.run(
-                    [unshare, "-n", "true"],
+                    [unshare, "--map-root-user", "--net", "true"],
                     timeout=10,
                     capture_output=True,
                 )
@@ -193,19 +192,30 @@ def _netns_available() -> bool:
 def _command_argv(parts: list[str], tier: str) -> list[str]:
     """Wrap the command for its tier.
 
-    The "isolated" tier drops external network by running the command in a
-    private network namespace (loopback only) when unshare is available. If
-    the namespace cannot be created, the command still runs with its kernel
-    limits; the runner's internal Docker network remains the outer boundary.
+    The "isolated" tier drops network access by running the command in a
+    private user and network namespace. Isolation is a security contract:
+    unavailable or disabled namespace support rejects the job instead of
+    silently executing it with weaker boundaries.
     """
 
     limits = TIERS.get(tier, TIERS["isolated"])
-    if limits["network"] or not RUNNER_ENABLE_NETNS:
+    if limits["network"]:
         return parts
+    if not RUNNER_ENABLE_NETNS:
+        raise HTTPException(
+            503,
+            "The isolated runner tier is unavailable because network namespace "
+            "enforcement is disabled. Use the explicit network tier only when "
+            "network access is approved.",
+        )
     unshare = shutil.which("unshare")
     if unshare and _netns_available():
-        return [unshare, "-n", *parts]
-    return parts
+        return [unshare, "--map-root-user", "--net", *parts]
+    raise HTTPException(
+        503,
+        "The isolated runner tier cannot create a private network namespace. "
+        "Enable unprivileged user namespaces or install a supported sandbox.",
+    )
 
 
 def _trim_output(stdout: str | None, stderr: str | None) -> str:
