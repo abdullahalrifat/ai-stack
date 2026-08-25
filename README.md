@@ -2,7 +2,7 @@
 
 ## Current contract line
 
-AI Stack consumes only the provider-neutral Jarvis Core 0.9.1 protocol contract. It does not import, install, or require the Jarvis CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes only the provider-neutral Jarvis Core 0.9.2 protocol contract. It does not import, install, or require the Jarvis CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
 
 AI Stack Server is the optional durable, self-hosted control plane for the Jarvis ecosystem. The standalone local product is [`jarvis`](https://github.com/abdullahalrifat/jarvis); provider-neutral runtime contracts are in [`jarvis-core`](https://github.com/abdullahalrifat/jarvis-core).
@@ -17,15 +17,15 @@ Use Jarvis when repository tools should run on the developer machine. Deploy Ser
 - SearXNG: optional self-hosted current-information search;
 - LiteLLM plus Ollama or remote compatible providers: inference routing;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core` 0.8.0: separately released immutable shared contracts.
+- `jarvis-agent-core` 0.9.2: separately versioned provider-neutral shared contracts.
 
-The v0.8.1 branch pins the verified Core wheel SHA-256:
+The Server pins the exact reviewed Core 0.9.2 source commit:
 
 ```text
-d9569b69385e58a681ea01e900eb81c395d3f202a09a92878eb82bf4d4b8618a
+af3fcd5052dd6d5c15606302dcc7bd9f687fca78
 ```
 
-Server requirements, lockfile, Docker image and CI all assert the same Core version.
+Server requirements, lockfile, Docker image and CI all assert the same Core version. This source pin can be replaced by the verified Core 0.9.2 wheel after that release is published.
 
 ## Start the development stack
 
@@ -64,11 +64,11 @@ Provider credentials stay on execution hosts and are not embedded in cloud task 
 
 ## Validation and supply chain
 
-The normal validation workflow covers Server tests, UI build/tests and Compose configuration. v0.8.1 adds a PostgreSQL 17 job dedicated to durable lease and autonomous fencing/idempotency tests. Model Integration exercises real Ollama + LiteLLM native tool calling. Supply Chain builds the Server image/SBOM and publishes tagged GHCR images with provenance when release conditions are met.
+The normal validation workflow covers Server tests, UI build/tests and Compose configuration. The current line includes a PostgreSQL 17 job dedicated to durable lease and autonomous fencing/idempotency tests. Model Integration exercises real Ollama + LiteLLM native tool calling. Supply Chain builds the Server image/SBOM and publishes tagged GHCR images with provenance when release conditions are met.
 
 The post-merge audit also repaired the tagged GHCR shell block, which previously encoded `docker tag` and `docker push` incorrectly on one line.
 
-Private GitHub Actions currently fail before runner provisioning (`steps:null`), so the v0.8.1 branch is **audit-hardened but not release-certified** until Server/Postgres/UI/Compose/model/supply-chain/cross-repo jobs actually execute on the exact head.
+Private GitHub Actions currently fail before runner provisioning (`steps:null`), so the current head is **audit-hardened but not release-certified** until Server/Postgres/UI/Compose/model/supply-chain/cross-repo jobs actually execute on the exact head.
 
 ## World-class gaps
 
