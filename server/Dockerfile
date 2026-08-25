@@ -10,6 +10,7 @@ RUN apt-get update && \
     curl \
     git \
     make \
+    util-linux \
     nodejs \
     npm \
     tesseract-ocr \
@@ -23,7 +24,7 @@ COPY app ./app
 COPY evals ./evals
 
 RUN python -m compileall app
-RUN python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.8.0'"
+RUN python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.9.1'"
 RUN mkdir -p /workspace
 
 EXPOSE 8000
