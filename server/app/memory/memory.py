@@ -46,7 +46,13 @@ COLLECTION = os.getenv("QDRANT_COLLECTION", "agent_memory")
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 
-qdrant = QdrantClient(url=QDRANT_URL)
+# Qdrant's compatibility probe performs network I/O in the constructor.  This
+# module is imported while FastAPI builds the application, including for CLI
+# commands and tests that never use memory, so probing here can delay or break
+# otherwise healthy startup when the optional memory service is unavailable.
+# Real memory operations still use normal Qdrant requests and surface version
+# or API incompatibilities at the point of use.
+qdrant = QdrantClient(url=QDRANT_URL, check_compatibility=False)
 
 
 # =====================================================
