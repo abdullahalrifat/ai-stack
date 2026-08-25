@@ -17,7 +17,10 @@ def verify_api_key(key: str | None = Security(api_key_header)):
         raise HTTPException(503, detail="Agent authentication is not configured")
     if not key:
         raise HTTPException(401, detail="Missing authorization header")
-    if not hmac.compare_digest(key.replace("Bearer ", ""), AGENT_API_KEY):
+    scheme, separator, token = key.partition(" ")
+    if separator != " " or scheme.casefold() != "bearer" or not token or " " in token:
+        raise HTTPException(401, detail="Invalid authorization header")
+    if not hmac.compare_digest(token, AGENT_API_KEY):
         raise HTTPException(401, detail="Invalid API key")
     return True
 
