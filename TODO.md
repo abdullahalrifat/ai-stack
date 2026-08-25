@@ -1,132 +1,143 @@
 # Jarvis and Server capability tracker
 
-This tracker uses maturity levels rather than binary checkboxes:
+This tracker is evidence-based:
 
-- FOUNDATION: bounded implementation exists with focused tests.
-- INTEGRATED: exercised through the actual runtime path.
-- PRODUCTION-READY: recovery, permissions, compatibility and operations gates pass.
-- MEASURED: replay/benchmark data demonstrates quality, latency and token behavior.
+- **FOUNDATION** — bounded implementation and focused tests exist.
+- **INTEGRATED** — the actual runtime path uses the capability.
+- **VALIDATED** — malformed input, timeout/cancellation, permissions, compatibility and recovery execute in CI.
+- **MEASURED** — retained data demonstrates quality, latency, token/cost and failure behavior.
+- **PRODUCTION-READY** — VALIDATED + MEASURED with documented operational limits and no unresolved P0/P1 reliability issue.
+
+Private GitHub Actions currently fail before runner provisioning, so the v0.8.1 Server branch cannot advance to VALIDATED even where focused tests exist.
 
 ## Shared agent/runtime
 
 | Capability | Maturity |
 | --- | --- |
-| Streaming and responsive execution | INTEGRATED |
+| Streaming/responsive execution | INTEGRATED |
 | Search/edit/command tools with deterministic verification | INTEGRATED |
 | Transcript checkpoint/resume | INTEGRATED |
-| Context compaction and token budgets | INTEGRATED |
-| Parallel read-only tools and replanning | INTEGRATED |
-| Scoped permissions and prompt-injection boundaries | INTEGRATED |
+| Context compaction/token budgets | INTEGRATED |
+| Parallel read-only exploration/replanning | INTEGRATED |
+| Scoped permissions/prompt-injection boundaries | INTEGRATED |
 | Sandbox tiering | INTEGRATED |
-| Multi-expert dispatch | INTEGRATED |
-| Heterogeneous role/model routing | INTEGRATED |
+| Multi-expert heterogeneous routing | INTEGRATED |
 | Execution-backed completion evidence | INTEGRATED |
-| Replay evaluations | INTEGRATED |
+| Replay/adversarial evaluations | INTEGRATED / FOUNDATION corpus depth |
 | Benchmark-calibrated adaptive routing | INTEGRATED |
 | Shared team/job/schedule/remote contracts | INTEGRATED |
-| Deterministic v0.7 execution policy | INTEGRATED |
 | v0.8 execution state + lease fencing contracts | INTEGRATED |
 | v0.8 proof + permission contracts | INTEGRATED |
 | Standard cron semantics | INTEGRATED |
+| Real-repository quality benchmark baseline | NOT STARTED |
+| Prompt-injection / secret-canary benchmark | NOT STARTED |
 
-## Jarvis CLI parity
+## Jarvis CLI
 
 | Capability | Maturity |
 | --- | --- |
-| Standalone OpenAI-compatible/Anthropic local loop | INTEGRATED |
-| Named provider profiles and resilient fallback | INTEGRATED |
+| Standalone OpenAI-compatible/Anthropic loop | INTEGRATED |
+| Named provider profiles/resilient fallback | INTEGRATED |
 | Searchable resumable local sessions | INTEGRATED |
-| Attachments: text/image/PDF/clipboard | INTEGRATED |
-| Per-hunk review and transactional undo | INTEGRATED |
-| Hierarchical instructions and durable memory | INTEGRATED |
-| MCP lifecycle and explicit tool policy | INTEGRATED |
-| Adaptive multi-agent selection | INTEGRATED |
+| Native text/image/PDF context | INTEGRATED |
+| Per-hunk review/transactional undo | INTEGRATED |
+| Hierarchical instructions/durable memory | INTEGRATED |
+| MCP lifecycle/tool policy | INTEGRATED |
+| MCP approval + transport hardening | FOUNDATION — v0.8.1 |
+| Explicit trust before executable project Hooks | FOUNDATION — v0.8.1 |
+| Secret-minimized tool subprocess environment | FOUNDATION — v0.8.1 |
+| Adaptive multi-agent/model routing | INTEGRATED |
 | Repository graph + persistent LSP | INTEGRATED |
-| Enforced plan mode and OS/network sandbox | INTEGRATED |
-| Rich TUI | INTEGRATED |
-| Skills and lifecycle Hooks | INTEGRATED |
-| Agent-team board + parallel worktrees | INTEGRATED |
-| Browser/Playwright verification agent | INTEGRATED |
-| Capability-scoped plugin packaging | INTEGRATED |
-| Background jobs + standard cron scheduler | INTEGRATED |
-| Process-tree background-job cancellation | INTEGRATED |
-| OpenTelemetry + automatic route calibration | INTEGRATED |
-| Python SDK + reviewed remote Runs | INTEGRATED |
+| Plan mode + Linux/macOS OS/network sandbox | INTEGRATED |
+| Native Windows sandbox | NOT STARTED |
+| TUI / Skills / Hooks | INTEGRATED |
+| Agent teams + worktrees | INTEGRATED |
+| Browser/Playwright verification | INTEGRATED |
+| Plugins | INTEGRATED |
+| Local jobs/cron/process-tree cancellation | INTEGRATED |
+| First-class nonblocking in-agent process tool | NOT STARTED |
+| OpenTelemetry/route calibration | INTEGRATED |
+| Python SDK/reviewed remote Runs | INTEGRATED |
+| TypeScript SDK | NOT STARTED |
 | Portable Git cloud workspaces | INTEGRATED |
-| Lease-fenced cancellable cloud workers | INTEGRATED |
-| Idempotent cloud task submission | INTEGRATED |
-| Cloud model/profile propagation | INTEGRATED |
-| Durable execution proof ledger | INTEGRATED |
-| Deterministic allow/ask/deny permissions | INTEGRATED |
-| Autonomous proof/team/job dashboard | INTEGRATED |
-| Structural context compiler | INTEGRATED |
-| Selective speculative explorers | INTEGRATED |
-| Failure-driven escalation and hybrid routing | INTEGRATED |
-| Verifier isolation + evidence confidence | INTEGRATED |
-| Structured failure memory + deterministic retries | INTEGRATED |
-| Impact-aware verification and patch-scope guard | INTEGRATED |
-| Tool-result deduplication + patch minimization | INTEGRATED |
-| Adversarial reliability benchmark | FOUNDATION |
+| Lease-fenced/idempotent cloud workers | INTEGRATED |
+| Execution proof/permissions/dashboard | INTEGRATED |
+| Context compiler/speculation/failure escalation | INTEGRATED |
+| Verifier isolation/evidence confidence | INTEGRATED |
+| Failure memory/retries | INTEGRATED |
+| Impact-aware verification/patch guard | INTEGRATED |
+| Direct bounded write/edit primitive behind review/proof | NOT STARTED |
+| Independent code + conversation checkpoint rewind | PARTIAL |
+| Native IDE extension | NOT STARTED |
+| GitHub PR review/inline annotations | NOT STARTED |
+| Live steering/attach-to-running-agent | NOT STARTED |
 
 ## Server / AI Stack
 
 | Capability | Maturity |
 | --- | --- |
 | Durable Runs execution engine | INTEGRATED |
-| Model readiness and LiteLLM/Ollama integration tests | INTEGRATED |
-| Web/Telegram/WhatsApp ingress foundation | INTEGRATED |
-| Durable outbound delivery/retry | INTEGRATED |
-| Provider health and model routing | INTEGRATED |
+| LiteLLM/Ollama real model integration | INTEGRATED |
+| Web/Telegram/WhatsApp ingress/outbound foundation | INTEGRATED |
+| Provider health/routing | INTEGRATED |
 | Claim/source evidence verification | INTEGRATED |
-| MCP persistent connections and policy | INTEGRATED |
-| Hierarchical instructions and persistent memory | INTEGRATED |
-| Heterogeneous expert route metadata | INTEGRATED |
-| Execution-backed evidence gate | INTEGRATED |
-| Durable schedules submitting normal reviewed Runs | INTEGRATED |
-| Standard UTC cron semantics | INTEGRATED |
-| Portable cloud task queue + external workers | INTEGRATED |
-| Lease fencing per cloud attempt | INTEGRATED |
-| Idempotent cloud submissions | INTEGRATED |
-| Durable cloud execution state machine | INTEGRATED |
-| Terminal cloud cancellation + stale-result rejection | INTEGRATED |
-| Cloud execution proof persistence | INTEGRATED |
-| OpenTelemetry agent/tool/platform/cloud traces | INTEGRATED |
-| Automatic route calibration from durable Run outcomes | INTEGRATED |
-| Task-category measured expert routing | INTEGRATED |
-| Persistent failure signatures | INTEGRATED |
-| Failure/risk-aware verifier and risk-agent escalation | INTEGRATED |
-| Execution-ledger confidence events | INTEGRATED |
-| Cross-repository Core/CLI/Server Postgres gate | INTEGRATED |
-| Per-run cost accounting | FOUNDATION |
+| Persistent MCP/policy | INTEGRATED |
+| Instructions/persistent memory | INTEGRATED |
+| Durable schedules | INTEGRATED |
+| Portable cloud queue/external workers | INTEGRATED |
+| Lease fencing/idempotency/state machine | INTEGRATED |
+| Terminal cloud cancellation/stale-result rejection | INTEGRATED |
+| Cloud execution proof | INTEGRATED |
+| OpenTelemetry platform/cloud traces | INTEGRATED |
+| Route calibration/failure signatures/escalation | INTEGRATED |
+| Dedicated ordinary Postgres fencing CI | FOUNDATION — v0.8.1 |
+| Cross-repository Core/CLI/Server/Postgres gate | INTEGRATED but currently unexecutable |
+| Per-run token/cost accounting | FOUNDATION |
+| Per-task container/VM-style sandbox isolation | NOT STARTED |
+| CPU/RAM/PID/disk quotas + egress proxy/policy | NOT STARTED |
+| Deterministic cloud bootstrap/setup/cache identity | PARTIAL |
+| Queue admission/fairness/backpressure | NOT STARTED |
 | OIDC/OAuth tenant isolation | NOT STARTED |
-| Quotas/admission/capacity load gates | NOT STARTED |
-| Retention/deletion, backup/restore and DR drills | NOT STARTED |
+| Central organization policy/audit export | NOT STARTED |
+| Retention/deletion + backup/restore/DR drills | NOT STARTED |
+| Worker/Core/CLI/Server fleet compatibility reporting | NOT STARTED |
 
-## P0 — release proof for v0.8
+## v0.8.1 post-merge fixes
 
-1. Core Black/Ruff/pytest/coverage/build/Twine must be green on the exact Core v0.8 head.
-2. Jarvis Python 3.10/3.12/3.13, all-runtime Black, package build and clean-wheel installation must execute on the exact CLI head.
-3. Server Validate, real Postgres fencing integration, Supply Chain, Compose/UI and Ollama/LiteLLM integration must execute on the exact Server head.
-4. Cross Repo Autonomous Smoke must check out the coordinated branch on PRs and `main` after merge and exercise Core + CLI + Server against real Postgres.
-5. Release Core 0.8.0 first, calculate the immutable wheel SHA-256, then update both consumer dependency/lock/container/CI pins before they merge.
-6. Retain benchmark and chaos evidence for longer-running network-partition/reclaim/cancellation scenarios as measured production proof.
+1. Pin Server requirements, lockfile, image and CI to the verified immutable Core v0.8.0 wheel (`d9569b69385e58a681ea01e900eb81c395d3f202a09a92878eb82bf4d4b8618a`).
+2. Repair the tagged GHCR publish command block.
+3. Add a normal Postgres 17 CI job for lease/fencing/idempotency tests rather than relying solely on the secret-gated cross-repo workflow.
+4. Add release-alignment regressions so package/image/CI Core versions cannot silently drift.
 
-## P1 — production hardening
+## P0 — release and security proof
 
-1. Per-run token/cost/latency accounting and fallback/tool-failure/escalation dashboards.
-2. Signed publisher trust roots for plugins beyond checksum integrity.
-3. Interactive team/job/browser panes and remote job attachment in the TUI.
-4. Native Windows AppContainer sandbox support.
-5. TypeScript SDK parity and compatibility/deprecation tests.
+1. Restore executable private Actions and require exact-head Server, Postgres, UI, Compose, model integration, supply-chain and cross-repository success.
+2. Retain real-repository issue-resolution benchmark results across at least a representative local model and one configured remote provider.
+3. Add prompt-injection/secret-canary tests spanning repository content, web/browser, MCP, Skills, Hooks, attachments and remote task payloads.
+4. Add chaos/soak tests for network partition, worker/Server restart, lease expiry/reclaim, duplicate completion, cancellation races, scheduler ownership, disk/state failure and telemetry outages.
+5. Introduce independently constrained per-task cloud execution for shared/untrusted workloads: container/VM-style isolation, CPU/RAM/PID/disk limits, seccomp/AppArmor or equivalent and explicit egress policy.
+6. Add deterministic environment bootstrap and cache identity/invalidation so cloud setup is fast without reusing unsafe mutable state.
 
-## P2 — production platform
+## P1 — developer and integration parity
 
-1. OIDC/OAuth, tenant isolation, scoped service tokens and identity linking.
-2. Quotas, admission control, circuit breakers and capacity/load tests.
-3. Tamper-evident audit events, secret rotation and release signing.
-4. Retention/deletion, malware scanning, backup/restore and DR drills.
-5. GPU/quantized-model capacity planning and autoscaling runners when scale requires it.
+1. Native IDE extension with selected-file context, diagnostics and local/cloud continuity.
+2. GitHub PR/issue workflow with automatic review, line annotations, evidence links and re-review.
+3. Nonblocking agent process start/log/stop, live steering and attachment to running jobs/subagents.
+4. Independent code/conversation checkpoint rewind.
+5. Screenshot/DOM/network evidence attached to browser verification and PR review.
+6. TypeScript SDK parity and compatibility/deprecation tests.
+7. Slack integration with explicit identity/approval boundaries.
+
+## P1 — enterprise/platform hardening
+
+1. Per-run token/cost/latency/fallback/tool-failure/escalation dashboards.
+2. Signed publisher trust roots/revocation for plugins beyond checksums.
+3. OIDC/OAuth, tenant isolation, scoped service tokens and identity linking.
+4. Organization-enforced policy and tamper-evident audit export.
+5. Quotas, admission control, fair scheduling, backpressure and capacity/load testing.
+6. Retention/deletion, malware scanning, secret rotation, backup/restore and DR drills.
+7. GPU/model capacity planning and autoscaling runners when scale requires it.
 
 ## Completion rule
 
-A feature is not considered complete merely because a helper/class exists. It must be integrated through the real execution path and covered for cancellation, timeout, malformed input, permission denial, recovery and compatibility before it can be promoted to PRODUCTION-READY.
+A helper/class is not a complete feature. A capability reaches PRODUCTION-READY only after real-path integration, executable cancellation/timeout/malformed-input/permission/recovery/compatibility gates, retained benchmark evidence and documented operational boundaries.

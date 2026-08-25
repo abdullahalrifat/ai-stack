@@ -1,25 +1,26 @@
 # AI Stack Server
 
-AI Stack Server is the optional durable, self-hosted control plane for the
-Jarvis ecosystem. The standalone local product lives in
-[abdullahalrifat/jarvis](https://github.com/abdullahalrifat/jarvis), while
-provider-neutral runtime contracts live in
-[abdullahalrifat/jarvis-core](https://github.com/abdullahalrifat/jarvis-core).
+AI Stack Server is the optional durable, self-hosted control plane for the Jarvis ecosystem. The standalone local product is [`jarvis`](https://github.com/abdullahalrifat/jarvis); provider-neutral runtime contracts are in [`jarvis-core`](https://github.com/abdullahalrifat/jarvis-core).
 
-Use Jarvis when repository tools should run on the user's computer and only
-inference should use a remote GPU. Deploy Server when work must survive client
-disconnects, serve multiple users/channels, use remote mounted workspaces,
-process durable documents, or enforce centralized policy and approvals.
+Use Jarvis when repository tools should run on the developer machine. Deploy Server when work must survive client disconnects, enter durable queues/schedules, run on external workers, serve web/mobile/messaging clients, retain centralized run/evidence state, or coordinate multiple execution hosts.
 
 ## Components
 
-- `server/`: FastAPI control plane and durable agent runtime;
-- `runs-ui/`: run, evidence, and approval interface;
-- PostgreSQL/Redis/Qdrant: durable state, coordination, and retrieval;
+- `server/`: FastAPI control plane and durable Runs/cloud-task runtime;
+- `runs-ui/`: run, evidence and approval interface;
+- PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
-- LiteLLM plus Ollama or remote OpenAI-compatible endpoints: inference routing;
+- LiteLLM plus Ollama or remote compatible providers: inference routing;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core` 0.2.0: separately released, checksum-verified shared runtime dependency.
+- `jarvis-agent-core` 0.8.0: separately released immutable shared contracts.
+
+The v0.8.1 branch pins the verified Core wheel SHA-256:
+
+```text
+d9569b69385e58a681ea01e900eb81c395d3f202a09a92878eb82bf4d4b8618a
+```
+
+Server requirements, lockfile, Docker image and CI all assert the same Core version.
 
 ## Start the development stack
 
@@ -30,41 +31,65 @@ docker compose up -d
 docker compose ps
 ```
 
-This Compose deployment is for Server. Standalone Jarvis users do not need it.
+This stack is for Server; standalone Jarvis users do not need it.
+
+## v0.8 durable autonomous execution
+
+Server cloud tasks support:
+
+- portable existing/Git workspace descriptors;
+- idempotent submissions;
+- unique lease fencing per execution attempt;
+- explicit durable execution states and proof;
+- heartbeat/lease expiry and stale-result rejection;
+- terminal cancellation;
+- model/profile selection without transmitting provider credentials;
+- real Postgres contention/fencing integration fixtures;
+- ordinary v0.8.1 Postgres CI in addition to cross-repository smoke validation.
+
+The matching CLI worker executes the actual coding agent and publishes only while it owns the current fence.
+
+## Security and isolation boundary
+
+Server does **not** make repository/model/tool output trusted. Search results, documents, web/browser content, model responses and external tool results remain untrusted evidence.
+
+Cloud worker fencing prevents stale ownership and duplicate result publication; it is not equivalent to strong multi-tenant process isolation. The current external-worker model is appropriate for trusted single-tenant/self-hosted workers. A world-class shared-host deployment still needs independently constrained per-task container/VM-style sandboxes, CPU/RAM/PID/disk quotas, seccomp/AppArmor or equivalent and explicit egress controls.
+
+Provider credentials stay on execution hosts and are not embedded in cloud task payloads. Operators should use separate worker identities/secrets and the narrowest repository/network allowlists practical.
+
+## Validation and supply chain
+
+The normal validation workflow covers Server tests, UI build/tests and Compose configuration. v0.8.1 adds a PostgreSQL 17 job dedicated to durable lease and autonomous fencing/idempotency tests. Model Integration exercises real Ollama + LiteLLM native tool calling. Supply Chain builds the Server image/SBOM and publishes tagged GHCR images with provenance when release conditions are met.
+
+The post-merge audit also repaired the tagged GHCR shell block, which previously encoded `docker tag` and `docker push` incorrectly on one line.
+
+Private GitHub Actions currently fail before runner provisioning (`steps:null`), so the v0.8.1 branch is **audit-hardened but not release-certified** until Server/Postgres/UI/Compose/model/supply-chain/cross-repo jobs actually execute on the exact head.
+
+## World-class gaps
+
+The highest-priority remaining Server/platform gaps are:
+
+- real-repository and adversarial prompt-injection/secret-canary benchmark evidence;
+- network-partition/restart/lease/cancellation/state-failure chaos and soak testing;
+- strong per-task cloud isolation and resource/egress quotas;
+- deterministic environment bootstrap/cache identity/invalidation;
+- queue admission control, fairness, backpressure and autoscaling signals;
+- OIDC/OAuth tenant identity, scoped service tokens and organization policy;
+- GitHub PR/issue and Slack integrations with explicit approval/identity boundaries;
+- retention/deletion, audit export, backup/restore and disaster-recovery drills;
+- fleet compatibility reporting across Core/CLI/Server/workers;
+- cost/token/latency and escalation dashboards.
+
+See [TODO.md](TODO.md) for prioritized maturity tracking.
 
 ## Documentation
 
-- [Server deployment, capabilities, and operations](server/README.md)
-- [Product and channel architecture](docs/product-architecture.md)
+- [Server deployment and operations](server/README.md)
+- [Product architecture](docs/product-architecture.md)
+- [v0.8 autonomous runtime](docs/v0.8-autonomous-runtime.md)
+- [Capability / production tracker](TODO.md)
 - [Standalone Jarvis](https://github.com/abdullahalrifat/jarvis)
 - [Jarvis Core](https://github.com/abdullahalrifat/jarvis-core)
 - [Server protocol](contracts/jarvis-protocol-v1.json)
 
-## Capability boundary
-
-Server owns durable conversations/runs/events, tenant and channel identity,
-queues, remote workspace policy, document ingestion/retrieval, isolated
-commands, disposable Git worktrees, approval/discard, and central observability.
-Jarvis owns local workspace tools and local interactive permissions. Core owns
-only portable contracts such as token budgets, compaction, evidence, routing,
-recovery, tracing, evaluations, and multi-agent role/result types.
-
-Search uses SearXNG and can aggregate administrator-enabled engines. It does not
-require a paid Google API. Search and fetched content remain untrusted evidence,
-and source URLs must be retained.
-
-Server requirements, CI, and Docker use the same public
-[Core v0.2.0 release](https://github.com/abdullahalrifat/jarvis-core/releases/tag/v0.2.0)
-wheel. Installation is independent of PyPI and does not check out a Core branch
-or commit.
-
-See [.env.example](.env.example) for the complete configuration surface.
-
-
-## World-class runtime parity (0.3 preview)
-
-Server uses the same Core resilience, evidence, benchmark, policy, and review contracts as the CLI. The 0.3 preview adds health-aware model routing, structured claim verification, per-hunk approval and transactional undo, hierarchical workspace instructions, expiring memory, supervised permission-controlled MCP, and durable web, Telegram, and WhatsApp ingress.
-
-Channel adapters only authenticate, normalize, deduplicate, and enqueue Runs. They never create a second agent implementation. Configure `TELEGRAM_WEBHOOK_SECRET`, `WHATSAPP_APP_SECRET`, and `WHATSAPP_VERIFY_TOKEN` before enabling public webhooks. MCP tools must be explicitly allowed; the old list-only configuration does not imply wildcard access.
-
-Release tags build the Server image, generate an SPDX SBOM, and attach provenance. The temporary Core dependency is pinned to an immutable public commit while 0.3 is under review; it will be replaced with the signed 0.3 release artifact before this feature set is marked stable.
+See [.env.example](.env.example) for the configuration surface.
