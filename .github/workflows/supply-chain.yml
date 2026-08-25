@@ -38,7 +38,9 @@ jobs:
           tags: ghcr.io/abdullahalrifat/ai-stack-server:${{ github.sha }}
       - name: Publish tagged image
         if: startsWith(github.ref, 'refs/tags/')
-        run: docker tag "ghcr.io/abdullahalrifat/ai-stack-server:${GITHUB_SHA}" "ghcr.io/abdullahalrifat/ai-stack-server:${GITHUB_REF_NAME}"\n          docker push "ghcr.io/abdullahalrifat/ai-stack-server:${GITHUB_REF_NAME}"
+        run: |
+          docker tag "ghcr.io/abdullahalrifat/ai-stack-server:${GITHUB_SHA}" "ghcr.io/abdullahalrifat/ai-stack-server:${GITHUB_REF_NAME}"
+          docker push "ghcr.io/abdullahalrifat/ai-stack-server:${GITHUB_REF_NAME}"
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0
         with:
