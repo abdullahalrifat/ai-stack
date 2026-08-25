@@ -1,9 +1,4 @@
-"""Application construction and lifecycle wiring.
-
-Routes, request schemas, and API dependencies live in :mod:`app.api`.
-Keeping this module small preserves the stable ``app.main:app`` deployment
-target while preventing HTTP concerns from leaking into agent domains.
-"""
+"""Application construction and lifecycle wiring."""
 
 import asyncio
 import logging
@@ -23,10 +18,11 @@ from app.platform.failure_store_v07 import install_failure_store
 from app.platform.router import router as platform_router
 from app.platform.runtime import monitor_platform
 from app.platform.v09_router import router as v09_platform_router
+from app.platform.v09_task_access import router as v09_task_access_router
 from app.runs.client_leases import monitor_client_leases
 from app.runs.sandbox import remove_sandbox
 from app.runs.store import get_run_store
-import app.tools.register  # noqa: F401  (registers tools into the real registry)
+import app.tools.register  # noqa: F401
 from app.tools.registry import registry
 
 logger = logging.getLogger(__name__)
@@ -35,8 +31,6 @@ WORKER_RECONCILE_SECONDS = 5
 
 
 def reconcile_runs_once() -> None:
-    """Recover expired workers and clean terminal sandboxes."""
-
     store = get_run_store()
     queued, _interrupted = store.recover_interrupted_runs()
     for run in store.sandboxes_needing_cleanup():
@@ -53,8 +47,6 @@ def reconcile_runs_once() -> None:
 
 
 async def monitor_worker_leases() -> None:
-    """Continuously reconcile crashes and transient database restarts."""
-
     while True:
         try:
             await asyncio.to_thread(reconcile_runs_once)
@@ -129,3 +121,4 @@ app.include_router(channels_router)
 app.include_router(v09_channels_router)
 app.include_router(platform_router)
 app.include_router(v09_platform_router)
+app.include_router(v09_task_access_router)
