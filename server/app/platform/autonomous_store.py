@@ -11,9 +11,7 @@ from psycopg.types.json import Jsonb
 from .store import PlatformStore as BasePlatformStore
 
 
-def _validate_execution_proof(
-    proof: Any, *, task_id: str, lease_id: str
-) -> int | None:
+def _validate_execution_proof(proof: Any, *, task_id: str, lease_id: str) -> int | None:
     """Validate a successful completion proof and return its fenced attempt."""
 
     try:
@@ -173,8 +171,10 @@ class AutonomousPlatformStore(BasePlatformStore):
         # A successful result is publishable only after the worker has entered
         # uploading_result and supplied a non-empty execution proof. Failures
         # remain publishable from any fenced active state for diagnostics.
-        proof_attempt = None if error else _validate_execution_proof(
-            proof, task_id=task_id, lease_id=lease_id
+        proof_attempt = (
+            None
+            if error
+            else _validate_execution_proof(proof, task_id=task_id, lease_id=lease_id)
         )
         completion_has_proof = bool(error) or proof_attempt is not None
         failure_completion = bool(error)
