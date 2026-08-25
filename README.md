@@ -19,13 +19,14 @@ Use Jarvis when repository tools should run on the developer machine. Deploy Ser
 - `contracts/`: versioned Server client protocol;
 - `jarvis-agent-core` 0.9.2: separately versioned provider-neutral shared contracts.
 
-The Server pins the exact reviewed Core 0.9.2 source commit:
+The Server pins the immutable Jarvis Core 0.9.2 release wheel:
 
 ```text
-af3fcd5052dd6d5c15606302dcc7bd9f687fca78
+https://github.com/abdullahalrifat/jarvis-core/releases/download/v0.9.2/jarvis_agent_core-0.9.2-py3-none-any.whl
+SHA-256 0ff9b5cfba29dca8d05df69a48573c3a69cc73ca9654e7122411b89a489f1130
 ```
 
-Server requirements, lockfile, Docker image and CI all assert the same Core version. This source pin can be replaced by the verified Core 0.9.2 wheel after that release is published.
+Server requirements, lockfile, Docker image and CI all assert the same Core version. The checksum-verified asset keeps deployment reproducible without a mutable branch or a Core checkout.
 
 ## Start the development stack
 
