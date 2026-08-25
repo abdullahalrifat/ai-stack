@@ -161,6 +161,23 @@ class CloudCompleteRequest(BaseModel):
         return self
 
 
+@router.get("/capabilities")
+def platform_capabilities():
+    """Describe wire protocols; this does not identify or require any client."""
+
+    return {
+        "service": "ai-stack",
+        "protocols": {
+            "cloud_execution": {
+                "versions": [1],
+                "proof_schema_versions": [1],
+                "lease_fencing": True,
+                "structured_completion_proof": True,
+            }
+        },
+    }
+
+
 @router.post("/schedules")
 def create_schedule(request: ScheduledRunRequest):
     if not request.task.strip() or not request.name.strip():
