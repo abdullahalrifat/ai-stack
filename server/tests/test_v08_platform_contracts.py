@@ -7,6 +7,7 @@ from app.platform.router import (
     CloudCompleteRequest,
     CloudStateRequest,
     CloudTaskRequest,
+    platform_capabilities,
 )
 
 
@@ -89,3 +90,16 @@ def test_cloud_task_metadata_and_completion_payloads_are_bounded():
             lease_id=uuid4(),
             result={"blob": "x" * (1600 * 1024)},
         )
+
+
+
+def test_platform_capabilities_advertise_protocol_not_client_dependency():
+    capabilities = platform_capabilities()
+    assert capabilities["service"] == "ai-stack"
+    protocol = capabilities["protocols"]["cloud_execution"]
+    assert protocol["versions"] == [1]
+    assert protocol["proof_schema_versions"] == [1]
+    assert protocol["lease_fencing"] is True
+    # The contract is client-neutral: no Jarvis package or implementation name
+    # is required to claim and complete work.
+    assert "client" not in protocol
