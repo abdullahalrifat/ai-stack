@@ -444,10 +444,14 @@ def health():
 
 @app.get("/ready")
 def ready():
-    status = isolation_status()
-    if not status["ready"]:
-        raise HTTPException(503, status)
-    return status
+    """Report API readiness separately from optional isolated-tier capability."""
+
+    if not RUNNER_API_KEY:
+        raise HTTPException(503, "RUNNER_API_KEY is required")
+    return {
+        "ready": True,
+        "isolation": isolation_status(),
+    }
 
 
 @app.post("/jobs")
