@@ -95,9 +95,7 @@ class AutonomousPlatformStore(BasePlatformStore):
                 """UPDATE agent_cloud_tasks
                    SET lease_expires_at=NOW()+(%s*INTERVAL '1 second')
                    WHERE id=%s AND status='running' AND worker_id=%s
-                     AND lease_id=%s AND lease_expires_at>=NOW()
-                     AND %s
-                     AND (%s OR execution_state='uploading_result')""",
+                     AND lease_id=%s AND lease_expires_at>=NOW()""",
                 (lease, task_id, worker_id, lease_id),
             )
             return cursor.rowcount == 1
