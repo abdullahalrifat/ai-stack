@@ -1,5 +1,10 @@
 # AI Stack Server
 
+## Current contract line
+
+AI Stack consumes only the provider-neutral Jarvis Core 0.9.1 protocol contract. It does not import, install, or require the Jarvis CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+
+
 AI Stack Server is the optional durable, self-hosted control plane for the Jarvis ecosystem. The standalone local product is [`jarvis`](https://github.com/abdullahalrifat/jarvis); provider-neutral runtime contracts are in [`jarvis-core`](https://github.com/abdullahalrifat/jarvis-core).
 
 Use Jarvis when repository tools should run on the developer machine. Deploy Server when work must survive client disconnects, enter durable queues/schedules, run on external workers, serve web/mobile/messaging clients, retain centralized run/evidence state, or coordinate multiple execution hosts.

@@ -257,3 +257,57 @@ def test_runner_applies_tier_resource_limits_in_child(configured_runner):
     assert cpu == runner.RUNNER_CPU_SECONDS
     assert nofile == runner.RUNNER_MAX_OPEN_FILES
     assert address_space == runner.RUNNER_MEMORY_MB * 1024 * 1024
+
+
+def test_runner_streams_output_before_process_completion(configured_runner):
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command=(
+                "python3 -c \"print('first',flush=True) or "
+                "__import__('time').sleep(0.5) or print('second')\""
+            ),
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+    deadline = time.monotonic() + 2
+    streamed = None
+    while time.monotonic() < deadline:
+        streamed = runner.job_output(payload["job_id"], after=0, x_runner_key="secret")
+        if "first" in streamed["output"]:
+            break
+        time.sleep(0.02)
+    assert streamed is not None and "first" in streamed["output"]
+    assert streamed["status"] not in runner.TERMINAL_STATUSES
+
+    completed = _wait_for_status(payload["job_id"], {"completed"})
+    assert "second" in completed["output"]
+
+
+def test_runner_accepts_bounded_live_input(configured_runner):
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command='python3 -c "print(input())"',
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+    accepted = runner.send_job_input(
+        payload["job_id"],
+        runner.InputRequest(data="steered\n"),
+        x_runner_key="secret",
+    )
+    assert accepted["accepted"] is True
+    completed = _wait_for_status(payload["job_id"], {"completed"})
+    assert completed["output"] == "steered"
+
+
+def test_runner_readiness_reports_degraded_isolation_without_blocking_api(
+    monkeypatch,
+):
+    monkeypatch.setattr(runner, "RUNNER_API_KEY", "secret")
+    monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
+    monkeypatch.setattr(runner, "_netns_available", lambda: False)
+    status = runner.ready()
+    assert status["ready"] is True
+    assert status["isolation"]["ready"] is False

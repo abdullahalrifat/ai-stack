@@ -76,6 +76,10 @@ class ExecuteRequest(BaseModel):
     tier: str = "isolated"
 
 
+class InputRequest(BaseModel):
+    data: str
+
+
 @dataclass
 class RunnerJob:
     id: str
@@ -85,6 +89,8 @@ class RunnerJob:
     process: subprocess.Popen[str]
     status: str = "running"
     output: str = ""
+    output_base: int = 0
+    output_total: int = 0
     exit_code: int | None = None
     cancel_requested: bool = False
     cancel_reason: str | None = None
@@ -112,8 +118,9 @@ def _authorize(x_runner_key: str | None) -> None:
 def _validated_command(request: ExecuteRequest) -> tuple[list[str], Path]:
     if request.tier not in TIERS:
         raise HTTPException(
-            400, f"Unsupported sandbox tier: {request.tier}. "
-            f"Supported tiers: {', '.join(sorted(TIERS))}"
+            400,
+            f"Unsupported sandbox tier: {request.tier}. "
+            f"Supported tiers: {', '.join(sorted(TIERS))}",
         )
     forbidden = ["&&", "||", "|", ";", ">", "<", "`", "$("]
     if any(token in request.command for token in forbidden):
@@ -162,7 +169,9 @@ def _apply_limits(limits: dict[str, Any]) -> None:
     if nofile > 0:
         resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
     if memory > 0:
-        resource.setrlimit(resource.RLIMIT_AS, (memory * 1024 * 1024, memory * 1024 * 1024))
+        resource.setrlimit(
+            resource.RLIMIT_AS, (memory * 1024 * 1024, memory * 1024 * 1024)
+        )
 
 
 _netns_checked = False
@@ -248,39 +257,57 @@ def _terminate_process_group(job: RunnerJob) -> bool:
             return False
 
 
-def _watch_job(job: RunnerJob) -> None:
+def _append_output(job: RunnerJob, chunk: str) -> None:
+    if not chunk:
+        return
+    with job.lock:
+        combined = job.output + chunk
+        job.output_total += len(chunk)
+        if len(combined) > MAX_OUTPUT_CHARS:
+            dropped = len(combined) - MAX_OUTPUT_CHARS
+            job.output_base += dropped
+            combined = combined[dropped:]
+        job.output = combined
+
+
+def _stream_output(job: RunnerJob) -> None:
+    stream = job.process.stdout
+    if stream is None:
+        return
+    try:
+        for chunk in iter(stream.readline, ""):
+            _append_output(job, chunk)
+    finally:
+        stream.close()
+
+
+def _watch_job(job: RunnerJob, reader: threading.Thread) -> None:
     timed_out = False
     killed = True
     command_deadline = time.monotonic() + COMMAND_TIMEOUT_SECONDS
-    while True:
-        try:
-            stdout, stderr = job.process.communicate(timeout=0.25)
+    while job.process.poll() is None:
+        now = time.monotonic()
+        with job.lock:
+            owner_expired = now >= job.lease_deadline
+            if owner_expired and not job.cancel_requested:
+                job.cancel_requested = True
+                job.cancel_reason = "owner_lease_expired"
+                job.status = "cancelling"
+        if owner_expired:
+            killed = _terminate_process_group(job)
             break
-        except subprocess.TimeoutExpired:
-            now = time.monotonic()
-            with job.lock:
-                owner_expired = now >= job.lease_deadline
-                if owner_expired and not job.cancel_requested:
-                    job.cancel_requested = True
-                    job.cancel_reason = "owner_lease_expired"
-                    job.status = "cancelling"
-            if owner_expired:
-                killed = _terminate_process_group(job)
-                if killed:
-                    stdout, stderr = job.process.communicate()
-                else:
-                    stdout, stderr = "", "Process group survived SIGKILL"
-                break
-            if now >= command_deadline:
-                timed_out = True
-                killed = _terminate_process_group(job)
-                if killed:
-                    stdout, stderr = job.process.communicate()
-                else:
-                    stdout, stderr = "", "Process group survived SIGKILL"
-                break
+        if now >= command_deadline:
+            timed_out = True
+            killed = _terminate_process_group(job)
+            break
+        time.sleep(0.05)
+
+    try:
+        job.process.wait(timeout=TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        killed = False
+    reader.join(timeout=TERMINATE_GRACE_SECONDS)
     with job.lock:
-        job.output = _trim_output(stdout, stderr)
         job.exit_code = job.process.returncode
         if not killed:
             job.status = "kill_failed"
@@ -324,7 +351,7 @@ def _job_payload(job: RunnerJob, *, renew_lease: bool = False) -> dict[str, Any]
             "status": job.status,
             "tier": job.tier,
             "exit_code": job.exit_code,
-            "output": job.output,
+            "output": job.output.strip(),
             "created_at": job.created_at,
             "completed_at": job.completed_at,
             "cancellation_reason": job.cancel_reason,
@@ -350,14 +377,17 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
             argv,
             cwd=directory,
             text=True,
+            bufsize=1,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             env={
                 "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                 "HOME": "/tmp/runner",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
                 "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONUNBUFFERED": "1",
                 # pytest-cov otherwise writes a binary .coverage file into the
                 # review worktree and pollutes an otherwise focused code diff.
                 "COVERAGE_FILE": f"/tmp/aistack-coverage-{job_id}",
@@ -379,9 +409,16 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
     )
     with _jobs_lock:
         _jobs[job.id] = job
+    reader = threading.Thread(
+        target=_stream_output,
+        args=(job,),
+        daemon=True,
+        name=f"runner-output-{job.id[:8]}",
+    )
+    reader.start()
     threading.Thread(
         target=_watch_job,
-        args=(job,),
+        args=(job, reader),
         daemon=True,
         name=f"runner-job-{job.id[:8]}",
     ).start()
@@ -417,10 +454,14 @@ def health():
 
 @app.get("/ready")
 def ready():
-    status = isolation_status()
-    if not status["ready"]:
-        raise HTTPException(503, status)
-    return status
+    """Report API readiness separately from optional isolated-tier capability."""
+
+    if not RUNNER_API_KEY:
+        raise HTTPException(503, "RUNNER_API_KEY is required")
+    return {
+        "ready": True,
+        "isolation": isolation_status(),
+    }
 
 
 @app.post("/jobs")
@@ -433,6 +474,52 @@ def create_job(request: ExecuteRequest, x_runner_key: str | None = Header(None))
 def get_job(job_id: str, x_runner_key: str | None = Header(None)):
     _authorize(x_runner_key)
     return _job_payload(_get_job(job_id), renew_lease=True)
+
+
+@app.get("/jobs/{job_id}/output")
+def job_output(
+    job_id: str,
+    after: int = 0,
+    x_runner_key: str | None = Header(None),
+):
+    """Return output added after a caller-owned character cursor."""
+
+    _authorize(x_runner_key)
+    job = _get_job(job_id)
+    with job.lock:
+        requested = max(0, int(after))
+        absolute = max(requested, job.output_base)
+        relative = min(len(job.output), absolute - job.output_base)
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "output": job.output[relative:],
+            "next_offset": job.output_total,
+            "truncated": requested < job.output_base,
+        }
+
+
+@app.post("/jobs/{job_id}/input")
+def send_job_input(
+    job_id: str,
+    request: InputRequest,
+    x_runner_key: str | None = Header(None),
+):
+    """Steer an active command through its standard input."""
+
+    _authorize(x_runner_key)
+    if len(request.data) > 16_384:
+        raise HTTPException(413, "Runner input exceeds 16384 characters")
+    job = _get_job(job_id)
+    with job.lock:
+        if job.status in TERMINAL_STATUSES or job.process.stdin is None:
+            raise HTTPException(409, "Runner job does not accept input")
+        try:
+            job.process.stdin.write(request.data)
+            job.process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise HTTPException(409, "Runner job input is closed") from exc
+    return {"job_id": job.id, "accepted": True}
 
 
 @app.post("/jobs/{job_id}/cancel")
