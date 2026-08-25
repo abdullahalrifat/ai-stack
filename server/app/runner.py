@@ -308,7 +308,6 @@ def _watch_job(job: RunnerJob, reader: threading.Thread) -> None:
         killed = False
     reader.join(timeout=TERMINATE_GRACE_SECONDS)
     with job.lock:
-        job.output = job.output.strip()
         job.exit_code = job.process.returncode
         if not killed:
             job.status = "kill_failed"
@@ -352,7 +351,7 @@ def _job_payload(job: RunnerJob, *, renew_lease: bool = False) -> dict[str, Any]
             "status": job.status,
             "tier": job.tier,
             "exit_code": job.exit_code,
-            "output": job.output,
+            "output": job.output.strip(),
             "created_at": job.created_at,
             "completed_at": job.completed_at,
             "cancellation_reason": job.cancel_reason,
