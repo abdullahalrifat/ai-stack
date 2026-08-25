@@ -5,22 +5,10 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from jarvis_core import ExecutionProof
 from psycopg.types.json import Jsonb
 
 from .store import PlatformStore as BasePlatformStore
-
-
-_PROOF_SCHEMA_VERSION = 1
-
-
-def _sha256_digest(value: Any) -> bool:
-    if not isinstance(value, str) or len(value) != 64:
-        return False
-    try:
-        int(value, 16)
-    except ValueError:
-        return False
-    return True
 
 
 def _validate_execution_proof(
@@ -28,44 +16,17 @@ def _validate_execution_proof(
 ) -> int | None:
     """Validate a successful completion proof and return its fenced attempt."""
 
-    if not isinstance(proof, dict) or proof.get("schema_version") != _PROOF_SCHEMA_VERSION:
-        return None
-    if (
-        str(proof.get("task_id") or "") != str(task_id)
-        or str(proof.get("lease_id") or "") != str(lease_id)
-    ):
-        return None
-    if not all(str(proof.get(key) or "").strip() for key in ("route", "model")):
-        return None
-    if not _sha256_digest(proof.get("workspace_digest")):
-        return None
-    if not _sha256_digest(proof.get("mutation_digest")):
-        return None
     try:
-        attempt = int(proof.get("attempt", 0))
+        validated = ExecutionProof.from_dict(
+            proof,
+            task_id=str(task_id),
+            lease_id=str(lease_id),
+            require_verified=True,
+        )
     except (TypeError, ValueError):
         return None
-    if attempt < 1:
-        return None
-    checks = proof.get("verifications")
-    if not isinstance(checks, list) or not checks:
-        return None
-    for check in checks:
-        if (
-            not isinstance(check, dict)
-            or not str(check.get("command") or "").strip()
-            or check.get("status") != "passed"
-            or check.get("exit_code") != 0
-            or not _sha256_digest(check.get("output_digest"))
-        ):
-            return None
-    artifacts = proof.get("artifact_hashes", {})
-    if not isinstance(artifacts, dict) or any(
-        not str(name).strip() or not _sha256_digest(digest)
-        for name, digest in artifacts.items()
-    ):
-        return None
-    return attempt
+    return validated.attempt
+
 
 _WORKER_STATES = {
     "preparing_workspace",
