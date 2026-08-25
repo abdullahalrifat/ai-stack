@@ -138,8 +138,6 @@ class AutonomousPlatformStore(BasePlatformStore):
                     task_id,
                     worker_id,
                     lease_id,
-                    completion_has_proof,
-                    failure_completion,
                 ),
             )
             return cursor.rowcount == 1
@@ -167,7 +165,9 @@ class AutonomousPlatformStore(BasePlatformStore):
                        proof=COALESCE(%s,proof), completed_at=NOW(),
                        lease_expires_at=NULL, lease_id=NULL
                    WHERE id=%s AND status='running' AND worker_id=%s
-                     AND lease_id=%s AND lease_expires_at>=NOW()""",
+                     AND lease_id=%s AND lease_expires_at>=NOW()
+                     AND %s
+                     AND (%s OR execution_state='uploading_result')""",
                 (
                     status,
                     status,
@@ -177,6 +177,8 @@ class AutonomousPlatformStore(BasePlatformStore):
                     task_id,
                     worker_id,
                     lease_id,
+                    completion_has_proof,
+                    failure_completion,
                 ),
             )
             return cursor.rowcount == 1
