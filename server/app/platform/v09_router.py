@@ -3,22 +3,53 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from typing import Any, Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.dependencies import require_run_store, verify_api_key
+from app.api.dependencies import require_run_store
 from app.tools.filesystem import resolve_request_workspace
 
+from .auth_v09 import authenticate_v09, enforce_tenant
 from .world_class_store import WorldClassPlatformStore
 
 router = APIRouter(
     prefix="/platform/v09",
     tags=["platform-v09"],
-    dependencies=[Depends(verify_api_key), Depends(require_run_store)],
+    dependencies=[Depends(require_run_store)],
 )
+
+_GIT_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
+
+
+def _safe_git_ref(value: str | None) -> str | None:
+    if value is None:
+        return None
+    ref = value.strip()
+    if not ref:
+        return None
+    if (
+        not _GIT_REF.fullmatch(ref)
+        or ".." in ref
+        or "@{" in ref
+        or "//" in ref
+        or ref.endswith(("/", "."))
+        or ref.startswith("-")
+        or any(part in {".", ".."} for part in ref.split("/"))
+    ):
+        raise ValueError("git_ref is not a safe Git branch/tag/ref name")
+    return ref
+
+
+def _tenant_limit() -> int:
+    return max(
+        1,
+        min(int(os.getenv("JARVIS_TENANT_ACTIVE_TASK_LIMIT", "20")), 10000),
+    )
 
 
 class ResourceLimits(BaseModel):
@@ -62,7 +93,9 @@ class WorldClassCloudTaskRequest(BaseModel):
     allow_write: bool = False
     project_id: str | None = Field(default=None, max_length=256)
     tenant_id: str = Field(default="default", min_length=1, max_length=128)
-    idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
+    idempotency_key: str | None = Field(
+        default=None, min_length=8, max_length=200
+    )
     isolation: IsolationSpec = Field(default_factory=IsolationSpec)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
     egress: EgressSpec = Field(default_factory=EgressSpec)
@@ -73,17 +106,30 @@ class WorldClassCloudTaskRequest(BaseModel):
     @model_validator(mode="after")
     def validate_source(self):
         self.task = self.task.strip()
+        self.tenant_id = self.tenant_id.strip()
         if bool(self.workspace) == bool(self.repository_url):
             raise ValueError("choose exactly one of workspace or repository_url")
         if self.repository_url:
             parsed = urlparse(self.repository_url)
             if parsed.scheme != "https" or not parsed.hostname:
                 raise ValueError("repository_url must be https")
-            if parsed.username or parsed.password or parsed.query or parsed.fragment:
-                raise ValueError("repository_url must not embed credentials/query/fragment")
+            if (
+                parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "repository_url must not embed credentials/query/fragment"
+                )
+            self.git_ref = _safe_git_ref(self.git_ref)
+        elif self.git_ref or self.git_commit:
+            raise ValueError("git_ref/git_commit require repository_url")
         if self.git_commit:
             value = self.git_commit.strip().lower()
-            if not 7 <= len(value) <= 64 or any(ch not in "0123456789abcdef" for ch in value):
+            if not 7 <= len(value) <= 64 or any(
+                ch not in "0123456789abcdef" for ch in value
+            ):
                 raise ValueError("git_commit must be hexadecimal")
             self.git_commit = value
         if len(json.dumps(self.metadata, default=str).encode()) > 64 * 1024:
@@ -103,23 +149,36 @@ class WorkerCapabilities(BaseModel):
 
 
 @router.post("/cloud/tasks")
-def submit_task(request: WorldClassCloudTaskRequest):
+def submit_task(
+    request: WorldClassCloudTaskRequest,
+    authenticated_tenant: str = Depends(authenticate_v09),
+):
+    enforce_tenant(authenticated_tenant, request.tenant_id)
     store = WorldClassPlatformStore()
-    quota = max(1, min(int(__import__("os").getenv("JARVIS_TENANT_ACTIVE_TASK_LIMIT", "20")), 10000))
+    quota = _tenant_limit()
     if store.active_for_tenant(request.tenant_id) >= quota:
         raise HTTPException(429, "tenant active cloud-task quota reached")
     if request.isolation.mode == "trusted-host" and request.allow_write:
-        if __import__("os").getenv("JARVIS_ALLOW_TRUSTED_HOST_WRITES", "false").casefold() not in {"1", "true", "yes"}:
-            raise HTTPException(400, "write-capable cloud tasks require container/microvm isolation by default")
+        if os.getenv(
+            "JARVIS_ALLOW_TRUSTED_HOST_WRITES", "false"
+        ).casefold() not in {"1", "true", "yes"}:
+            raise HTTPException(
+                400,
+                "write-capable cloud tasks require container/microvm isolation by default",
+            )
     workspace = None
     if request.repository_url:
         workspace_spec = {
-            "kind": "git", "repository_url": request.repository_url,
-            "git_ref": request.git_ref, "git_commit": request.git_commit,
+            "kind": "git",
+            "repository_url": request.repository_url,
+            "git_ref": request.git_ref,
+            "git_commit": request.git_commit,
         }
     else:
         try:
-            workspace = resolve_request_workspace(str(request.workspace), request.task)
+            workspace = resolve_request_workspace(
+                str(request.workspace), request.task
+            )
         except (PermissionError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
         workspace_spec = {"kind": "existing", "path": workspace}
@@ -139,13 +198,20 @@ def submit_task(request: WorldClassCloudTaskRequest):
         "metadata": request.metadata,
     }
     try:
-        return store.submit_cloud(payload, idempotency_key=request.idempotency_key)
+        return store.submit_cloud(
+            payload, idempotency_key=request.idempotency_key
+        )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
 
 @router.post("/cloud/claim")
-def claim_task(request: WorkerCapabilities):
+def claim_task(
+    request: WorkerCapabilities,
+    authenticated_tenant: str = Depends(authenticate_v09),
+):
+    if authenticated_tenant != "*":
+        raise HTTPException(403, "worker claims require administrator credentials")
     capabilities = request.model_dump(exclude={"worker_id", "lease_seconds"})
     return {
         "task": WorldClassPlatformStore().claim_cloud(
@@ -157,7 +223,16 @@ def claim_task(request: WorkerCapabilities):
 
 
 @router.get("/capacity/{tenant_id}")
-def tenant_capacity(tenant_id: str):
+def tenant_capacity(
+    tenant_id: str,
+    authenticated_tenant: str = Depends(authenticate_v09),
+):
+    enforce_tenant(authenticated_tenant, tenant_id)
     active = WorldClassPlatformStore().active_for_tenant(tenant_id)
-    limit = max(1, min(int(__import__("os").getenv("JARVIS_TENANT_ACTIVE_TASK_LIMIT", "20")), 10000))
-    return {"tenant_id": tenant_id, "active": active, "limit": limit, "available": max(0, limit - active)}
+    limit = _tenant_limit()
+    return {
+        "tenant_id": tenant_id,
+        "active": active,
+        "limit": limit,
+        "available": max(0, limit - active),
+    }
