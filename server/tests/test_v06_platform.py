@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -43,21 +44,35 @@ def test_incorrect_completion_uses_answer_audit(monkeypatch):
 
 
 def test_cloud_lease_rejects_wrong_worker(monkeypatch):
+    lease_id = uuid4()
+
     class Store:
-        def heartbeat_cloud(self, task_id, worker_id, lease_seconds):
+        def heartbeat_cloud(self, task_id, worker_id, request_lease_id, lease_seconds):
+            assert request_lease_id == lease_id
             return worker_id == "owner"
 
-        def finish_cloud(self, task_id, worker_id, result=None, error=None):
+        def finish_cloud(
+            self,
+            task_id,
+            worker_id,
+            request_lease_id,
+            result=None,
+            error=None,
+            proof=None,
+        ):
+            assert request_lease_id == lease_id
             return worker_id == "owner"
 
     monkeypatch.setattr(platform_router, "PlatformStore", lambda: Store())
-    heartbeat = platform_router.CloudHeartbeatRequest(worker_id="intruder", lease_seconds=30)
+    heartbeat = platform_router.CloudHeartbeatRequest(
+        worker_id="intruder", lease_id=lease_id, lease_seconds=30
+    )
     with pytest.raises(HTTPException) as heartbeat_error:
         platform_router.heartbeat_cloud_task("task-1", heartbeat)
     assert heartbeat_error.value.status_code == 409
 
     completion = platform_router.CloudCompleteRequest(
-        worker_id="intruder", result={"ok": True}
+        worker_id="intruder", lease_id=lease_id, result={"ok": True}
     )
     with pytest.raises(HTTPException) as completion_error:
         platform_router.complete_cloud_task("task-1", completion)
@@ -65,21 +80,38 @@ def test_cloud_lease_rejects_wrong_worker(monkeypatch):
 
 
 def test_cloud_lease_owner_can_heartbeat_and_complete(monkeypatch):
-    class Store:
-        def heartbeat_cloud(self, task_id, worker_id, lease_seconds):
-            return task_id == "task-1" and worker_id == "owner"
+    lease_id = uuid4()
 
-        def finish_cloud(self, task_id, worker_id, result=None, error=None):
+    class Store:
+        def heartbeat_cloud(self, task_id, worker_id, request_lease_id, lease_seconds):
             return (
                 task_id == "task-1"
                 and worker_id == "owner"
+                and request_lease_id == lease_id
+            )
+
+        def finish_cloud(
+            self,
+            task_id,
+            worker_id,
+            request_lease_id,
+            result=None,
+            error=None,
+            proof=None,
+        ):
+            return (
+                task_id == "task-1"
+                and worker_id == "owner"
+                and request_lease_id == lease_id
                 and result == {"ok": True}
             )
 
     monkeypatch.setattr(platform_router, "PlatformStore", lambda: Store())
-    heartbeat = platform_router.CloudHeartbeatRequest(worker_id="owner", lease_seconds=30)
+    heartbeat = platform_router.CloudHeartbeatRequest(
+        worker_id="owner", lease_id=lease_id, lease_seconds=30
+    )
     assert platform_router.heartbeat_cloud_task("task-1", heartbeat) == {"ok": True}
     completion = platform_router.CloudCompleteRequest(
-        worker_id="owner", result={"ok": True}
+        worker_id="owner", lease_id=lease_id, result={"ok": True}
     )
     assert platform_router.complete_cloud_task("task-1", completion) == {"ok": True}

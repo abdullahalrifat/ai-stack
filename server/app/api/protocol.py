@@ -11,6 +11,7 @@ EVENT_SCHEMA_VERSION = 1
 PROTOCOL_HEADER = "X-Jarvis-Protocol-Version"
 FEATURES = [
     "adaptive_context_compiler",
+    "adaptive_context_compilation",
     "background_schedules",
     "cancellable_runner_jobs",
     "client_leases",
@@ -25,10 +26,12 @@ FEATURES = [
     "citation_aware_web_search",
     "content_addressed_traces",
     "dynamic_model_escalation",
+    "failure_driven_escalation",
     "empirical_route_calibration",
     "evidence_confidence",
     "evaluation_replay",
     "failure_signature_memory",
+    "persistent_failure_memory",
     "independent_verification",
     "opentelemetry",
     "portable_cloud_model_profiles",
