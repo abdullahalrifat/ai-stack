@@ -1,24 +1,27 @@
 # AI Stack Server
 
 Server is the optional always-online control plane for Jarvis. It is not
-required to install or use the standalone CLI.
+required to install or use the standalone local CLI.
+
+The current coordinated Server line consumes the immutable
+`jarvis-agent-core` **0.8.0** release wheel with SHA-256
+`d9569b69385e58a681ea01e900eb81c395d3f202a09a92878eb82bf4d4b8618a`.
 
 ## When to use each product
 
 | Scenario | Product |
 | --- | --- |
 | Work directly in a local checkout | Jarvis |
-| Keep tools/code local and use a remote GPU | Jarvis |
+| Keep code/tools local and use remote inference | Jarvis |
 | Continue after a laptop disconnects | Server |
-| Queue long research or document jobs | Server |
-| Support multiple users or channels | Server |
-| Enforce shared workspace/model/tool policy | Server |
-| Keep durable events, documents, and approvals | Server |
+| Queue durable research/document/cloud tasks | Server |
+| Support shared users/channels | Server |
+| Enforce central workspace/model/tool policy | Server |
+| Keep durable events, documents, evidence and approvals | Server |
 
-Jarvis owns local tools and approvals. Server owns remote mounted workspaces,
-durable orchestration, queues, shared state, channel identity, and central
-policy. Both consume `jarvis-agent-core`, but do not share tool implementations
-or storage policy.
+Jarvis owns local tools and interactive permissions. Server owns durable shared
+orchestration, remote workspace policy, queues, channels, documents and central
+observability. Core owns portable contracts only.
 
 ## Development deployment
 
@@ -29,35 +32,63 @@ docker compose up -d
 docker compose ps
 ```
 
-In production, use long unique service keys, mount `ARTIFACT_ROOT` on
-persistent storage, expose the API through TLS/VPN, and mount only workspaces
-the agent may access.
+For production-like deployments use unique long service keys, TLS/VPN, durable
+PostgreSQL/artifact storage and narrowly mounted workspaces. Do not expose model
+or MCP credentials to clients or cloud-task payloads.
 
 Configure Jarvis as a Server client:
 
 ```bash
 export JARVIS_SERVER_URL=https://agent.example.com
-export JARVIS_SERVER_API_KEY=your-agent-key
+export JARVIS_SERVER_API_KEY=your-server-key
 jarvis doctor
 jarvis run "analyze this project" --detach
 ```
 
-Provider credentials stay on Server. Clients and channel adapters must never
-receive them.
+## Durable Runs
+
+Server persists run metadata/events and supports replay, cancellation,
+approval/discard and client reconnect. The Runs engine is shared by web and
+channel integrations; Telegram/WhatsApp adapters do not implement their own
+agent loop.
+
+The current durable event model is not yet a complete live steerable session
+protocol. v0.9 tracks one reconnectable event vocabulary for model/tool/process
+deltas plus user steer/interrupt/approval commands.
 
 ## Models and routing
 
-Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible
-remote endpoints such as Hugging Face Inference Endpoints, vLLM, or TGI.
-`JARVIS_MODEL_PROFILES_JSON` optionally describes model capabilities; model
-`auto` selects an available profile satisfying the requested capabilities.
+Server supports local Ollama/LiteLLM routes and controlled remote
+OpenAI-compatible providers. Configured model profiles describe capabilities;
+`auto` chooses a route satisfying required capabilities and retained empirical
+observations can influence selection.
 
-Routing uses one front-facing orchestrator identity and validated internal
-workflows for quick, code, research, finance, deep, and vision tasks. Router
-output cannot invent a model, grant tools, expand a workspace, or bypass
-approval.
+Routing cannot invent a model, broaden a workspace or grant tools. Heterogeneous
+expert routing retains provider/model/role metadata so verification and evidence
+remain attributable.
 
-## Search and current answers
+Provider readiness includes automatic Ollama provisioning/readiness. The real
+model-integration workflow starts Ollama + LiteLLM and requires a native tool
+call from the configured small fixture model.
+
+Remote provider smoke workflows run when their secrets are configured.
+
+## Core dependency and release alignment
+
+Human-maintained requirements, lockfile, CI and the Server Dockerfile all pin
+the same Core 0.8.0 GitHub Release artifact. PyPI or a mutable Core branch is not
+required.
+
+```bash
+python -m pip install -r server/requirements.txt
+python -c "import importlib.metadata as m; print(m.version('jarvis-agent-core'))"
+```
+
+The post-v0.8 audit added regression coverage because merged v0.8 source had
+previously continued packaging Core 0.7.0. Consumer dependency alignment is now
+a release invariant.
+
+## Search and current information
 
 ```dotenv
 WEB_SEARCH_ENABLED=true
@@ -66,111 +97,100 @@ WEB_SEARCH_TIMEOUT_SECONDS=15
 WEB_FETCH_MAX_BYTES=8000000
 ```
 
-The included SearXNG service can use Google or other engines enabled by its
-administrator; no paid Google Search API is required. Server normalizes bounded
-results through Core, retains source URLs, and labels snippets/pages as
-untrusted. `web_fetch` supports public HTML and PDF sources and enforces
-download and model-context bounds.
+Server normalizes bounded SearXNG results, retains source URLs and labels
+snippets/pages untrusted. `web_fetch` supports bounded public HTML/PDF sources.
+Consequential research should prefer primary sources and report missing or
+contradictory evidence.
 
-Research and finance policy requires external evidence. Search can still be
-partial or wrong; consequential claims must prefer primary sources and report
-gaps or contradictions.
+## MCP, instructions and memory
 
-## Shared runtime, traces, and evaluations
+Administrators configure trusted MCP server definitions and per-tool policy.
+MCP lifecycle is persistent and policy-controlled; tool output remains untrusted
+and cannot broaden Server permissions. Executable definitions are selected by
+administrators, not by model output.
 
-Server installs the verified `jarvis-agent-core` 0.2.0 GitHub Release wheel for token enforcement,
-compaction, artifacts, evidence, capability routing, recovery, redacted traces,
-evaluations, and selective multi-agent contracts.
+Instructions and persistent memory are hierarchical and bounded. Future
+production hardening includes tenant-scoped retention/deletion and immutable
+policy/Skill snapshots per run.
 
-For a clean development installation:
+## Cloud execution
 
-```bash
-python -m pip install -r server/requirements.txt
-```
+Server v0.8 supports portable cloud tasks using either an existing worker path or
+Git coordinates.
 
-The human-maintained requirements, lockfile, CI, and Docker image all consume
-the same public Core 0.2.0 wheel and verify its SHA-256. PyPI, a
-cross-repository token, a branch checkout, and a separate bootstrap command are
-not required. For unreleased Core development only, install a local Core
-checkout explicitly after the locked dependencies.
+Each claimed attempt receives a unique lease ID. Worker heartbeat, state and
+completion writes must include that fence and remain valid only while the lease
+is current. Expired/stale workers cannot publish results.
 
-Redacted trace artifacts are retained under the configured artifact root.
-`server/evals/platform.py` replays recorded outputs against JSON cases; the
-existing live suites under `server/evals/` cover routing and agent regressions.
+Cloud execution includes:
 
-## MCP
+- idempotent submissions;
+- explicit execution-state transitions;
+- worker/model/profile propagation;
+- killable child execution;
+- cancellation and lease-loss stopping;
+- portable Git checkout verification;
+- tracked/untracked bounded diff capture;
+- execution proof persistence;
+- cleanup of ephemeral workspaces.
 
-Administrators may configure fixed stdio commands:
-
-```dotenv
-JARVIS_MCP_SERVERS_JSON={"filesystem":["python","-m","your_mcp_server"]}
-```
-
-The model chooses only a configured alias and tool name. It cannot choose the
-executable or invoke a shell. MCP output remains untrusted and cannot broaden
-Server permissions. Persistent lifecycle, HTTP/OAuth transports, per-tool
-policy, and health supervision remain future work.
-
-## Server capabilities
-
-- durable runs, conversations, events, replay, cancellation, and client leases;
-- PostgreSQL state, Redis coordination, Qdrant retrieval, and artifact storage;
-- document ingestion, OCR, hybrid retrieval, and source provenance;
-- isolated commands and disposable Git worktrees;
-- explicit approval/discard for write diffs;
-- capability routing, bounded recovery, context compaction, and token budgets;
-- multi-expert analysis for selected complex requests;
-- Runs UI and OpenAI-compatible entry points;
-- web evidence and administrator-selected MCP tools;
-- versioned client protocol and advertised feature flags.
-
-## Production gates
-
-Before describing a deployment as production-certified, prove:
-
-- OIDC/OAuth identities, tenant isolation, scoped tokens, and central policy;
-- idempotent APIs/webhooks, dead-letter handling, graceful drain, and restores;
-- runner isolation, secret rotation, signed webhooks, SBOM/provenance, and audit;
-- OpenTelemetry, SLOs, queue/lease/model saturation, tokens, latency, and cost;
-- quotas, backpressure, capacity tests, model circuit breakers, and fallback;
-- retention/deletion/export, malware scanning, backups, and disaster recovery;
-- adversarial prompt/tool tests, replay evals, route benchmarks, canaries, and
-  rollback procedures.
+A first-class Postgres 17 CI job exercises durable lease contention and v0.8
+fencing/idempotency tests without depending on a cross-repository secret.
 
 ## Channel integrations
 
-Telegram, WhatsApp, web, and mobile integrations are thin authenticated
-adapters:
+Telegram and WhatsApp ingress create idempotent normal Runs. Outbound delivery
+workers claim terminal channel Runs, send the bounded answer and retry failures
+with bounded backoff.
 
-```text
-channel webhook/app
-  -> identity/signature adapter
-  -> Server Runs API
-  -> durable execution and approvals
-  -> queued channel-safe reply
-```
+Production channel safety still requires tenant identity linking, signed
+expiring approval actions, stale-thread protection, attachment quarantine and
+provider-specific rate/window handling. A plain `yes` in an unrelated thread
+must never authorize a sensitive action.
 
-They do not contain another agent loop. See
-[product architecture](../docs/product-architecture.md) for identity,
-idempotency, attachment, delivery, and approval requirements.
+## Observability and proof
 
+OpenTelemetry spans cover agent/tool/platform/cloud paths when configured.
+Durable execution evidence and failure signatures support route calibration and
+operator diagnosis.
 
-## Model and provider readiness
+The v0.9 platform target adds:
 
-On a clean deployment, the `ollama-init` service pulls every model named in
-`OLLAMA_MODELS` and must finish successfully before LiteLLM starts. This makes a
-healthy stack mean that configured local models are actually available, rather
-than merely that the Ollama process is reachable.
+- unified run cost/token/time budgets;
+- queue/worker/provider SLO dashboards;
+- live process/model/tool event panes;
+- exact local proof/run binding for concurrent shared workspaces;
+- tamper-evident audit/export for production deployments.
 
-The model-integration workflow starts real Ollama and LiteLLM containers, pulls
-the small `qwen3:0.6b` fixture model, and requires a native function call.
-Remote OpenAI-compatible and Anthropic probes run weekly or manually when their
-repository secrets are configured.
+## Production gates
 
-## Channel delivery
+Before calling a deployment multi-tenant production-certified, prove:
 
-Telegram and WhatsApp webhooks create idempotent durable Runs. A background
-delivery worker claims terminal channel Runs, sends their answer through the
-provider API, records delivery, and retries failures with bounded exponential
-backoff. Configure both the ingress verification secrets and outbound API
-credentials from `.env.example`.
+1. OIDC/OAuth identity, tenant/project authorization and scoped service tokens;
+2. reconnectable stream + durable steer/interrupt/approval semantics;
+3. quotas, admission, queue fairness/backpressure and capacity/load tests;
+4. hard cost/time/token/change-scope budgets with no silent paid escalation;
+5. runner isolation, process cleanup and reproducible sandbox/toolchain identity;
+6. secret rotation and tenant-scoped artifact access/encryption;
+7. retention/deletion/export, malware handling, backup/restore and DR drills;
+8. prompt/tool/permission adversarial cases and false-completion benchmarks;
+9. worker crash/reclaim, network partition, Server restart and storage chaos;
+10. canary/rollback and protocol compatibility tests.
+
+See [../docs/world-class-platform-gaps.md](../docs/world-class-platform-gaps.md)
+for the dated audit.
+
+## CI/release gates
+
+The intended Server gate set is:
+
+- `Validate`: syntax/lint/tests/coverage, Runs UI, Compose;
+- Postgres integration: lease/fence/idempotency/cancellation behavior;
+- `Supply chain`: container build, SBOM and provenance;
+- `Model integration`: real Ollama/LiteLLM native tool call;
+- remote provider smoke where configured;
+- cross-repository Core/Jarvis/Server smoke.
+
+A workflow failure that occurs before checkout/steps execute is infrastructure
+or account evidence, not a successful or failed code test; release certification
+requires actual executable job steps.
