@@ -10,13 +10,12 @@ mutating operations.
 """
 
 import logging
-import subprocess
 
 from langchain.tools import tool
 
 from app.core.config import COMMAND_TIMEOUT_SECONDS, MAX_TOOL_OUTPUT_CHARS
 from app.core.processes import run_cancellable
-from app.tools.filesystem import current_workspace, resolve_path
+from app.tools.filesystem import resolve_path
 
 logger = logging.getLogger(__name__)
 
