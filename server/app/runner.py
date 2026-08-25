@@ -89,6 +89,8 @@ class RunnerJob:
     process: subprocess.Popen[str]
     status: str = "running"
     output: str = ""
+    output_base: int = 0
+    output_total: int = 0
     exit_code: int | None = None
     cancel_requested: bool = False
     cancel_reason: str | None = None
@@ -259,7 +261,13 @@ def _append_output(job: RunnerJob, chunk: str) -> None:
     if not chunk:
         return
     with job.lock:
-        job.output = (job.output + chunk)[-MAX_OUTPUT_CHARS:]
+        combined = job.output + chunk
+        job.output_total += len(chunk)
+        if len(combined) > MAX_OUTPUT_CHARS:
+            dropped = len(combined) - MAX_OUTPUT_CHARS
+            job.output_base += dropped
+            combined = combined[dropped:]
+        job.output = combined
 
 
 def _stream_output(job: RunnerJob) -> None:
@@ -480,12 +488,15 @@ def job_output(
     _authorize(x_runner_key)
     job = _get_job(job_id)
     with job.lock:
-        offset = max(0, min(int(after), len(job.output)))
+        requested = max(0, int(after))
+        absolute = max(requested, job.output_base)
+        relative = min(len(job.output), absolute - job.output_base)
         return {
             "job_id": job.id,
             "status": job.status,
-            "output": job.output[offset:],
-            "next_offset": len(job.output),
+            "output": job.output[relative:],
+            "next_offset": job.output_total,
+            "truncated": requested < job.output_base,
         }
 
 
