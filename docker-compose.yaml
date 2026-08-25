@@ -452,7 +452,7 @@ services:
 
     depends_on:
       agent-runner:
-        condition: service_started
+        condition: service_healthy
       litellm:
         condition: service_healthy
       postgres:
@@ -497,6 +497,12 @@ services:
     pids_limit: 128
     mem_limit: ${RUNNER_MEMORY_LIMIT:-3g}
     cpus: ${RUNNER_CPUS:-2}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     networks:
       - runner
 

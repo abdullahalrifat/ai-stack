@@ -388,6 +388,41 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
     return job
 
 
+def isolation_status() -> dict[str, Any]:
+    """Return deploy-time isolation capability without weakening fail-closed jobs."""
+
+    enabled = RUNNER_ENABLE_NETNS
+    unshare = shutil.which("unshare")
+    available = bool(enabled and unshare and _netns_available())
+    reason = None
+    if not enabled:
+        reason = "RUNNER_ENABLE_NETNS is disabled"
+    elif not unshare:
+        reason = "unshare is not installed"
+    elif not available:
+        reason = "private user/network namespace probe failed"
+    return {
+        "ready": available,
+        "backend": "user-network-namespace",
+        "enabled": enabled,
+        "unshare": unshare,
+        "reason": reason,
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "alive"}
+
+
+@app.get("/ready")
+def ready():
+    status = isolation_status()
+    if not status["ready"]:
+        raise HTTPException(503, status)
+    return status
+
+
 @app.post("/jobs")
 def create_job(request: ExecuteRequest, x_runner_key: str | None = Header(None)):
     _authorize(x_runner_key)
