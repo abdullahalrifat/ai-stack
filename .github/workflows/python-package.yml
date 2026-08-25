@@ -25,9 +25,11 @@ jobs:
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Verify coordinated Core
-        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.8.0'"
+        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.9.1'"
       - name: Syntax and import safety
         run: python -m compileall -q app
+      - name: Formatting
+        run: black --check --diff app tests
       - name: Critical lint
         run: ruff check app tests --select E9,F63,F7,F82
       - name: Tests and coverage floor
@@ -64,7 +66,7 @@ jobs:
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Verify coordinated Core
-        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.8.0'"
+        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.9.1'"
       - name: Run durable lease and autonomous fencing tests
         run: >-
           python -m pytest -q
@@ -97,3 +99,9 @@ jobs:
           POSTGRES_PASSWORD: ci-only-placeholder
           LITELLM_MASTER_KEY: ci-only-placeholder
         run: docker compose config --quiet
+      - name: Build and start the standard runner
+        run: docker compose up --build --wait agent-runner
+      - name: Verify runner readiness and isolation reporting
+        run: |
+          docker compose exec -T agent-runner curl -fsS http://127.0.0.1:8001/ready | grep '"ready":true'
+          docker compose exec -T agent-runner python -c "from app.runner import isolation_status; result=isolation_status(); assert 'ready' in result and 'reason' in result"
