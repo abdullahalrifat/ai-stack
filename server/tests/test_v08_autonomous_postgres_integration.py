@@ -44,12 +44,14 @@ def _proof(task_id: str, lease_id: str, attempt: int = 1):
         "route": "coding",
         "model": "test-model",
         "mutation_digest": "b" * 64,
-        "verifications": [{
-            "command": "pytest -q",
-            "status": "passed",
-            "exit_code": 0,
-            "output_digest": "c" * 64,
-        }],
+        "verifications": [
+            {
+                "command": "pytest -q",
+                "status": "passed",
+                "exit_code": 0,
+                "output_digest": "c" * 64,
+            }
+        ],
         "artifact_hashes": {},
     }
 
