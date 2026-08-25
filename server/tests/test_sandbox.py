@@ -112,7 +112,9 @@ def test_reviewable_tool_edit_is_isolated_until_approval(tmp_path, monkeypatch):
     )
 
     worktree = sandbox.create_sandbox(str(repository), "run-e2e")
-    with permissions_context(PermissionPolicy(scope=FULL_WRITE)), filesystem.workspace_context(
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE)
+    ), filesystem.workspace_context(
         str(worktree.path),
         allow_sandbox=True,
         source_workspace=str(repository),
