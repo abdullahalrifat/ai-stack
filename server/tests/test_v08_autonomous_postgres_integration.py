@@ -117,6 +117,56 @@ def test_lease_fence_rejects_wrong_worker_and_stale_attempt():
         _delete(store, {task_id})
 
 
+def test_successful_completion_requires_upload_state_and_proof():
+    store = _store()
+    created = store.submit_cloud({"task": "proof-gated task", "model": "auto"})
+    task_id = str(created["id"])
+    try:
+        claimed = store.claim_cloud("worker-proof", 30)
+        assert claimed is not None
+        lease_id = str(claimed["lease_id"])
+
+        # A fenced worker cannot skip preparation, execution, verification,
+        # and result-upload states even when it submits a proof object.
+        assert not store.finish_cloud(
+            task_id,
+            "worker-proof",
+            lease_id,
+            result={"premature": True},
+            proof={"verified": True},
+        )
+
+        for state in (
+            "preparing_workspace",
+            "running",
+            "verifying",
+            "uploading_result",
+        ):
+            assert store.update_cloud_state(
+                task_id,
+                "worker-proof",
+                lease_id,
+                state,
+            )
+
+        # Reaching the final worker state is insufficient without durable proof.
+        assert not store.finish_cloud(
+            task_id,
+            "worker-proof",
+            lease_id,
+            result={"missing_proof": True},
+        )
+        assert store.finish_cloud(
+            task_id,
+            "worker-proof",
+            lease_id,
+            result={"ok": True},
+            proof={"verified": True},
+        )
+    finally:
+        _delete(store, {task_id})
+
+
 def test_cloud_state_machine_and_fenced_completion():
     store = _store()
     created = store.submit_cloud({"task": "state task", "model": "auto"})
