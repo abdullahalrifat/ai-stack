@@ -33,7 +33,6 @@ def _delete(store: AutonomousPlatformStore, task_ids: set[str]) -> None:
         )
 
 
-
 def _proof(task_id: str, lease_id: str, attempt: int = 1):
     return {
         "schema_version": 1,
