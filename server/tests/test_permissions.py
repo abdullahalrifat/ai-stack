@@ -96,7 +96,12 @@ class TestCheckWrite:
 
 
 class TestCheckCommand:
-    def test_empty_allowlist_permits_anything(self):
+    def test_read_scope_denies_commands_even_with_an_empty_allowlist(self):
+        policy = PermissionPolicy(scope=READ)
+        with pytest.raises(PermissionError):
+            policy.check_command("git")
+
+    def test_write_scope_with_empty_allowlist_permits_commands(self):
         policy = PermissionPolicy(scope=FULL_WRITE)
         assert policy.check_command("git") is None
 
@@ -132,8 +137,12 @@ class TestPolicyFor:
 
 
 class TestPermissionContext:
-    def test_active_policy_default_is_full_write(self):
-        assert active_policy().scope == FULL_WRITE
+    def test_active_policy_default_is_read_only(self):
+        assert active_policy().scope == READ
+        with pytest.raises(PermissionError):
+            active_policy().check_write(Path("note.txt"), Path("."))
+        with pytest.raises(PermissionError):
+            active_policy().check_command("git")
 
     def test_context_overrides_and_restores_policy(self):
         original = active_policy()
