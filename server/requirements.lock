@@ -1,7 +1,7 @@
 # Fully resolved Python 3.12/Linux environment used by the agent image.
 # Regenerate intentionally after dependency review; requirements.txt remains
 # the short, human-maintained list of direct dependencies.
-jarvis-agent-core @ git+https://github.com/abdullahalrifat/jarvis-core.git@af3fcd5052dd6d5c15606302dcc7bd9f687fca78
+jarvis-agent-core @ https://github.com/abdullahalrifat/jarvis-core/releases/download/v0.9.2/jarvis_agent_core-0.9.2-py3-none-any.whl#sha256=0ff9b5cfba29dca8d05df69a48573c3a69cc73ca9654e7122411b89a489f1130
 annotated-doc==0.0.4
 annotated-types==0.8.0
 anyio==4.14.2
