@@ -106,11 +106,15 @@ class TestCheckCommand:
         assert policy.check_command("git") is None
 
     def test_allowlist_permits_approved_executable(self):
-        policy = PermissionPolicy(command_allowlist=frozenset({"pytest"}))
+        policy = PermissionPolicy(
+            scope=FULL_WRITE, command_allowlist=frozenset({"pytest"})
+        )
         assert policy.check_command("pytest") is None
 
     def test_allowlist_denies_other_executables(self):
-        policy = PermissionPolicy(command_allowlist=frozenset({"pytest"}))
+        policy = PermissionPolicy(
+            scope=FULL_WRITE, command_allowlist=frozenset({"pytest"})
+        )
         with pytest.raises(PermissionError):
             policy.check_command("git")
 
