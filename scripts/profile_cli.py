@@ -47,7 +47,8 @@ def workload():
 
 
 if __name__ == "__main__":
-    import cProfile, pstats
+    import cProfile
+    import pstats
     prof_file = "stats_cli.prof"
     pr = cProfile.Profile()
     pr.enable()

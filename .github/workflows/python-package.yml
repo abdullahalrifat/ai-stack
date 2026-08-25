@@ -25,7 +25,7 @@ jobs:
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Verify coordinated Core
-        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.9.1'"
+        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.9.2'"
       - name: Syntax and import safety
         run: python -m compileall -q app
       - name: Formatting
@@ -71,7 +71,7 @@ jobs:
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Verify coordinated Core
-        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.9.1'"
+        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.9.2'"
       - name: Run durable lease and autonomous fencing tests
         run: >-
           python -m pytest -q
