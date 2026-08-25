@@ -1,8 +1,8 @@
 from pathlib import Path
 
 
-CORE_VERSION = "0.9.1"
-CORE_COMMIT = "c30ffc900779caa07f9945f96a78e57828cb2aff"
+CORE_VERSION = "0.9.2"
+CORE_COMMIT = "af3fcd5052dd6d5c15606302dcc7bd9f687fca78"
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SERVER_ROOT.parent
 
