@@ -116,8 +116,9 @@ def _authorize(x_runner_key: str | None) -> None:
 def _validated_command(request: ExecuteRequest) -> tuple[list[str], Path]:
     if request.tier not in TIERS:
         raise HTTPException(
-            400, f"Unsupported sandbox tier: {request.tier}. "
-            f"Supported tiers: {', '.join(sorted(TIERS))}"
+            400,
+            f"Unsupported sandbox tier: {request.tier}. "
+            f"Supported tiers: {', '.join(sorted(TIERS))}",
         )
     forbidden = ["&&", "||", "|", ";", ">", "<", "`", "$("]
     if any(token in request.command for token in forbidden):
@@ -166,7 +167,9 @@ def _apply_limits(limits: dict[str, Any]) -> None:
     if nofile > 0:
         resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
     if memory > 0:
-        resource.setrlimit(resource.RLIMIT_AS, (memory * 1024 * 1024, memory * 1024 * 1024))
+        resource.setrlimit(
+            resource.RLIMIT_AS, (memory * 1024 * 1024, memory * 1024 * 1024)
+        )
 
 
 _netns_checked = False
