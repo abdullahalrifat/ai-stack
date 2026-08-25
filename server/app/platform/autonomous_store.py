@@ -9,6 +9,61 @@ from psycopg.types.json import Jsonb
 
 from .store import PlatformStore as BasePlatformStore
 
+
+_PROOF_SCHEMA_VERSION = 1
+
+
+def _sha256_digest(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return True
+
+
+def _validate_execution_proof(
+    proof: Any, *, task_id: str, lease_id: str
+) -> int | None:
+    """Validate a successful completion proof and return its fenced attempt."""
+
+    if not isinstance(proof, dict) or proof.get("schema_version") != _PROOF_SCHEMA_VERSION:
+        return None
+    if proof.get("task_id") != task_id or proof.get("lease_id") != lease_id:
+        return None
+    if not all(str(proof.get(key) or "").strip() for key in ("route", "model")):
+        return None
+    if not _sha256_digest(proof.get("workspace_digest")):
+        return None
+    if not _sha256_digest(proof.get("mutation_digest")):
+        return None
+    try:
+        attempt = int(proof.get("attempt", 0))
+    except (TypeError, ValueError):
+        return None
+    if attempt < 1:
+        return None
+    checks = proof.get("verifications")
+    if not isinstance(checks, list) or not checks:
+        return None
+    for check in checks:
+        if (
+            not isinstance(check, dict)
+            or not str(check.get("command") or "").strip()
+            or check.get("status") != "passed"
+            or check.get("exit_code") != 0
+            or not _sha256_digest(check.get("output_digest"))
+        ):
+            return None
+    artifacts = proof.get("artifact_hashes", {})
+    if not isinstance(artifacts, dict) or any(
+        not str(name).strip() or not _sha256_digest(digest)
+        for name, digest in artifacts.items()
+    ):
+        return None
+    return attempt
+
 _WORKER_STATES = {
     "preparing_workspace",
     "running",
@@ -154,7 +209,10 @@ class AutonomousPlatformStore(BasePlatformStore):
         # A successful result is publishable only after the worker has entered
         # uploading_result and supplied a non-empty execution proof. Failures
         # remain publishable from any fenced active state for diagnostics.
-        completion_has_proof = bool(error) or bool(proof)
+        proof_attempt = None if error else _validate_execution_proof(
+            proof, task_id=task_id, lease_id=lease_id
+        )
+        completion_has_proof = bool(error) or proof_attempt is not None
         failure_completion = bool(error)
         with self.runs.connection() as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -165,7 +223,8 @@ class AutonomousPlatformStore(BasePlatformStore):
                    WHERE id=%s AND status='running' AND worker_id=%s
                      AND lease_id=%s AND lease_expires_at>=NOW()
                      AND %s
-                     AND (%s OR execution_state='uploading_result')""",
+                     AND (%s OR execution_state='uploading_result')
+                     AND (%s OR attempts=%s)""",
                 (
                     status,
                     status,
@@ -177,6 +236,8 @@ class AutonomousPlatformStore(BasePlatformStore):
                     lease_id,
                     completion_has_proof,
                     failure_completion,
+                    failure_completion,
+                    proof_attempt or 0,
                 ),
             )
             return cursor.rowcount == 1
