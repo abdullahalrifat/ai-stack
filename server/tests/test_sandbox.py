@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 
+from app.core.permissions import FULL_WRITE, PermissionPolicy, permissions_context
 from app.runs import sandbox
 from app.tools import filesystem
 
@@ -111,7 +112,7 @@ def test_reviewable_tool_edit_is_isolated_until_approval(tmp_path, monkeypatch):
     )
 
     worktree = sandbox.create_sandbox(str(repository), "run-e2e")
-    with filesystem.workspace_context(
+    with permissions_context(PermissionPolicy(scope=FULL_WRITE)), filesystem.workspace_context(
         str(worktree.path),
         allow_sandbox=True,
         source_workspace=str(repository),
