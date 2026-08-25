@@ -3,6 +3,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 import pytest
 
+from app.platform.autonomous_store import _validate_execution_proof
 from app.platform.router import (
     CloudCompleteRequest,
     CloudStateRequest,
@@ -103,3 +104,29 @@ def test_platform_capabilities_advertise_protocol_not_client_dependency():
     # The contract is client-neutral: no Jarvis package or implementation name
     # is required to claim and complete work.
     assert "client" not in protocol
+
+
+
+def test_execution_proof_normalizes_http_uuid_fences():
+    task_id = uuid4()
+    lease_id = uuid4()
+    proof = {
+        "schema_version": 1,
+        "task_id": str(task_id),
+        "lease_id": str(lease_id),
+        "attempt": 1,
+        "workspace_digest": "a" * 64,
+        "route": "coding",
+        "model": "model",
+        "mutation_digest": "b" * 64,
+        "verifications": [{
+            "command": "pytest -q",
+            "status": "passed",
+            "exit_code": 0,
+            "output_digest": "c" * 64,
+        }],
+        "artifact_hashes": {},
+    }
+    assert _validate_execution_proof(
+        proof, task_id=task_id, lease_id=lease_id
+    ) == 1
