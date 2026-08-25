@@ -76,6 +76,10 @@ class ExecuteRequest(BaseModel):
     tier: str = "isolated"
 
 
+class InputRequest(BaseModel):
+    data: str
+
+
 @dataclass
 class RunnerJob:
     id: str
@@ -248,39 +252,52 @@ def _terminate_process_group(job: RunnerJob) -> bool:
             return False
 
 
-def _watch_job(job: RunnerJob) -> None:
+def _append_output(job: RunnerJob, chunk: str) -> None:
+    if not chunk:
+        return
+    with job.lock:
+        job.output = (job.output + chunk)[-MAX_OUTPUT_CHARS:]
+
+
+def _stream_output(job: RunnerJob) -> None:
+    stream = job.process.stdout
+    if stream is None:
+        return
+    try:
+        for chunk in iter(stream.readline, ""):
+            _append_output(job, chunk)
+    finally:
+        stream.close()
+
+
+def _watch_job(job: RunnerJob, reader: threading.Thread) -> None:
     timed_out = False
     killed = True
     command_deadline = time.monotonic() + COMMAND_TIMEOUT_SECONDS
-    while True:
-        try:
-            stdout, stderr = job.process.communicate(timeout=0.25)
+    while job.process.poll() is None:
+        now = time.monotonic()
+        with job.lock:
+            owner_expired = now >= job.lease_deadline
+            if owner_expired and not job.cancel_requested:
+                job.cancel_requested = True
+                job.cancel_reason = "owner_lease_expired"
+                job.status = "cancelling"
+        if owner_expired:
+            killed = _terminate_process_group(job)
             break
-        except subprocess.TimeoutExpired:
-            now = time.monotonic()
-            with job.lock:
-                owner_expired = now >= job.lease_deadline
-                if owner_expired and not job.cancel_requested:
-                    job.cancel_requested = True
-                    job.cancel_reason = "owner_lease_expired"
-                    job.status = "cancelling"
-            if owner_expired:
-                killed = _terminate_process_group(job)
-                if killed:
-                    stdout, stderr = job.process.communicate()
-                else:
-                    stdout, stderr = "", "Process group survived SIGKILL"
-                break
-            if now >= command_deadline:
-                timed_out = True
-                killed = _terminate_process_group(job)
-                if killed:
-                    stdout, stderr = job.process.communicate()
-                else:
-                    stdout, stderr = "", "Process group survived SIGKILL"
-                break
+        if now >= command_deadline:
+            timed_out = True
+            killed = _terminate_process_group(job)
+            break
+        time.sleep(0.05)
+
+    try:
+        job.process.wait(timeout=TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        killed = False
+    reader.join(timeout=TERMINATE_GRACE_SECONDS)
     with job.lock:
-        job.output = _trim_output(stdout, stderr)
+        job.output = job.output.strip()
         job.exit_code = job.process.returncode
         if not killed:
             job.status = "kill_failed"
@@ -350,14 +367,17 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
             argv,
             cwd=directory,
             text=True,
+            bufsize=1,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             env={
                 "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                 "HOME": "/tmp/runner",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
                 "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONUNBUFFERED": "1",
                 # pytest-cov otherwise writes a binary .coverage file into the
                 # review worktree and pollutes an otherwise focused code diff.
                 "COVERAGE_FILE": f"/tmp/aistack-coverage-{job_id}",
@@ -379,9 +399,16 @@ def _start_job(request: ExecuteRequest) -> RunnerJob:
     )
     with _jobs_lock:
         _jobs[job.id] = job
+    reader = threading.Thread(
+        target=_stream_output,
+        args=(job,),
+        daemon=True,
+        name=f"runner-output-{job.id[:8]}",
+    )
+    reader.start()
     threading.Thread(
         target=_watch_job,
-        args=(job,),
+        args=(job, reader),
         daemon=True,
         name=f"runner-job-{job.id[:8]}",
     ).start()
@@ -433,6 +460,49 @@ def create_job(request: ExecuteRequest, x_runner_key: str | None = Header(None))
 def get_job(job_id: str, x_runner_key: str | None = Header(None)):
     _authorize(x_runner_key)
     return _job_payload(_get_job(job_id), renew_lease=True)
+
+
+@app.get("/jobs/{job_id}/output")
+def job_output(
+    job_id: str,
+    after: int = 0,
+    x_runner_key: str | None = Header(None),
+):
+    """Return output added after a caller-owned character cursor."""
+
+    _authorize(x_runner_key)
+    job = _get_job(job_id)
+    with job.lock:
+        offset = max(0, min(int(after), len(job.output)))
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "output": job.output[offset:],
+            "next_offset": len(job.output),
+        }
+
+
+@app.post("/jobs/{job_id}/input")
+def send_job_input(
+    job_id: str,
+    request: InputRequest,
+    x_runner_key: str | None = Header(None),
+):
+    """Steer an active command through its standard input."""
+
+    _authorize(x_runner_key)
+    if len(request.data) > 16_384:
+        raise HTTPException(413, "Runner input exceeds 16384 characters")
+    job = _get_job(job_id)
+    with job.lock:
+        if job.status in TERMINAL_STATUSES or job.process.stdin is None:
+            raise HTTPException(409, "Runner job does not accept input")
+        try:
+            job.process.stdin.write(request.data)
+            job.process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise HTTPException(409, "Runner job input is closed") from exc
+    return {"job_id": job.id, "accepted": True}
 
 
 @app.post("/jobs/{job_id}/cancel")
