@@ -273,9 +273,7 @@ def test_runner_streams_output_before_process_completion(configured_runner):
     deadline = time.monotonic() + 2
     streamed = None
     while time.monotonic() < deadline:
-        streamed = runner.job_output(
-            payload["job_id"], after=0, x_runner_key="secret"
-        )
+        streamed = runner.job_output(payload["job_id"], after=0, x_runner_key="secret")
         if "first" in streamed["output"]:
             break
         time.sleep(0.02)
