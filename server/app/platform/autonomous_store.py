@@ -30,7 +30,10 @@ def _validate_execution_proof(
 
     if not isinstance(proof, dict) or proof.get("schema_version") != _PROOF_SCHEMA_VERSION:
         return None
-    if proof.get("task_id") != task_id or proof.get("lease_id") != lease_id:
+    if (
+        str(proof.get("task_id") or "") != str(task_id)
+        or str(proof.get("lease_id") or "") != str(lease_id)
+    ):
         return None
     if not all(str(proof.get(key) or "").strip() for key in ("route", "model")):
         return None
