@@ -53,7 +53,8 @@ def test_cloud_git_submission_persists_portable_workspace_descriptor(monkeypatch
     captured = {}
 
     class Store:
-        def submit_cloud(self, payload):
+        def submit_cloud(self, payload, *, idempotency_key=None):
+            assert idempotency_key is None
             captured.update(payload)
             return {"id": "cloud-1", "payload": payload}
 

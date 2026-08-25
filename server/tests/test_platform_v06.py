@@ -29,7 +29,9 @@ def test_platform_migration_contains_durable_tables():
 def test_platform_router_is_mounted():
     from app.main import app
 
-    paths = {route.path for route in app.routes}
+    # FastAPI 0.116+ may retain included routers lazily, so OpenAPI is the
+    # stable public representation of the mounted endpoint set.
+    paths = set(app.openapi()["paths"])
     assert "/platform/schedules" in paths
     assert "/platform/cloud/tasks" in paths
     assert "/platform/cloud/claim" in paths
