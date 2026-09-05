@@ -1,0 +1,49 @@
+name: Repair final formatting
+
+on:
+  push:
+    branches: ["fix/ci-validation-regressions"]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ci-validation-regressions
+      - name: Apply deterministic formatting fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path("server/app/platform/autonomous_store.py")
+          s = p.read_text()
+          old = '''            cursor.execute(\n                """SELECT id FROM agent_cloud_tasks\n                    WHERE (status='queued' AND execution_state='queued')\n                       OR (status='running'\n                           AND execution_state NOT IN ('cancel_requested','cancelled')\n                           AND lease_expires_at<NOW())\n                  ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"""\n            )'''
+          new = '''            cursor.execute("""SELECT id FROM agent_cloud_tasks\n                    WHERE (status='queued' AND execution_state='queued')\n                       OR (status='running'\n                           AND execution_state NOT IN ('cancel_requested','cancelled')\n                           AND lease_expires_at<NOW())\n                  ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1""")'''
+          if old not in s:
+              raise SystemExit("autonomous_store formatting anchor not found")
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path("server/tests/test_v08_autonomous_store_edge_cases.py")
+          s = p.read_text()
+          s = s.replace('''            store.update_cloud_state(\n                task_id, "worker-invalid", lease_id, "not-a-state"\n            )''', '            store.update_cloud_state(task_id, "worker-invalid", lease_id, "not-a-state")', 1)
+          s = s.replace('''            store.update_cloud_state(\n                task_id, "worker-transition", lease_id, "running"\n            )''', '            store.update_cloud_state(task_id, "worker-transition", lease_id, "running")', 1)
+          p.write_text(s)
+
+          p = Path("server/tests/test_runner.py")
+          s = p.read_text()
+          s = s.replace("import pytest\nimport threading\n", "import threading\n\nimport pytest\n", 1)
+          p.write_text(s)
+          PY
+      - name: Commit and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/app/platform/autonomous_store.py server/tests/test_v08_autonomous_store_edge_cases.py server/tests/test_runner.py .github/workflows/repair-final-format.yml
+          git commit -m "style: apply CI formatter output"
+          git rm .github/workflows/repair-final-format.yml
+          git commit -m "chore: remove one-off formatting workflow"
+          git push origin HEAD:fix/ci-validation-regressions
