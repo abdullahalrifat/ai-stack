@@ -1622,11 +1622,6 @@ def run_tests(
             if target_file.suffix != ".py":
                 return {"error": "ruff test_path must name a Python file."}
             commands["ruff"] = ["ruff", "check", focused_target]
-    try:
-        active_policy().check_command(commands[kind][0])
-    except Exception as e:
-        return {"error": str(e)}
-
     if kind == "pytest_coverage":
         target = coverage_target.strip()
         if not target:
@@ -1642,6 +1637,10 @@ def run_tests(
         ]
     if kind not in commands:
         return {"error": f"Unsupported test kind: {kind}"}
+    try:
+        active_policy().check_command(commands[kind][0])
+    except Exception as e:
+        return {"error": str(e)}
     try:
         cwd = resolve_path(directory)
         # The model commonly passes the file under investigation (e.g.
