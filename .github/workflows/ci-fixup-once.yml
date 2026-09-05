@@ -1,0 +1,59 @@
+name: Apply CI fixup once
+
+on:
+  push:
+    branches:
+      - fix/ci-validation-regressions
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply targeted fixes and remove helper workflow
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected source fragment not found in {path}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              "server/app/tools/filesystem.py",
+              '''    if kind == "pytest_coverage":\n''',
+              '''    try:\n        active_policy().check_command(commands[kind][0])\n    except Exception as e:\n        return {"error": str(e)}\n\n    if kind == "pytest_coverage":\n''',
+          )
+
+          replace(
+              "server/app/runner.py",
+              '''        except subprocess.TimeoutExpired:\n            killed = False\n    reader.join(timeout=TERMINATE_GRACE_SECONDS)\n''',
+              '''        except subprocess.TimeoutExpired:\n            killed = False\n    reader.join(timeout=TERMINATE_GRACE_SECONDS)\n''',
+          )
+          replace(
+              "server/app/runner.py",
+              '''        if not killed:\n            job.status = "kill_failed"\n''',
+              '''        if not killed:\n            job.status = "kill_failed"\n            if not job.output:\n                job.output = "Command survived SIGKILL and could not be terminated"\n''',
+          )
+
+          replace(
+              "server/tests/test_runner.py",
+              '''        pid = 123\n        returncode = None\n\n        def communicate''',
+              '''        pid = 123\n        returncode = None\n\n        def poll(self):\n            return None\n\n        def wait(self, timeout=None):\n            assert timeout is not None\n            raise runner.subprocess.TimeoutExpired(["command"], timeout)\n\n        def communicate''',
+          )
+
+          Path(".github/workflows/ci-fixup-once.yml").unlink()
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/app/tools/filesystem.py server/app/runner.py server/tests/test_runner.py .github/workflows/ci-fixup-once.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: restore command permission and runner kill failure handling"
+          git push
