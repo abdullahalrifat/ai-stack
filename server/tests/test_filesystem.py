@@ -825,7 +825,7 @@ def test_run_tests_is_denied_and_does_not_hit_runner_under_read_scope(
         "_run_in_isolated_runner",
         lambda command, cwd, tier="isolated": calls.append(tier) or {},
     )
-    policy = PermissionPolicy(command_allowlist=frozenset({"pytest"}))
+    policy = PermissionPolicy(command_allowlist=frozenset())
     with permissions_context(policy), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke({"kind": "pytest"})
 

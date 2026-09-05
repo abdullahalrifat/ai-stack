@@ -1,6 +1,7 @@
 import time
 
 import pytest
+import threading
 from fastapi import HTTPException
 
 from app import runner
@@ -156,7 +157,8 @@ def test_runner_surfaces_kill_failure_without_waiting_forever(monkeypatch):
     )
     monkeypatch.setattr(runner, "_terminate_process_group", lambda _job: False)
 
-    runner._watch_job(job)
+    reader = threading.Thread(target=lambda: None)
+    runner._watch_job(job, reader)
 
     assert job.status == "kill_failed"
     assert "survived SIGKILL" in job.output
