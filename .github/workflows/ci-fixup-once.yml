@@ -50,4 +50,4 @@ jobs:
           git add server/app/tools/filesystem.py server/app/runner.py server/tests/test_runner.py .github/workflows/ci-fixup-once.yml
           git diff --cached --quiet && exit 0
           git commit -m "fix: restore command permission and runner kill failure handling"
-          git push
+          git push origin HEAD:fix/ci-validation-regressions
