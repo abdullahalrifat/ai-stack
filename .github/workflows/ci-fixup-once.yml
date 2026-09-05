@@ -1,9 +1,8 @@
 name: Apply CI fixup once
 
 on:
-  push:
-    branches:
-      - fix/ci-validation-regressions
+  pull_request:
+    types: [synchronize, opened, reopened]
 
 permissions:
   contents: write
@@ -31,11 +30,6 @@ jobs:
               '''    try:\n        active_policy().check_command(commands[kind][0])\n    except Exception as e:\n        return {"error": str(e)}\n\n    if kind == "pytest_coverage":\n''',
           )
 
-          replace(
-              "server/app/runner.py",
-              '''        except subprocess.TimeoutExpired:\n            killed = False\n    reader.join(timeout=TERMINATE_GRACE_SECONDS)\n''',
-              '''        except subprocess.TimeoutExpired:\n            killed = False\n    reader.join(timeout=TERMINATE_GRACE_SECONDS)\n''',
-          )
           replace(
               "server/app/runner.py",
               '''        if not killed:\n            job.status = "kill_failed"\n''',
