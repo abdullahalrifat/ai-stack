@@ -102,10 +102,26 @@ jobs:
         env:
           AGENT_API_KEY: ci-only-placeholder
           POSTGRES_PASSWORD: ci-only-placeholder
+          POSTGRES_USER: jarvis
+          POSTGRES_DB: jarvis
           LITELLM_MASTER_KEY: ci-only-placeholder
+          SEARXNG_SECRET: ci-only-placeholder
+          PIPELINES_API_KEY: ci-only-placeholder
+          OLLAMA_MODELS: ""
         run: docker compose config --quiet
-      - name: Build and start the standard runner
-        run: docker compose up --build --wait agent-runner
+      - name: Build the standard server image
+        run: docker compose build server
+      - name: Start the standard runner from the locally built image
+        env:
+          AGENT_API_KEY: ci-only-placeholder
+          POSTGRES_PASSWORD: ci-only-placeholder
+          POSTGRES_USER: jarvis
+          POSTGRES_DB: jarvis
+          LITELLM_MASTER_KEY: ci-only-placeholder
+          SEARXNG_SECRET: ci-only-placeholder
+          PIPELINES_API_KEY: ci-only-placeholder
+          OLLAMA_MODELS: ""
+        run: docker compose up --wait agent-runner
       - name: Verify runner readiness and isolation reporting
         run: |
           docker compose exec -T agent-runner curl -fsS http://127.0.0.1:8001/ready | grep '"ready":true'
