@@ -1,6 +1,5 @@
-import time
-
 import threading
+import time
 
 import pytest
 from fastapi import HTTPException
