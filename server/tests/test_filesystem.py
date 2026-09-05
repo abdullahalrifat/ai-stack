@@ -804,9 +804,7 @@ def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):
             "output": "ok",
         },
     )
-    policy = PermissionPolicy(
-        scope=FULL_WRITE, command_allowlist=frozenset({"echo"})
-    )
+    policy = PermissionPolicy(scope=FULL_WRITE, command_allowlist=frozenset({"echo"}))
     with permissions_context(policy), filesystem.workspace_context(str(workspace)):
         allowed = filesystem.run_command.invoke({"command": "echo hi"})
         denied = filesystem.run_command.invoke({"command": "git status"})
