@@ -143,6 +143,13 @@ def test_runner_surfaces_kill_failure_without_waiting_forever(monkeypatch):
         pid = 123
         returncode = None
 
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            assert timeout is not None
+            raise runner.subprocess.TimeoutExpired(["command"], timeout)
+
         def communicate(self, timeout=None):
             assert timeout is not None
             raise runner.subprocess.TimeoutExpired(["command"], timeout)
