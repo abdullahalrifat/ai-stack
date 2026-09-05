@@ -21,11 +21,15 @@ jobs:
 
           p = Path("server/app/platform/autonomous_store.py")
           s = p.read_text()
-          old = '''            cursor.execute(\n                """SELECT id FROM agent_cloud_tasks\n                    WHERE (status='queued' AND execution_state='queued')\n                       OR (status='running'\n                           AND execution_state NOT IN ('cancel_requested','cancelled')\n                           AND lease_expires_at<NOW())\n                  ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"""\n            )'''
-          new = '''            cursor.execute("""SELECT id FROM agent_cloud_tasks\n                    WHERE (status='queued' AND execution_state='queued')\n                       OR (status='running'\n                           AND execution_state NOT IN ('cancel_requested','cancelled')\n                           AND lease_expires_at<NOW())\n                  ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1""")'''
-          if old not in s:
-              raise SystemExit("autonomous_store formatting anchor not found")
-          p.write_text(s.replace(old, new, 1))
+          start = '            cursor.execute(\n                """SELECT id FROM agent_cloud_tasks'
+          if start not in s:
+              raise SystemExit("autonomous_store formatting start anchor not found")
+          s = s.replace(start, '            cursor.execute("""SELECT id FROM agent_cloud_tasks', 1)
+          end = 'ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"""\n            )'
+          if end not in s:
+              raise SystemExit("autonomous_store formatting end anchor not found")
+          s = s.replace(end, 'ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1""")', 1)
+          p.write_text(s)
 
           p = Path("server/tests/test_v08_autonomous_store_edge_cases.py")
           s = p.read_text()
