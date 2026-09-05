@@ -32,8 +32,10 @@ jobs:
         run: >-
           black --check --diff
           app/runner.py
+          app/platform/autonomous_store.py
           tests/test_runner.py
           tests/test_v08_autonomous_postgres_integration.py
+          tests/test_v08_autonomous_store_edge_cases.py
       - name: Critical lint
         run: ruff check app tests --select E9,F63,F7,F82
       - name: Tests and coverage floor
@@ -78,6 +80,7 @@ jobs:
           python -m pytest -q
           tests/test_postgres_leases_integration.py
           tests/test_v08_autonomous_postgres_integration.py
+          tests/test_v08_autonomous_store_edge_cases.py
 
   runs-ui:
     runs-on: ubuntu-latest
