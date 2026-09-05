@@ -1,7 +1,8 @@
 import time
 
-import pytest
 import threading
+
+import pytest
 from fastapi import HTTPException
 
 from app import runner

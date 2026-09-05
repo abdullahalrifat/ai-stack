@@ -58,9 +58,7 @@ def test_invalid_execution_state_is_rejected():
         assert claimed is not None
         lease_id = str(claimed["lease_id"])
         with pytest.raises(ValueError, match="unsupported worker execution state"):
-            store.update_cloud_state(
-                task_id, "worker-invalid", lease_id, "not-a-state"
-            )
+            store.update_cloud_state(task_id, "worker-invalid", lease_id, "not-a-state")
     finally:
         _delete(store, task_id)
 
@@ -74,9 +72,7 @@ def test_invalid_state_transition_is_rejected():
         assert claimed is not None
         lease_id = str(claimed["lease_id"])
         with pytest.raises(ValueError, match="invalid cloud execution transition"):
-            store.update_cloud_state(
-                task_id, "worker-transition", lease_id, "running"
-            )
+            store.update_cloud_state(task_id, "worker-transition", lease_id, "running")
     finally:
         _delete(store, task_id)
 
