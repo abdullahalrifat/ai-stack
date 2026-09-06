@@ -1638,6 +1638,10 @@ def run_tests(
     if kind not in commands:
         return {"error": f"Unsupported test kind: {kind}"}
     try:
+        active_policy().check_command(commands[kind][0])
+    except Exception as e:
+        return {"error": str(e)}
+    try:
         cwd = resolve_path(directory)
         # The model commonly passes the file under investigation (e.g.
         # server/app/runner.py) as directory. Run from its parent folder so

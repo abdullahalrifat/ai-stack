@@ -78,14 +78,12 @@ class AutonomousPlatformStore(BasePlatformStore):
         lease = max(15, min(600, lease_seconds))
         lease_id = str(uuid.uuid4())
         with self.runs.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """SELECT id FROM agent_cloud_tasks
+            cursor.execute("""SELECT id FROM agent_cloud_tasks
                    WHERE (status='queued' AND execution_state='queued')
                       OR (status='running'
                           AND execution_state NOT IN ('cancel_requested','cancelled')
                           AND lease_expires_at<NOW())
-                   ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"""
-            )
+                   ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1""")
             row = cursor.fetchone()
             if row is None:
                 return None

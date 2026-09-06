@@ -509,7 +509,9 @@ def test_run_tests_coverage_uses_explicit_package_target(workspace, monkeypatch)
         ),
     )
 
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE),
+    ), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke(
             {
                 "kind": "pytest_coverage",
@@ -804,9 +806,7 @@ def test_run_command_denied_by_request_allowlist(workspace, monkeypatch):
             "output": "ok",
         },
     )
-    policy = PermissionPolicy(
-        scope=FULL_WRITE, command_allowlist=frozenset({"echo"})
-    )
+    policy = PermissionPolicy(scope=FULL_WRITE, command_allowlist=frozenset({"echo"}))
     with permissions_context(policy), filesystem.workspace_context(str(workspace)):
         allowed = filesystem.run_command.invoke({"command": "echo hi"})
         denied = filesystem.run_command.invoke({"command": "git status"})
@@ -825,7 +825,7 @@ def test_run_tests_is_denied_and_does_not_hit_runner_under_read_scope(
         "_run_in_isolated_runner",
         lambda command, cwd, tier="isolated": calls.append(tier) or {},
     )
-    policy = PermissionPolicy(command_allowlist=frozenset({"pytest"}))
+    policy = PermissionPolicy(command_allowlist=frozenset())
     with permissions_context(policy), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke({"kind": "pytest"})
 
@@ -845,7 +845,9 @@ def test_run_tests_supports_focused_pytest_node(workspace, monkeypatch):
         lambda command, cwd, tier="isolated": calls.append((command, cwd))
         or {"exit_code": 0, "output": "1 passed"},
     )
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE),
+    ), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke(
             {
                 "kind": "pytest",
@@ -871,7 +873,9 @@ def test_run_tests_supports_focused_ruff_file(workspace, monkeypatch):
         lambda command, cwd, tier="isolated": calls.append((command, cwd))
         or {"exit_code": 0, "output": "All checks passed!"},
     )
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE),
+    ), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke(
             {"kind": "ruff", "test_path": "app/worker.py"}
         )

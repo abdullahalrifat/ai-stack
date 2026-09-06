@@ -311,6 +311,8 @@ def _watch_job(job: RunnerJob, reader: threading.Thread) -> None:
         job.exit_code = job.process.returncode
         if not killed:
             job.status = "kill_failed"
+            if not job.output:
+                job.output = "Command survived SIGKILL and could not be terminated"
         elif job.cancel_requested:
             job.status = "cancelled"
         elif timed_out:

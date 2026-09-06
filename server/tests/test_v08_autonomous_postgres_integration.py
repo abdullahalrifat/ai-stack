@@ -216,7 +216,7 @@ def test_cloud_state_machine_and_fenced_completion():
             "worker-state",
             lease_id,
             result={"ok": True},
-            proof={"verified": True},
+            proof=_proof(task_id, lease_id),
         )
         row = store.get_cloud(task_id)
         assert row is not None

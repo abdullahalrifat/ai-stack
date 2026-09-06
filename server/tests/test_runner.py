@@ -1,3 +1,4 @@
+import threading
 import time
 
 import pytest
@@ -142,6 +143,13 @@ def test_runner_surfaces_kill_failure_without_waiting_forever(monkeypatch):
         pid = 123
         returncode = None
 
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            assert timeout is not None
+            raise runner.subprocess.TimeoutExpired(["command"], timeout)
+
         def communicate(self, timeout=None):
             assert timeout is not None
             raise runner.subprocess.TimeoutExpired(["command"], timeout)
@@ -156,7 +164,9 @@ def test_runner_surfaces_kill_failure_without_waiting_forever(monkeypatch):
     )
     monkeypatch.setattr(runner, "_terminate_process_group", lambda _job: False)
 
-    runner._watch_job(job)
+    reader = threading.Thread(target=lambda: None)
+    reader.start()
+    runner._watch_job(job, reader)
 
     assert job.status == "kill_failed"
     assert "survived SIGKILL" in job.output
