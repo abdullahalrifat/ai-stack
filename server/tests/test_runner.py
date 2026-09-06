@@ -36,6 +36,8 @@ def configured_runner(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "RUNNER_API_KEY", "secret")
     monkeypatch.setattr(runner, "ALLOWED", {"python3"})
     monkeypatch.setattr(runner, "TERMINATE_GRACE_SECONDS", 0.2)
+    # Job lifecycle tests do not exercise namespace creation. Dedicated tests
+    # below cover the fail-closed isolation wrapper.
     monkeypatch.setattr(runner, "_command_argv", lambda parts, _tier: parts)
     runner._jobs.clear()
     yield worktree
@@ -45,41 +47,94 @@ def configured_runner(tmp_path, monkeypatch):
 
 
 def test_runner_jobs_have_stable_ids_and_complete(configured_runner):
-    payload = runner.create_job(runner.ExecuteRequest(command='python3 -c "print(42)"', directory=str(configured_runner)), x_runner_key="secret")
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command='python3 -c "print(42)"',
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+
     completed = _wait_for_status(payload["job_id"], {"completed"})
+
     assert completed["job_id"] == payload["job_id"]
     assert completed["exit_code"] == 0
     assert completed["output"] == "42"
 
 
 def test_runner_cancel_terminates_active_process_group(configured_runner):
-    payload = runner.create_job(runner.ExecuteRequest(command="python3 -c \"__import__('time').sleep(30)\"", directory=str(configured_runner)), x_runner_key="secret")
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command="python3 -c \"__import__('time').sleep(30)\"",
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+
     cancelling = runner.cancel_job(payload["job_id"], x_runner_key="secret")
-    completed = _wait_for_status(payload["job_id"], {"cancelled", "kill_failed"}, renew_lease=False)
+    completed = _wait_for_status(
+        payload["job_id"],
+        {"cancelled", "kill_failed"},
+        renew_lease=False,
+    )
+
     assert cancelling["status"] in {"cancelling", "cancelled"}
     assert completed["status"] == "cancelled"
     assert runner._get_job(payload["job_id"]).process.poll() is not None
 
 
-def test_runner_timeout_is_distinct_from_command_failure(configured_runner, monkeypatch):
+def test_runner_timeout_is_distinct_from_command_failure(
+    configured_runner,
+    monkeypatch,
+):
     monkeypatch.setattr(runner, "COMMAND_TIMEOUT_SECONDS", 0.05)
-    payload = runner.create_job(runner.ExecuteRequest(command="python3 -c \"__import__('time').sleep(30)\"", directory=str(configured_runner)), x_runner_key="secret")
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command="python3 -c \"__import__('time').sleep(30)\"",
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+
     completed = _wait_for_status(payload["job_id"], {"timed_out", "kill_failed"})
+
     assert completed["status"] == "timed_out"
     assert completed["exit_code"] == 124
 
 
-def test_runner_stops_job_when_api_owner_disappears(configured_runner, monkeypatch):
+def test_runner_stops_job_when_api_owner_disappears(
+    configured_runner,
+    monkeypatch,
+):
     monkeypatch.setattr(runner, "JOB_LEASE_SECONDS", 0.05)
-    payload = runner.create_job(runner.ExecuteRequest(command="python3 -c \"__import__('time').sleep(30)\"", directory=str(configured_runner)), x_runner_key="secret")
-    completed = _wait_for_status(payload["job_id"], {"cancelled", "kill_failed"}, renew_lease=False)
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command="python3 -c \"__import__('time').sleep(30)\"",
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+
+    completed = _wait_for_status(
+        payload["job_id"],
+        {"cancelled", "kill_failed"},
+        renew_lease=False,
+    )
+
     assert completed["status"] == "cancelled"
     assert completed["cancellation_reason"] == "owner_lease_expired"
 
 
 def test_runner_rejects_missing_authentication(configured_runner):
     with pytest.raises(HTTPException) as error:
-        runner.create_job(runner.ExecuteRequest(command='python3 -c "print(42)"', directory=str(configured_runner)), x_runner_key=None)
+        runner.create_job(
+            runner.ExecuteRequest(
+                command='python3 -c "print(42)"',
+                directory=str(configured_runner),
+            ),
+            x_runner_key=None,
+        )
+
     assert error.value.status_code == 401
 
 
@@ -87,25 +142,47 @@ def test_runner_surfaces_kill_failure_without_waiting_forever(monkeypatch):
     class Process:
         pid = 123
         returncode = None
+
         def poll(self):
             return None
+
         def wait(self, timeout=None):
             assert timeout is not None
             raise runner.subprocess.TimeoutExpired(["command"], timeout)
+
         def communicate(self, timeout=None):
             assert timeout is not None
             raise runner.subprocess.TimeoutExpired(["command"], timeout)
-    job = runner.RunnerJob(id="job-1", command="command", directory="/sandbox", tier="isolated", process=Process(), lease_deadline=0)
+
+    job = runner.RunnerJob(
+        id="job-1",
+        command="command",
+        directory="/sandbox",
+        tier="isolated",
+        process=Process(),
+        lease_deadline=0,
+    )
     monkeypatch.setattr(runner, "_terminate_process_group", lambda _job: False)
+
     reader = threading.Thread(target=lambda: None)
+    reader.start()
     runner._watch_job(job, reader)
+
     assert job.status == "kill_failed"
     assert "survived SIGKILL" in job.output
 
 
 def test_runner_rejects_unknown_sandbox_tier(configured_runner):
     with pytest.raises(HTTPException) as error:
-        runner.create_job(runner.ExecuteRequest(command='python3 -c "print(42)"', directory=str(configured_runner), tier="not-a-tier"), x_runner_key="secret")
+        runner.create_job(
+            runner.ExecuteRequest(
+                command='python3 -c "print(42)"',
+                directory=str(configured_runner),
+                tier="not-a-tier",
+            ),
+            x_runner_key="secret",
+        )
+
     assert error.value.status_code == 400
     assert "Unsupported sandbox tier" in error.value.detail
 
@@ -121,15 +198,26 @@ def test_command_argv_wraps_isolated_tier_in_netns_when_available(monkeypatch):
     monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
     monkeypatch.setattr(runner.shutil, "which", lambda name: "/usr/bin/unshare")
     monkeypatch.setattr(runner, "_netns_available", lambda: True)
-    assert runner._command_argv(["python3", "-c", "x"], "isolated") == ["/usr/bin/unshare", "--map-root-user", "--net", "python3", "-c", "x"]
+
+    argv = runner._command_argv(["python3", "-c", "x"], "isolated")
+    assert argv == [
+        "/usr/bin/unshare",
+        "--map-root-user",
+        "--net",
+        "python3",
+        "-c",
+        "x",
+    ]
 
 
 def test_command_argv_fails_closed_when_netns_is_unavailable(monkeypatch):
     monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
     monkeypatch.setattr(runner.shutil, "which", lambda _name: "/usr/bin/unshare")
     monkeypatch.setattr(runner, "_netns_available", lambda: False)
+
     with pytest.raises(HTTPException) as error:
         runner._command_argv(["python3", "-c", "x"], "isolated")
+
     assert error.value.status_code == 503
     assert "private network namespace" in error.value.detail
 
@@ -138,29 +226,60 @@ def test_command_argv_network_tier_is_not_wrapped(monkeypatch):
     monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
     monkeypatch.setattr(runner.shutil, "which", lambda name: "/usr/bin/unshare")
     monkeypatch.setattr(runner, "_netns_available", lambda: True)
-    assert runner._command_argv(["python3", "-c", "x"], "network") == ["python3", "-c", "x"]
+
+    assert runner._command_argv(["python3", "-c", "x"], "network") == [
+        "python3",
+        "-c",
+        "x",
+    ]
 
 
 def test_command_argv_fails_closed_when_netns_is_disabled(monkeypatch):
     monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", False)
+
     with pytest.raises(HTTPException) as error:
         runner._command_argv(["python3", "-c", "x"], "isolated")
+
     assert error.value.status_code == 503
     assert "enforcement is disabled" in error.value.detail
 
 
 def test_runner_applies_tier_resource_limits_in_child(configured_runner):
-    probe = "import resource\nprint(resource.getrlimit(resource.RLIMIT_CPU)[1])\nprint(resource.getrlimit(resource.RLIMIT_NOFILE)[1])\nprint(resource.getrlimit(resource.RLIMIT_AS)[1])\n"
-    payload = runner.create_job(runner.ExecuteRequest(command=f'python3 -c "{probe}"', directory=str(configured_runner)), x_runner_key="secret")
+    probe = (
+        "import resource\n"
+        "print(resource.getrlimit(resource.RLIMIT_CPU)[1])\n"
+        "print(resource.getrlimit(resource.RLIMIT_NOFILE)[1])\n"
+        "print(resource.getrlimit(resource.RLIMIT_AS)[1])\n"
+    )
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command=f'python3 -c "{probe}"',
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+
     completed = _wait_for_status(payload["job_id"], {"completed"})
-    cpu, nofile, address_space = [int(line) for line in completed["output"].splitlines() if line]
+    cpu, nofile, address_space = [
+        int(line) for line in completed["output"].splitlines() if line
+    ]
+
     assert cpu == runner.RUNNER_CPU_SECONDS
     assert nofile == runner.RUNNER_MAX_OPEN_FILES
     assert address_space == runner.RUNNER_MEMORY_MB * 1024 * 1024
 
 
 def test_runner_streams_output_before_process_completion(configured_runner):
-    payload = runner.create_job(runner.ExecuteRequest(command=("python3 -c \"print('first',flush=True) or __import__('time').sleep(0.5) or print('second')\""), directory=str(configured_runner)), x_runner_key="secret")
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command=(
+                "python3 -c \"print('first',flush=True) or "
+                "__import__('time').sleep(0.5) or print('second')\""
+            ),
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
     deadline = time.monotonic() + 2
     streamed = None
     while time.monotonic() < deadline:
@@ -170,19 +289,32 @@ def test_runner_streams_output_before_process_completion(configured_runner):
         time.sleep(0.02)
     assert streamed is not None and "first" in streamed["output"]
     assert streamed["status"] not in runner.TERMINAL_STATUSES
+
     completed = _wait_for_status(payload["job_id"], {"completed"})
     assert "second" in completed["output"]
 
 
 def test_runner_accepts_bounded_live_input(configured_runner):
-    payload = runner.create_job(runner.ExecuteRequest(command='python3 -c "print(input())"', directory=str(configured_runner)), x_runner_key="secret")
-    accepted = runner.send_job_input(payload["job_id"], runner.InputRequest(data="steered\n"), x_runner_key="secret")
+    payload = runner.create_job(
+        runner.ExecuteRequest(
+            command='python3 -c "print(input())"',
+            directory=str(configured_runner),
+        ),
+        x_runner_key="secret",
+    )
+    accepted = runner.send_job_input(
+        payload["job_id"],
+        runner.InputRequest(data="steered\n"),
+        x_runner_key="secret",
+    )
     assert accepted["accepted"] is True
     completed = _wait_for_status(payload["job_id"], {"completed"})
     assert completed["output"] == "steered"
 
 
-def test_runner_readiness_reports_degraded_isolation_without_blocking_api(monkeypatch):
+def test_runner_readiness_reports_degraded_isolation_without_blocking_api(
+    monkeypatch,
+):
     monkeypatch.setattr(runner, "RUNNER_API_KEY", "secret")
     monkeypatch.setattr(runner, "RUNNER_ENABLE_NETNS", True)
     monkeypatch.setattr(runner, "_netns_available", lambda: False)
