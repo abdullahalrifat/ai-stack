@@ -509,7 +509,9 @@ def test_run_tests_coverage_uses_explicit_package_target(workspace, monkeypatch)
         ),
     )
 
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE),
+    ), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke(
             {
                 "kind": "pytest_coverage",
@@ -843,7 +845,9 @@ def test_run_tests_supports_focused_pytest_node(workspace, monkeypatch):
         lambda command, cwd, tier="isolated": calls.append((command, cwd))
         or {"exit_code": 0, "output": "1 passed"},
     )
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE),
+    ), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke(
             {
                 "kind": "pytest",
@@ -869,7 +873,9 @@ def test_run_tests_supports_focused_ruff_file(workspace, monkeypatch):
         lambda command, cwd, tier="isolated": calls.append((command, cwd))
         or {"exit_code": 0, "output": "All checks passed!"},
     )
-    with filesystem.workspace_context(str(workspace)):
+    with permissions_context(
+        PermissionPolicy(scope=FULL_WRITE),
+    ), filesystem.workspace_context(str(workspace)):
         result = filesystem.run_tests.invoke(
             {"kind": "ruff", "test_path": "app/worker.py"}
         )
