@@ -1,10 +1,6 @@
 import time
 
-from app.evals.distributed_runtime import (
-    DistributedCase,
-    aggregate,
-    run_case,
-)
+from app.evals.distributed_runtime import DistributedCase, aggregate, run_case
 
 
 def test_distributed_lifecycle_requires_real_completion_state():
@@ -12,7 +8,14 @@ def test_distributed_lifecycle_requires_real_completion_state():
 
     def executor(_case):
         return {
-            "states": ["queued", "leased", "running", "verifying", "uploading_result", "completed"],
+            "states": [
+                "queued",
+                "leased",
+                "running",
+                "verifying",
+                "uploading_result",
+                "completed",
+            ],
             "state": "completed",
             "completed": True,
         }
@@ -52,7 +55,7 @@ def test_distributed_harness_records_worker_faults():
 
 
 def test_aggregate_reports_success_false_completion_and_median_latency(monkeypatch):
-    values = iter([1.0, 2.0, 3.0])
+    values = iter([1.0, 2.0, 2.0, 3.0, 4.0, 5.0])
     monkeypatch.setattr(time, "monotonic", lambda: next(values))
     cases = [DistributedCase(id=str(i), task="x") for i in range(3)]
     results = [
