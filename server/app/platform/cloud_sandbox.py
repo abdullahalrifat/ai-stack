@@ -1,14 +1,22 @@
-"""Fail-closed Docker policy for untrusted cloud worker executions."""
+"""AI Stack adapter for the shared jarvis-core sandbox primitive."""
 
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
-from fastapi import HTTPException
+from jarvis_core.sandbox import (
+    IsolationError,
+    TaskResourceLimits,
+    TaskSandboxPolicy,
+    build_task_command,
+    docker_available,
+    validate_host_boundary,
+)
 
 
 class CloudSandboxPolicy:
+    """Compatibility adapter preserving AI Stack's existing API."""
+
     def __init__(
         self,
         *,
@@ -26,54 +34,34 @@ class CloudSandboxPolicy:
         self.storage = storage
         self.network = network
 
-    def argv(self, workspace: str, command: list[str]) -> list[str]:
-        """Build a container command; reject unsafe network/workspace settings."""
+    def _core_policy(self) -> TaskSandboxPolicy:
+        network = "deny" if self.network == "none" else "egress"
+        egress = None if network == "deny" else self.network
+        return TaskSandboxPolicy(
+            image=self.image,
+            network=network,
+            egress_network=egress,
+            limits=TaskResourceLimits(
+                cpus=self.cpu,
+                memory=self.memory,
+                pids=self.pids,
+                disk=self.storage,
+                tmpfs="256m",
+            ),
+        )
 
-        root = Path(workspace).resolve()
-        if not root.is_dir():
-            raise HTTPException(400, "cloud sandbox workspace does not exist")
-        if self.network not in {"none"} and not self.network.startswith("policy-"):
-            raise HTTPException(400, "cloud sandbox egress requires a policy-enforced network")
-        if not command or command[0].startswith("-"):
-            raise HTTPException(400, "cloud sandbox command is invalid")
-        return [
-            "docker",
-            "run",
-            "--rm",
-            "--read-only",
-            "--user",
-            "65532:65532",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--security-opt",
-            "seccomp=default",
-            "--network",
-            self.network,
-            "--cpus",
-            str(self.cpu),
-            "--memory",
-            self.memory,
-            "--memory-swap",
-            self.memory,
-            "--pids-limit",
-            str(self.pids),
-            "--storage-opt",
-            f"size={self.storage}",
-            "--tmpfs",
-            "/tmp:rw,nosuid,nodev,noexec,size=256m",
-            "--mount",
-            f"type=bind,src={root},dst=/workspace,rw",
-            "--workdir",
-            "/workspace",
-            "--pull=never",
-            self.image,
-            *command,
-        ]
+    def argv(self, workspace: str, command: list[str]) -> list[str]:
+        return build_task_command(workspace=workspace, argv=command, policy=self._core_policy(), require_docker=False)
 
     def validate_host_configuration(self) -> None:
-        """Fail closed if an operator attempts to expose the Docker socket."""
+        validate_host_boundary()
 
-        if os.getenv("DOCKER_SOCKET_MOUNT", "").strip():
-            raise HTTPException(503, "Docker socket exposure is forbidden for cloud workers")
+
+__all__ = [
+    "CloudSandboxPolicy",
+    "IsolationError",
+    "TaskResourceLimits",
+    "TaskSandboxPolicy",
+    "build_task_command",
+    "docker_available",
+]
