@@ -4,6 +4,8 @@
 
 AI Stack consumes the provider-neutral **Jarvis Core 0.12.0** runtime contracts and normalization helpers. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
+Jarvis Core 0.12.0 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
+
 AI Stack Server is the durable, self-hosted control plane for long-running agent execution.
 
 ## Components
