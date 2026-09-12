@@ -5,27 +5,20 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
-
 permissions:
   contents: read
-
 jobs:
   server:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: server
+    defaults: {run: {working-directory: server}}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: server/requirements.lock
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: server/requirements.lock}
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Verify coordinated Core
-        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.13.0'"
+        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.14.0'"
       - name: Syntax and import safety
         run: python -m compileall -q app
       - name: Formatting
@@ -34,6 +27,9 @@ jobs:
           app/runner.py
           app/platform/autonomous_store.py
           app/platform/cloud_sandbox.py
+          app/api/execution_control.py
+          app/integrations/github.py
+          app/tools/github.py
           tests/test_runner.py
           tests/test_v08_autonomous_postgres_integration.py
           tests/test_v08_autonomous_store_edge_cases.py
@@ -42,39 +38,26 @@ jobs:
         run: ruff check app tests --select E9,F63,F7,F82
       - name: Tests and coverage floor
         run: python -m pytest -q tests --cov=app --cov-report=term-missing --cov-fail-under=67
-
   postgres:
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17
-        env:
-          POSTGRES_USER: jarvis
-          POSTGRES_PASSWORD: jarvis-ci
-          POSTGRES_DB: jarvis
-        ports:
-          - 5432:5432
+        env: {POSTGRES_USER: jarvis, POSTGRES_PASSWORD: jarvis-ci, POSTGRES_DB: jarvis}
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U jarvis -d jarvis"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-    env:
-      POSTGRES_URL: postgresql://jarvis:jarvis-ci@127.0.0.1:5432/jarvis
-    defaults:
-      run:
-        working-directory: server
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env: {POSTGRES_URL: postgresql://jarvis:jarvis-ci@127.0.0.1:5432/jarvis}
+    defaults: {run: {working-directory: server}}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: server/requirements.lock
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: server/requirements.lock}
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
       - name: Verify coordinated Core
-        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.13.0'"
+        run: python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.14.0'"
       - name: Initialize PostgreSQL schema
         run: python -c "from app.runs.store import RunStore; RunStore('${POSTGRES_URL}').initialize()"
       - name: Run durable lease and autonomous fencing tests
@@ -83,50 +66,27 @@ jobs:
           tests/test_postgres_leases_integration.py
           tests/test_v08_autonomous_postgres_integration.py
           tests/test_v08_autonomous_store_edge_cases.py
-
   runs-ui:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: runs-ui
+    defaults: {run: {working-directory: runs-ui}}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: runs-ui/package-lock.json
+        with: {node-version: "22", cache: npm, cache-dependency-path: runs-ui/package-lock.json}
       - run: npm ci
       - run: npm test
       - run: npm run build
-
   compose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate Compose configuration
-        env:
-          AGENT_API_KEY: ci-only-placeholder
-          POSTGRES_PASSWORD: ci-only-placeholder
-          POSTGRES_USER: jarvis
-          POSTGRES_DB: jarvis
-          LITELLM_MASTER_KEY: ci-only-placeholder
-          SEARXNG_SECRET: ci-only-placeholder
-          PIPELINES_API_KEY: ci-only-placeholder
-          OLLAMA_MODELS: ""
+        env: {AGENT_API_KEY: ci-only-placeholder, POSTGRES_PASSWORD: ci-only-placeholder, POSTGRES_USER: jarvis, POSTGRES_DB: jarvis, LITELLM_MASTER_KEY: ci-only-placeholder, SEARXNG_SECRET: ci-only-placeholder, PIPELINES_API_KEY: ci-only-placeholder, OLLAMA_MODELS: ""}
         run: docker compose config --quiet
       - name: Build the standard server image
         run: docker compose build server
       - name: Start the standard runner from the locally built image
-        env:
-          AGENT_API_KEY: ci-only-placeholder
-          POSTGRES_PASSWORD: ci-only-placeholder
-          POSTGRES_USER: jarvis
-          POSTGRES_DB: jarvis
-          LITELLM_MASTER_KEY: ci-only-placeholder
-          SEARXNG_SECRET: ci-only-placeholder
-          PIPELINES_API_KEY: ci-only-placeholder
-          OLLAMA_MODELS: ""
+        env: {AGENT_API_KEY: ci-only-placeholder, POSTGRES_PASSWORD: ci-only-placeholder, POSTGRES_USER: jarvis, POSTGRES_DB: jarvis, LITELLM_MASTER_KEY: ci-only-placeholder, SEARXNG_SECRET: ci-only-placeholder, PIPELINES_API_KEY: ci-only-placeholder, OLLAMA_MODELS: ""}
         run: docker compose up --wait agent-runner
       - name: Verify runner readiness and isolation reporting
         run: |
