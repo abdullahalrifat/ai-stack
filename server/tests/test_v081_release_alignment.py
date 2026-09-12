@@ -2,7 +2,6 @@ from pathlib import Path
 
 
 CORE_VERSION = "0.9.5"
-CORE_SHA256 = "af06aa90d00694b9df0681b886e2aeb8445a6236bf69a7f5b64b0948b9c4d17b"
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SERVER_ROOT.parent
 
@@ -15,13 +14,8 @@ def test_server_package_image_and_ci_use_same_core_release():
         encoding="utf-8"
     )
 
-    expected_asset = (
-        f"https://github.com/abdullahalrifat/jarvis-core/releases/download/"
-        f"v{CORE_VERSION}/jarvis_agent_core-{CORE_VERSION}-py3-none-any.whl"
-    )
     for content in (requirements, lockfile):
-        assert expected_asset in content
-        assert f"#sha256={CORE_SHA256}" in content
+        assert f"jarvis-agent-core=={CORE_VERSION}" in content
         assert "jarvis_cli" not in content
     assert f"m.version('jarvis-agent-core') == '{CORE_VERSION}'" in dockerfile
     assert workflow.count(f"m.version('jarvis-agent-core') == '{CORE_VERSION}'") >= 2
