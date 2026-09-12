@@ -19,7 +19,7 @@ def test_cloud_sandbox_is_fail_closed_and_resource_constrained(tmp_path):
     argv = CloudSandboxPolicy(image="ai-stack-worker:tested").argv(
         str(workspace), ["pytest", "-q"]
     )
-    assert argv[:4] == ["docker", "run", "--rm", "--read-only"]
+    assert argv[:5] == ["docker", "run", "--rm", "--init", "--read-only"]
     assert "--user" in argv and "65532:65532" in argv
     assert "--cap-drop" in argv and "ALL" in argv
     assert "no-new-privileges" in argv
@@ -37,7 +37,7 @@ def test_cloud_sandbox_requires_policy_network_for_egress(tmp_path):
             str(workspace), ["pytest"]
         )
     assert error.value.status_code == 400
-    assert "policy-enforced network" in error.value.detail
+    assert "policy-enforced Docker network" in error.value.detail
 
 
 def test_cloud_sandbox_accepts_only_policy_network_names(tmp_path):
