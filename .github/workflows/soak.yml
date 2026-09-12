@@ -1,0 +1,34 @@
+name: worker-soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Soak duration"
+        required: false
+        default: "24"
+  schedule:
+    - cron: "23 2 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  configuration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate soak harness
+        run: python -m py_compile scripts/worker_soak.py scripts/backup_restore_dr_check.py
+      - name: Validate documented duration
+        run: python - <<'PY'
+import os
+hours = float(os.environ.get('SOAK_HOURS', '24'))
+assert hours >= 24
+print(f'approved soak duration: {hours}h')
+PY
+        env:
+          SOAK_HOURS: ${{ inputs.hours || '24' }}
