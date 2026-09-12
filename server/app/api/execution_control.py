@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..dependencies import require_run_store, verify_api_key
+from .dependencies import require_run_store, verify_api_key
 from ..runs.store import get_run_store
 
 router = APIRouter(
