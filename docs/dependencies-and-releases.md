@@ -20,6 +20,6 @@ jarvis-core Conventional Commit
 
 ## Compatibility boundary
 
-AI Stack owns orchestration, provider routing, scheduling, GitHub automation and server policy. Core owns provider-neutral contracts and verification primitives. A Core breaking release therefore requires a normal dependency PR and compatibility review in AI Stack before adoption.
+AI Stack owns orchestration, provider routing, scheduling, GitHub automation and server policy. Core owns provider-neutral contracts and verification primitives. Core 0.11.0 adds the canonical `ModelProvider`, `ModelRequest`, `ModelResponse`, `ModelUsage`, and `ToolCall` contracts. Concrete Ollama, LiteLLM, Anthropic, OpenAI-compatible and other integrations remain in AI Stack or other consumer/runtime projects.
 
 The release order is always Core first, then consumers. Never publish an AI Stack image that references a Core version which is not already available on PyPI.
