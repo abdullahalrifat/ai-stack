@@ -1,24 +1,6 @@
 # AI Stack Server
 
-Server is the optional always-online control plane for Jarvis. It is not
-required to install or use the standalone CLI.
-
-## When to use each product
-
-| Scenario | Product |
-| --- | --- |
-| Work directly in a local checkout | Jarvis |
-| Keep tools/code local and use a remote GPU | Jarvis |
-| Continue after a laptop disconnects | Server |
-| Queue long research or document jobs | Server |
-| Support multiple users or channels | Server |
-| Enforce shared workspace/model/tool policy | Server |
-| Keep durable events, documents, and approvals | Server |
-
-Jarvis owns local tools and approvals. Server owns remote mounted workspaces,
-durable orchestration, queues, shared state, channel identity, and central
-policy. Both consume `jarvis-agent-core`, but do not share tool implementations
-or storage policy.
+Server is the optional always-online control plane for long-running agent execution. It is not required for local-only development.
 
 ## Development deployment
 
@@ -29,33 +11,13 @@ docker compose up -d
 docker compose ps
 ```
 
-In production, use long unique service keys, mount `ARTIFACT_ROOT` on
-persistent storage, expose the API through TLS/VPN, and mount only workspaces
-the agent may access.
-
-Configure Jarvis as a Server client:
-
-```bash
-export JARVIS_SERVER_URL=https://agent.example.com
-export JARVIS_SERVER_API_KEY=your-agent-key
-jarvis doctor
-jarvis run "analyze this project" --detach
-```
-
-Provider credentials stay on Server. Clients and channel adapters must never
-receive them.
+In production, use long unique service keys, mount `ARTIFACT_ROOT` on persistent storage, expose the API through TLS/VPN, and mount only workspaces the agent may access.
 
 ## Models and routing
 
-Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible
-remote endpoints such as Hugging Face Inference Endpoints, vLLM, or TGI.
-`JARVIS_MODEL_PROFILES_JSON` optionally describes model capabilities; model
-`auto` selects an available profile satisfying the requested capabilities.
+Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible remote endpoints. `JARVIS_MODEL_PROFILES_JSON` optionally describes model capabilities; model `auto` selects an available profile satisfying requested capabilities.
 
-Routing uses one front-facing orchestrator identity and validated internal
-workflows for quick, code, research, finance, deep, and vision tasks. Router
-output cannot invent a model, grant tools, expand a workspace, or bypass
-approval.
+Routing uses one front-facing orchestrator identity and validated internal workflows for quick, code, research, finance, deep, and vision tasks. Router output cannot invent a model, grant tools, expand a workspace, or bypass approval.
 
 ## Search and current answers
 
@@ -66,29 +28,13 @@ WEB_SEARCH_TIMEOUT_SECONDS=15
 WEB_FETCH_MAX_BYTES=8000000
 ```
 
-The included SearXNG service can use Google or other engines enabled by its
-administrator; no paid Google Search API is required. Server normalizes bounded
-results through Core, retains source URLs, and labels snippets/pages as
-untrusted. `web_fetch` supports public HTML and PDF sources and enforces
-download and model-context bounds.
-
-Research and finance policy requires external evidence. Search can still be
-partial or wrong; consequential claims must prefer primary sources and report
-gaps or contradictions.
+Server normalizes bounded search results through Core, retains source URLs, and labels snippets/pages as untrusted. `web_fetch` supports public HTML and PDF sources and enforces download and model-context bounds.
 
 ## Shared runtime, traces, and evaluations
 
-Server installs the verified `jarvis-agent-core==0.11.0` package for token
-enforcement, compaction, artifacts, evidence, capability routing, recovery,
-redacted traces, evaluations, selective multi-agent contracts, and the new
-provider-neutral model boundary. The same Core release line is consumed by
-Jarvis; the Server and CLI remain separate products and do not share tool
-implementations or storage policy.
+Server installs the verified `jarvis-agent-core==0.12.0` package for token enforcement, compaction, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox policy and provider-neutral model contracts.
 
-Core 0.11.0 defines `ModelProvider`, `ModelRequest`, `ModelResponse`,
-`ModelUsage`, and `ToolCall` as dependency-free contracts. AI Stack owns the
-concrete Ollama/LiteLLM/remote-provider integration and keeps provider SDKs out
-of Core.
+Core 0.12.0 defines `ModelProvider`, `ModelRequest`, `ModelResponse`, `ModelUsage`, and `ToolCall` plus reusable normalization helpers. Server owns concrete Ollama/LiteLLM/remote-provider integration and keeps provider SDKs out of Core.
 
 For a clean development installation:
 
@@ -96,32 +42,11 @@ For a clean development installation:
 python -m pip install -r server/requirements.txt
 ```
 
-The human-maintained requirements, lockfile, CI, and Docker image all consume
-the same public Core 0.11.0 dependency and verify the installed version. For
-unreleased Core development only, install a local Core checkout explicitly
-after the locked dependencies.
-
-Redacted trace artifacts are retained under the configured artifact root.
-`server/evals/platform.py` replays recorded outputs against JSON cases; the
-live suites under `server/evals/` cover routing and agent regressions.
-The v0.8.2 adversarial boundary suite covers prompt-injection and secret-canary
-handling across repository, web, browser, MCP, Skills, Hooks, and attachments.
-The distributed evaluation/chaos harness measures lifecycle correctness,
-false-completion rate, latency, and recovery contracts; its fault matrix is a
-deterministic contract suite, not shared-host chaos certification.
+The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.12.0 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
 
 ## MCP
 
-Administrators may configure fixed stdio commands:
-
-```dotenv
-JARVIS_MCP_SERVERS_JSON={"filesystem":["python","-m","your_mcp_server"]}
-```
-
-The model chooses only a configured alias and tool name. It cannot choose the
-executable or invoke a shell. MCP output remains untrusted and cannot broaden
-Server permissions. Persistent lifecycle, HTTP/OAuth transports, per-tool
-policy, and health supervision remain future work.
+Administrators may configure fixed stdio commands. The model chooses only a configured alias and tool name. It cannot choose the executable or invoke a shell. MCP output remains untrusted and cannot broaden Server permissions.
 
 ## Server capabilities
 
@@ -146,13 +71,11 @@ Before describing a deployment as production-certified, prove:
 - OpenTelemetry, SLOs, queue/lease/model saturation, tokens, latency, and cost;
 - quotas, backpressure, capacity tests, model circuit breakers, and fallback;
 - retention/deletion/export, malware scanning, backups, and disaster recovery;
-- adversarial prompt/tool tests, replay evals, route benchmarks, canaries, and
-  rollback procedures.
+- adversarial prompt/tool tests, replay evals, route benchmarks, canaries, and rollback procedures.
 
 ## Channel integrations
 
-Telegram, WhatsApp, web, and mobile integrations are thin authenticated
-adapters:
+Telegram, WhatsApp, web, and mobile integrations are thin authenticated adapters:
 
 ```text
 channel webhook/app
@@ -162,26 +85,4 @@ channel webhook/app
   -> queued channel-safe reply
 ```
 
-They do not contain another agent loop. See
-[product architecture](../docs/product-architecture.md) for identity,
-idempotency, attachment, delivery, and approval requirements.
-
-## Model and provider readiness
-
-On a clean deployment, the `ollama-init` service pulls every model named in
-`OLLAMA_MODELS` and must finish successfully before LiteLLM starts. This makes a
-healthy stack mean that configured local models are actually available, rather
-than merely that the Ollama process is reachable.
-
-The model-integration workflow starts real Ollama and LiteLLM containers, pulls
-the small `qwen3:0.6b` fixture model, and requires a native function call.
-Remote OpenAI-compatible and Anthropic probes run weekly or manually when their
-repository secrets are configured.
-
-## Channel delivery
-
-Telegram and WhatsApp webhooks create idempotent durable Runs. A background
-delivery worker claims terminal channel Runs, sends their answer through the
-provider API, records delivery, and retries failures with bounded exponential
-backoff. Configure both the ingress verification secrets and outbound API
-credentials from `.env.example`.
+They do not contain another agent loop. See [product architecture](../docs/product-architecture.md) for identity, idempotency, attachment, delivery, and approval requirements.
