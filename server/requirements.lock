@@ -22,7 +22,7 @@ h2==4.4.0
 hpack==4.2.0
 httpcore==1.0.9
 httpx==0.28.1
-hyperframe==1.0.9
+hyperframe==4.4.0
 idna==3.18
 iniconfig==2.3.0
 jiter==0.16.0
