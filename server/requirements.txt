@@ -39,4 +39,4 @@ black
 flake8
 
 # Published shared runtime; sandbox policy and contracts live in core.
-jarvis-agent-core==0.13.0
+jarvis-agent-core==0.14.0
