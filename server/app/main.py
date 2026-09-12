@@ -101,7 +101,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Local AI Engineering Agent",
     description="Private autonomous coding agent running in homelab",
-    version="3.4",
+    version="3.5",
     lifespan=lifespan,
 )
 app.include_router(router)

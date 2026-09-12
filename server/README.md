@@ -32,9 +32,9 @@ Server normalizes bounded search results through Core, retains source URLs, and 
 
 ## Shared runtime, traces, and evaluations
 
-Server installs the verified `jarvis-agent-core==0.12.0` package for token enforcement, compaction, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox policy and provider-neutral model contracts.
+Server installs the verified `jarvis-agent-core==0.13.0` package for token enforcement, compaction, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements and provider-neutral model contracts.
 
-Core 0.12.0 defines `ModelProvider`, `ModelRequest`, `ModelResponse`, `ModelUsage`, and `ToolCall` plus reusable normalization helpers. Server owns concrete Ollama/LiteLLM/remote-provider integration and keeps provider SDKs out of Core.
+Core 0.13.0 defines the provider-neutral model contracts and normalization helpers plus the common-brain capability, approval and sandbox-requirement primitives. Server owns concrete Ollama/LiteLLM/remote-provider integration and keeps provider SDKs out of Core.
 
 For a clean development installation:
 
@@ -42,7 +42,7 @@ For a clean development installation:
 python -m pip install -r server/requirements.txt
 ```
 
-The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.12.0 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
+The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.13.0 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
 
 ## MCP
 
