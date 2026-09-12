@@ -1,13 +1,11 @@
 """Application construction and lifecycle wiring."""
-
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
-
 from fastapi import FastAPI
-
 from app.agent.service import shutdown_run_executor, submit_run
 from app.api.routes import router
+from app.api.execution_control import router as execution_control_router
 from app.channels.delivery import monitor_channel_deliveries
 from app.channels.router import router as channels_router
 from app.core.config import POSTGRES_URL, WORKSPACE_ROOTS, validate_settings
@@ -63,19 +61,12 @@ async def lifespan(_: FastAPI):
     install_llm_usage()
     logger.info("REGISTERED TOOLS: %s", registry.list_tools())
     logger.info("WORKSPACE ROOTS: %s", [str(root) for root in WORKSPACE_ROOTS])
-
-    client_lease_monitor = None
-    worker_lease_monitor = None
-    channel_delivery_monitor = None
-    platform_monitor = None
+    client_lease_monitor = worker_lease_monitor = channel_delivery_monitor = platform_monitor = None
     if POSTGRES_URL:
         store = get_run_store()
         store.initialize()
         logger.info("Durable run store initialized.")
-        install_failure_store()
-        install_v07_efficiency()
-        install_lineage_runtime()
-        install_failure_runtime()
+        install_failure_store(); install_v07_efficiency(); install_lineage_runtime(); install_failure_runtime()
         reconcile_runs_once()
         from app.platform import runtime as platform_runtime
         platform_runtime.tick_platform_once()
@@ -91,20 +82,13 @@ async def lifespan(_: FastAPI):
         for monitor in (client_lease_monitor, channel_delivery_monitor, platform_monitor, worker_lease_monitor):
             if monitor is not None:
                 monitor.cancel()
-                with suppress(asyncio.CancelledError):
-                    await monitor
+                with suppress(asyncio.CancelledError): await monitor
         shutdown_run_executor()
-        if POSTGRES_URL:
-            get_run_store().close()
+        if POSTGRES_URL: get_run_store().close()
 
-
-app = FastAPI(
-    title="Local AI Engineering Agent",
-    description="Private autonomous coding agent running in homelab",
-    version="3.5",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Local AI Engineering Agent", description="Private autonomous coding agent running in homelab", version="3.6", lifespan=lifespan)
 app.include_router(router)
+app.include_router(execution_control_router)
 app.include_router(channels_router)
 app.include_router(platform_router)
 app.include_router(engineering_router)
