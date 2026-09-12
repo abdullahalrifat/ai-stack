@@ -76,7 +76,25 @@ class CloudSandboxPolicy:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except SandboxError as exc:
-            raise HTTPException(503, str(exc)) from exc
+            detail = str(exc)
+            # Preserve AI Stack's established HTTP contract: invalid task input or
+            # sandbox policy is a 400, while unavailable host infrastructure is 503.
+            if detail.startswith(
+                (
+                    "per-task isolation requires a sandbox image",
+                    "sandbox network must be deny or egress",
+                    "egress isolation requires a dedicated policy-enforced Docker network",
+                    "sandbox must not run as root",
+                    "sandbox cpus must be between",
+                    "sandbox pids must be between",
+                    "sandbox memory is invalid",
+                    "sandbox disk is invalid",
+                    "sandbox tmpfs is invalid",
+                    "sandbox workspace does not exist:",
+                )
+            ):
+                raise HTTPException(400, detail) from exc
+            raise HTTPException(503, detail) from exc
 
     def validate_host_configuration(self) -> None:
         try:
