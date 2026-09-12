@@ -1,9 +1,9 @@
 """Render LiteLLM configuration with optional hybrid remote providers.
 
-The checked-in config remains local-first and offline-safe. When Hugging Face
-is fully configured and INFERENCE_MODE=hybrid, selected capability aliases are
-promoted to HF-backed primary deployments and automatically fall back to their
-local Ollama aliases.
+The checked-in config remains local-first and offline-safe. When
+INFERENCE_MODE=hybrid and Hugging Face is configured, selected capability
+aliases are promoted to HF-backed primary deployments and automatically fall
+back to their local Ollama aliases.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-
 
 MARKER = "###########################################################\n# General Settings"
 
@@ -25,8 +24,11 @@ def _hybrid_enabled(env: dict[str, str]) -> bool:
     return env.get("INFERENCE_MODE", "local").strip().lower() == "hybrid"
 
 
+def _remote_enabled(env: dict[str, str]) -> bool:
+    return env.get("INFERENCE_MODE", "local").strip().lower() == "hybrid"
+
+
 def _hf_settings(env: dict[str, str]) -> dict[str, str]:
-    """Return configured HF endpoint settings, validating all-or-nothing auth."""
     base = env.get("HF_INFERENCE_BASE_URL", "").strip().rstrip("/")
     key = env.get("HF_API_KEY", "").strip()
     if bool(base) != bool(key):
@@ -35,12 +37,10 @@ def _hf_settings(env: dict[str, str]) -> dict[str, str]:
 
 
 def _hf_model(env: dict[str, str], role: str) -> str:
-    """Resolve a role-specific HF model, falling back to the generic HF model."""
     return env.get(f"HF_{role.upper()}_MODEL", "").strip() or env.get("HF_MODEL", "").strip()
 
 
 def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
-    """Build HF primary deployments and deterministic HF -> Ollama fallbacks."""
     if not _hybrid_enabled(env):
         return "", []
     settings = _hf_settings(env)
@@ -50,7 +50,6 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
     roles = {"coder": "coder-local", "reasoning": "reasoning-local", "vision": "vision-local"}
     entries: list[str] = []
     fallbacks: list[str] = []
-
     for role, local_alias in roles.items():
         model = _hf_model(env, role)
         if not model:
@@ -67,12 +66,13 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
 """
         )
         fallbacks.append(f"    - {role}: [{local_alias}]\n")
-
     return "".join(entries), fallbacks
 
 
 def remote_model_entries(env: dict[str, str]) -> str:
     entries: list[str] = []
+    if not _remote_enabled(env):
+        return ""
 
     anthropic_model = env.get("ANTHROPIC_MODEL", "").strip()
     anthropic_key = env.get("ANTHROPIC_API_KEY", "").strip()
@@ -115,7 +115,6 @@ def remote_model_entries(env: dict[str, str]) -> str:
 
 
 def _local_alias_rewrites(source: str, env: dict[str, str]) -> str:
-    """Rename local deployments when their public alias is promoted to HF."""
     hybrid, _ = _hybrid_entries(env)
     if not hybrid:
         return source
@@ -149,7 +148,6 @@ def main() -> int:
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-
     source = Path(args.input).read_text(encoding="utf-8")
     rendered = render_config(source, dict(os.environ))
     Path(args.output).write_text(rendered, encoding="utf-8")
