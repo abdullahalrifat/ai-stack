@@ -22,7 +22,13 @@ def test_cloud_sandbox_is_fail_closed_and_resource_constrained(tmp_path):
     assert argv[:5] == ["docker", "run", "--rm", "--init", "--read-only"]
     assert "--user" in argv and "65532:65532" in argv
     assert "--cap-drop" in argv and "ALL" in argv
-    assert "no-new-privileges" in argv
+    security_options = [
+        argv[index + 1]
+        for index, item in enumerate(argv[:-1])
+        if item == "--security-opt"
+    ]
+    assert "no-new-privileges:true" in security_options
+    assert "seccomp=default" in security_options
     assert "--cpus" in argv and "--memory" in argv and "--pids-limit" in argv
     assert "--network" in argv and argv[argv.index("--network") + 1] == "none"
     assert "/workspace" in argv
