@@ -16,6 +16,7 @@ from app.platform.efficiency_v07 import install_v07_efficiency
 from app.platform.engineering_router import router as engineering_router
 from app.platform.failure_runtime_v07 import install_failure_runtime
 from app.platform.failure_store_v07 import install_failure_store
+from app.platform.lineage_runtime import install as install_lineage_runtime
 from app.platform.router import router as platform_router
 from app.platform.runtime import monitor_platform
 from app.runs.client_leases import monitor_client_leases
@@ -73,6 +74,7 @@ async def lifespan(_: FastAPI):
         logger.info("Durable run store initialized.")
         install_failure_store()
         install_v07_efficiency()
+        install_lineage_runtime()
         install_failure_runtime()
         reconcile_runs_once()
         from app.platform import runtime as platform_runtime
