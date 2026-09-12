@@ -1,8 +1,9 @@
 """Render LiteLLM configuration with optional hybrid remote providers.
 
 The checked-in config remains local-first and offline-safe. When Hugging Face
-is fully configured, selected capability aliases are promoted to HF-backed
-primary deployments and automatically fall back to their local Ollama aliases.
+is fully configured and INFERENCE_MODE=hybrid, selected capability aliases are
+promoted to HF-backed primary deployments and automatically fall back to their
+local Ollama aliases.
 """
 
 from __future__ import annotations
@@ -20,6 +21,10 @@ def _yaml_string(value: str) -> str:
     return json.dumps(value)
 
 
+def _hybrid_enabled(env: dict[str, str]) -> bool:
+    return env.get("INFERENCE_MODE", "local").strip().lower() == "hybrid"
+
+
 def _hf_settings(env: dict[str, str]) -> dict[str, str]:
     """Return configured HF endpoint settings, validating all-or-nothing auth."""
     base = env.get("HF_INFERENCE_BASE_URL", "").strip().rstrip("/")
@@ -31,23 +36,18 @@ def _hf_settings(env: dict[str, str]) -> dict[str, str]:
 
 def _hf_model(env: dict[str, str], role: str) -> str:
     """Resolve a role-specific HF model, falling back to the generic HF model."""
-    return (
-        env.get(f"HF_{role.upper()}_MODEL", "").strip()
-        or env.get("HF_MODEL", "").strip()
-    )
+    return env.get(f"HF_{role.upper()}_MODEL", "").strip() or env.get("HF_MODEL", "").strip()
 
 
 def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
     """Build HF primary deployments and deterministic HF -> Ollama fallbacks."""
+    if not _hybrid_enabled(env):
+        return "", []
     settings = _hf_settings(env)
     if not settings["base"] and not settings["key"]:
         return "", []
 
-    roles = {
-        "coder": "coder-local",
-        "reasoning": "reasoning-local",
-        "vision": "vision-local",
-    }
+    roles = {"coder": "coder-local", "reasoning": "reasoning-local", "vision": "vision-local"}
     entries: list[str] = []
     fallbacks: list[str] = []
 
@@ -66,7 +66,7 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
       supports_function_calling: true
 """
         )
-        fallbacks.append(f"        - {role}: [{local_alias}]\n")
+        fallbacks.append(f"    - {role}: [{local_alias}]\n")
 
     return "".join(entries), fallbacks
 
@@ -78,9 +78,7 @@ def remote_model_entries(env: dict[str, str]) -> str:
     anthropic_key = env.get("ANTHROPIC_API_KEY", "").strip()
     if anthropic_model or anthropic_key:
         if not (anthropic_model and anthropic_key):
-            raise ValueError(
-                "ANTHROPIC_MODEL and ANTHROPIC_API_KEY must be configured together"
-            )
+            raise ValueError("ANTHROPIC_MODEL and ANTHROPIC_API_KEY must be configured together")
         entries.append(
             """
   - model_name: remote-claude
@@ -97,9 +95,7 @@ def remote_model_entries(env: dict[str, str]) -> str:
     hf_model = env.get("HF_MODEL", "").strip()
     if hf_model or settings["base"] or settings["key"]:
         if not (hf_model and settings["base"] and settings["key"]):
-            raise ValueError(
-                "HF_MODEL, HF_INFERENCE_BASE_URL, and HF_API_KEY must be configured together"
-            )
+            raise ValueError("HF_MODEL, HF_INFERENCE_BASE_URL, and HF_API_KEY must be configured together")
         entries.append(
             """
   - model_name: remote-hf
@@ -137,21 +133,12 @@ def render_config(source: str, env: dict[str, str]) -> str:
         raise ValueError("LiteLLM configuration is missing the insertion marker")
 
     _, fallback_lines = _hybrid_entries(env)
-    fallback_yaml = ""
-    if fallback_lines:
-        fallback_yaml = (
-            "\nrouter_settings:\n"
-            "  routing_strategy: simple-shuffle\n"
-            "  fallbacks:\n"
-            + "".join(fallback_lines)
-        )
     rendered = source.replace(MARKER, f"{entries}\n{MARKER}", 1)
-    if fallback_yaml:
-        # The checked-in file already contains router_settings; replace that
-        # block so the generated config has model-specific HF -> Ollama chains.
+    if fallback_lines:
+        fallback_yaml = "router_settings:\n  routing_strategy: simple-shuffle\n  fallbacks:\n" + "".join(fallback_lines)
         rendered = rendered.replace(
             "router_settings:\n  routing_strategy: simple-shuffle\n",
-            fallback_yaml.lstrip("\n"),
+            fallback_yaml,
             1,
         )
     return rendered
