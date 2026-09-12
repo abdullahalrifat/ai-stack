@@ -1,5 +1,7 @@
 """Minimal GitHub PR/issue integration with explicit write gating."""
+
 from __future__ import annotations
+
 import json
 import os
 from urllib.error import HTTPError, URLError
@@ -51,9 +53,20 @@ def list_pull_request_files(owner: str, repo: str, number: int) -> dict:
     return _request("GET", f"/repos/{owner}/{repo}/pulls/{int(number)}/files")
 
 
-def comment_issue(owner: str, repo: str, number: int, body: str, *, approved: bool = False) -> dict:
+def comment_issue(
+    owner: str,
+    repo: str,
+    number: int,
+    body: str,
+    *,
+    approved: bool = False,
+) -> dict:
     if not approved:
         raise GitHubIntegrationError("GitHub writes require explicit approval")
     if not body.strip() or len(body) > 20_000:
         raise GitHubIntegrationError("comment body is empty or too large")
-    return _request("POST", f"/repos/{owner}/{repo}/issues/{int(number)}/comments", {"body": body})
+    return _request(
+        "POST",
+        f"/repos/{owner}/{repo}/issues/{int(number)}/comments",
+        {"body": body},
+    )
