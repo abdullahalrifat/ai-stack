@@ -58,7 +58,9 @@ def test_cloud_sandbox_rejects_missing_workspace(tmp_path):
 
 
 def test_cloud_sandbox_rejects_docker_socket_configuration(monkeypatch):
-    monkeypatch.setenv("DOCKER_SOCKET_MOUNT", "/var/run/docker.sock:/var/run/docker.sock")
+    monkeypatch.setenv(
+        "DOCKER_SOCKET_MOUNT", "/var/run/docker.sock:/var/run/docker.sock"
+    )
     with pytest.raises(HTTPException) as error:
         CloudSandboxPolicy().validate_host_configuration()
     assert error.value.status_code == 503
