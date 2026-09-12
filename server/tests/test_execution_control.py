@@ -26,6 +26,8 @@ def test_steering_requires_action_specific_fields():
 def test_checkpoint_is_persisted_as_run_event():
     with patch("app.api.execution_control.get_run_store") as factory:
         factory.return_value.get_run.return_value = {"id": "run-1"}
-        factory.return_value.append_event.return_value = {"event_type": "checkpoint_created"}
+        factory.return_value.append_event.return_value = {
+            "event_type": "checkpoint_created"
+        }
         result = checkpoint("run-1", CheckpointRequest(label="before-tests"))
         assert result["event_type"] == "checkpoint_created"
