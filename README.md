@@ -2,7 +2,7 @@
 
 ## Current contract line
 
-AI Stack consumes the provider-neutral **Jarvis Core 0.9.5** protocol contract. It does not import, install, or require the Jarvis CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes the provider-neutral **Jarvis Core 0.10.1** protocol contract. It does not import, install, or require the Jarvis CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
 AI Stack Server is the optional durable, self-hosted control plane for the Jarvis ecosystem. The standalone local product is [`jarvis`](https://github.com/abdullahalrifat/jarvis); provider-neutral runtime contracts are in [`jarvis-core`](https://github.com/abdullahalrifat/jarvis-core).
 
@@ -14,7 +14,7 @@ AI Stack Server is the optional durable, self-hosted control plane for the Jarvi
 - SearXNG: optional self-hosted current-information search;
 - LiteLLM plus Ollama or remote compatible providers: inference routing;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core` **0.9.5**: separately versioned provider-neutral shared contracts and sandbox policy primitives.
+- `jarvis-agent-core` **0.10.1**: separately versioned provider-neutral shared contracts and sandbox policy primitives.
 
 Server requirements, lockfile, Docker image and CI assert the same Core version.
 
@@ -61,7 +61,7 @@ Provider credentials stay on execution hosts and are not embedded in cloud task 
 
 ## Validation and certification
 
-The current 0.9.5-contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-repository evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are **not** a claim that every model or hardware configuration is production-certified.
+The current 0.10.1-contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-repository evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are **not** a claim that every model or hardware configuration is production-certified.
 
 Remaining certification work is retained longitudinal model-quality measurement, hardware-specific soak testing, fully reproducible offline/bootstrap validation and backup/restore/disaster-recovery exercises.
 
