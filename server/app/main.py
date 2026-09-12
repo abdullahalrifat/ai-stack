@@ -16,6 +16,7 @@ from app.api.routes import router
 from app.channels.delivery import monitor_channel_deliveries
 from app.channels.router import router as channels_router
 from app.core.config import POSTGRES_URL, WORKSPACE_ROOTS, validate_settings
+from app.platform.cloud_sandbox import CloudSandboxPolicy
 from app.platform.efficiency_v07 import install_v07_efficiency
 from app.platform.failure_runtime_v07 import install_failure_runtime
 from app.platform.failure_store_v07 import install_failure_store
@@ -66,6 +67,10 @@ async def monitor_worker_leases() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_settings()
+    # Shared/untrusted workers must never start with an operator-provided
+    # Docker socket mount. The policy is also used by the cloud worker launcher
+    # when constructing per-task containers.
+    CloudSandboxPolicy().validate_host_configuration()
     logger.info("REGISTERED TOOLS: %s", registry.list_tools())
     logger.info("WORKSPACE ROOTS: %s", [str(root) for root in WORKSPACE_ROOTS])
 
@@ -78,8 +83,6 @@ async def lifespan(_: FastAPI):
         store.initialize()
         logger.info("Durable run store initialized.")
         install_failure_store()
-        # v0.7 replaces the v0.6 code-only empirical wrapper with task-category
-        # calibration and failure/risk-aware escalation.
         install_v07_efficiency()
         install_failure_runtime()
         reconcile_runs_once()
