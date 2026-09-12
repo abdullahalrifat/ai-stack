@@ -1,0 +1,9 @@
+{
+  "schema_version": "1",
+  "description": "Deterministic issue-resolution tasks run against disposable repository worktrees.",
+  "tasks": [
+    {"id": "python-test-failure", "repository": "local", "task": "Fix the smallest failing Python test without weakening assertions.", "verification": ["pytest -q"]},
+    {"id": "stale-reference", "repository": "local", "task": "Find and update stale dependency/version references after a coordinated release.", "verification": ["pytest -q", "git diff --check"]},
+    {"id": "security-regression", "repository": "local", "task": "Fix a failing security regression while preserving fail-closed behavior.", "verification": ["pytest -q"]}
+  ]
+}
