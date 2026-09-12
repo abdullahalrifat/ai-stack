@@ -1,7 +1,7 @@
 # Fully resolved Python 3.12/Linux environment used by the agent image.
 # Regenerate intentionally after dependency review; requirements.txt remains
-# a short, human-maintained list of direct dependencies.
-jarvis-agent-core==0.10.1
+a short, human-maintained list of direct dependencies.
+jarvis-agent-core==0.11.0
 annotated-doc==0.0.4
 annotated-types==0.8.0
 anyio==4.14.2
@@ -39,7 +39,7 @@ langgraph-prebuilt==1.1.0
 langgraph-sdk==0.4.2
 langsmith==0.10.10
 librt==0.13.0
-lxml==6.1.1
+lxml==6.1.0
 mccabe==0.7.0
 mypy==2.3.0
 mypy_extensions==1.1.0
