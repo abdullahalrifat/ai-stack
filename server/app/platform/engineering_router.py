@@ -24,7 +24,6 @@ class GitHubBootstrapRequest(BaseModel):
 
 
 @router.get("/inference/status")
-@router.get("/../inference/status")
 def inference():
     return inference_status()
 
@@ -61,8 +60,8 @@ def soak():
 
 
 @router.get("/identity")
-def identity(x_api_key: str | None = Header(None), x_jarvis_tenant: str | None = Header(None), x_jarvis_user: str | None = Header(None)):
+def identity(x_jarvis_tenant: str | None = Header(None), x_jarvis_user: str | None = Header(None)):
     try:
-        return identity_context(x_api_key or "", x_jarvis_tenant, x_jarvis_user)
+        return identity_context("request-authenticated", x_jarvis_tenant, x_jarvis_user)
     except ValueError as exc:
         raise HTTPException(403, str(exc)) from exc
