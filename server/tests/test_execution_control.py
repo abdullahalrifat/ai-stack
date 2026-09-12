@@ -2,7 +2,12 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.api.execution_control import CheckpointRequest, SteeringRequest, checkpoint, steer
+from app.api.execution_control import (
+    CheckpointRequest,
+    SteeringRequest,
+    checkpoint,
+    steer,
+)
 
 
 def test_steering_requires_action_specific_fields():
