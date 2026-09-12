@@ -33,7 +33,15 @@ This stack is for Server; standalone Jarvis users do not need it.
 
 AI Stack is designed to run locally without external model providers. Ollama hosts the local models, LiteLLM provides the OpenAI-compatible routing surface, and PostgreSQL/Redis/Qdrant/Open WebUI provide local state and UI. Remote Anthropic/Hugging Face variables are optional and should remain empty for an isolated home deployment.
 
-For a genuinely off-grid deployment, provision the Docker images and Ollama models while connected, then disconnect the host. Set `WEB_SEARCH_ENABLED=false`, leave all remote-provider credentials empty, and ensure every configured Ollama model is already present in the persistent `./ollama` volume. Offline startup should fail rather than silently attempting a network pull when a required model is missing.
+For a genuinely off-grid deployment, provision the Docker images and Ollama models while connected, then disconnect the host. Use the dedicated offline Compose override:
+
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.offline.yaml config
+docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
+docker compose -f docker-compose.yaml -f docker-compose.offline.yaml ps
+```
+
+The offline override disables external web search, clears remote-provider configuration, and makes model provisioning **fail closed** if any configured Ollama model is absent from the persistent `./ollama` volume. It never runs `ollama pull` while offline. Provision all required Docker images and models before disconnecting the host.
 
 For a home server, expose only localhost ports or put an explicitly authenticated reverse proxy in front of the UI/API. Do not enable insecure no-auth mode on a LAN/WAN-facing host.
 
