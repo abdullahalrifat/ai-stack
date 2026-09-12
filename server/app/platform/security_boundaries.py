@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 _SECRET_ASSIGNMENT = re.compile(
-    r"(?i)(\b(?:api[_-]?key|token|secret|password|authorization)\b\s*[:=]\s*)([^\s,;]+)"
+    r"(?i)(\b(?:api[_-]?key|token|secret|password|authorization)\b\s*[:=]\s*)(?!bearer\b)([^\s,;]+)"
 )
 _BEARER = re.compile(r"(?i)(\bauthorization\s*:\s*bearer\s+)[^\s,;]+")
 
