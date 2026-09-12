@@ -1,4 +1,4 @@
-"""AI Stack adapter for the shared jarvis-core sandbox primitive."""
+"""AI Stack adapter for the shared jarvis-core sandbox primitives."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from jarvis_core.sandbox import (
     docker_available,
     validate_host_boundary,
 )
+from jarvis_core.sandbox_policy import SandboxRequirements
 
 
 class CloudSandboxPolicy:
@@ -29,7 +30,6 @@ class CloudSandboxPolicy:
         storage: str = "4g",
         network: str = "none",
     ) -> None:
-        # Do not provide a fallback image: the shared core policy is fail-closed.
         self.image = image or os.getenv("CLOUD_SANDBOX_IMAGE", "").strip()
         self.cpu = cpu
         self.memory = memory
@@ -37,7 +37,20 @@ class CloudSandboxPolicy:
         self.storage = storage
         self.network = network
 
+    def _requirements(self) -> SandboxRequirements:
+        requirements = SandboxRequirements(
+            network="deny" if self.network == "none" else "egress",
+            workspace_read_only=False,
+            non_root=True,
+            cpus=self.cpu,
+            memory=self.memory,
+            pids=self.pids,
+        )
+        requirements.validate()
+        return requirements
+
     def _core_policy(self) -> TaskSandboxPolicy:
+        self._requirements()
         network = "deny" if self.network == "none" else "egress"
         return TaskSandboxPolicy(
             image=self.image,
@@ -77,6 +90,7 @@ __all__ = [
     "IsolationError",
     "TaskResourceLimits",
     "TaskSandboxPolicy",
+    "SandboxRequirements",
     "build_task_command",
     "docker_available",
 ]
