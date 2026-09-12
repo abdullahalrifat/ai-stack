@@ -19,7 +19,7 @@ Core change
 
 ## Compatibility boundary
 
-AI Stack owns orchestration, provider routing, scheduling, persistence, external integrations and server policy. Core owns provider-neutral contracts, normalization helpers and reusable verification/runtime primitives. Core 0.12.0 adds canonical model normalization helpers alongside `ModelProvider`, `ModelRequest`, `ModelResponse`, `ModelUsage`, and `ToolCall`.
+AI Stack owns orchestration, provider routing, scheduling, persistence, external integrations and server policy. Core owns provider-neutral contracts, normalization helpers, capabilities, approvals, sandbox requirements and reusable verification/runtime primitives. Core 0.13.0 is the common-brain contract for those semantics.
 
 Concrete Ollama, LiteLLM, hosted-provider and infrastructure integrations remain in the application/runtime layer.
 
