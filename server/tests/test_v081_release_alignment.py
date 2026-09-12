@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-CORE_VERSION = "0.10.1"
+CORE_VERSION = "0.11.0"
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SERVER_ROOT.parent
 
