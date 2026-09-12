@@ -78,7 +78,7 @@ gaps or contradictions.
 
 ## Shared runtime, traces, and evaluations
 
-Server installs the verified `jarvis-agent-core==0.9.5` package for token
+Server installs the verified `jarvis-agent-core==0.10.1` package for token
 enforcement, compaction, artifacts, evidence, capability routing, recovery,
 redacted traces, evaluations, and selective multi-agent contracts. The same
 Core release line is consumed by Jarvis; the Server and CLI remain separate
@@ -91,7 +91,7 @@ python -m pip install -r server/requirements.txt
 ```
 
 The human-maintained requirements, lockfile, CI, and Docker image all consume
-the same public Core 0.9.5 dependency and verify the installed version. For
+the same public Core 0.10.1 dependency and verify the installed version. For
 unreleased Core development only, install a local Core checkout explicitly
 after the locked dependencies.
 
