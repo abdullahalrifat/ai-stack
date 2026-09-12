@@ -5,21 +5,22 @@ AI Stack consumes `jarvis-agent-core` only from its published PyPI release. Core
 ## Update flow
 
 ```text
-jarvis-core Conventional Commit
+Core change
     -> reviewed release PR
     -> GitHub tag/release
     -> exact-tag validation
     -> PyPI publication
-    -> Dependabot detects new jarvis-agent-core
-    -> AI Stack dependency PR
+    -> dependency update
     -> full server CI
     -> review and merge
 ```
 
-`server/requirements.txt` and `server/requirements.lock` remain reproducible pins. Dependabot creates the dependency update PR; maintainers should not manually edit the Core version to chase releases.
+`server/requirements.txt` and `server/requirements.lock` remain reproducible pins. Dependency updates should be reviewed together with the exact Core API being consumed.
 
 ## Compatibility boundary
 
-AI Stack owns orchestration, provider routing, scheduling, GitHub automation and server policy. Core owns provider-neutral contracts and verification primitives. Core 0.11.0 adds the canonical `ModelProvider`, `ModelRequest`, `ModelResponse`, `ModelUsage`, and `ToolCall` contracts. Concrete Ollama, LiteLLM, Anthropic, OpenAI-compatible and other integrations remain in AI Stack or other consumer/runtime projects.
+AI Stack owns orchestration, provider routing, scheduling, persistence, external integrations and server policy. Core owns provider-neutral contracts, normalization helpers and reusable verification/runtime primitives. Core 0.12.0 adds canonical model normalization helpers alongside `ModelProvider`, `ModelRequest`, `ModelResponse`, `ModelUsage`, and `ToolCall`.
 
-The release order is always Core first, then consumers. Never publish an AI Stack image that references a Core version which is not already available on PyPI.
+Concrete Ollama, LiteLLM, hosted-provider and infrastructure integrations remain in the application/runtime layer.
+
+The release order is always Core first, then consumers. Never publish an application image that references a Core version which is not already available on PyPI.
