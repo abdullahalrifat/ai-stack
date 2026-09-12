@@ -1,6 +1,15 @@
-"""Central tool registration."""
+"""
+Central tool registration.
+
+All tools available to the executor must be registered here.
+"""
+
 from app.tools.code_intelligence import analyze_task_context, inspect_code
-from app.tools.filesystem import apply_patch, edit_file, find_file, inspect_files, inspect_test_environment, list_files, project_summary, read_file, run_command, run_tests, search_code, search_text, tree, workspace_root, write_file
+from app.tools.filesystem import (
+    apply_patch, edit_file, find_file, inspect_files, inspect_test_environment,
+    list_files, project_summary, read_file, run_command, run_tests, search_code,
+    search_text, tree, workspace_root, write_file,
+)
 from app.tools.git import git_blame, git_diff, git_log, git_status
 from app.tools.registry import registry
 from app.tools.mcp import mcp_call
