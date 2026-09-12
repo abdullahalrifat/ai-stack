@@ -70,9 +70,9 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
 
 
 def remote_model_entries(env: dict[str, str]) -> str:
-    entries: list[str] = []
     if not _remote_enabled(env):
         return ""
+    entries: list[str] = []
 
     anthropic_model = env.get("ANTHROPIC_MODEL", "").strip()
     anthropic_key = env.get("ANTHROPIC_API_KEY", "").strip()
@@ -93,8 +93,8 @@ def remote_model_entries(env: dict[str, str]) -> str:
 
     settings = _hf_settings(env)
     hf_model = env.get("HF_MODEL", "").strip()
-    if hf_model or settings["base"] or settings["key"]:
-        if not (hf_model and settings["base"] and settings["key"]):
+    if hf_model:
+        if not (settings["base"] and settings["key"]):
             raise ValueError("HF_MODEL, HF_INFERENCE_BASE_URL, and HF_API_KEY must be configured together")
         entries.append(
             """
@@ -108,6 +108,9 @@ def remote_model_entries(env: dict[str, str]) -> str:
 """
             % (_yaml_string(f"openai/{hf_model}"), _yaml_string(settings["base"]))
         )
+    elif settings["base"] or settings["key"]:
+        if not (settings["base"] and settings["key"]):
+            raise ValueError("HF_INFERENCE_BASE_URL and HF_API_KEY must be configured together")
 
     hybrid, _ = _hybrid_entries(env)
     entries.append(hybrid)
