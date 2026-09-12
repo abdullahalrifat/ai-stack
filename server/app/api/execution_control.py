@@ -1,21 +1,30 @@
 """Durable control plane for checkpoints and live run steering."""
+
 from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
 from ..dependencies import require_run_store, verify_api_key
 from ..runs.store import get_run_store
 
-router = APIRouter(prefix="/runs", dependencies=[Depends(verify_api_key), Depends(require_run_store)])
+router = APIRouter(
+    prefix="/runs",
+    dependencies=[Depends(verify_api_key), Depends(require_run_store)],
+)
+
 
 class CheckpointRequest(BaseModel):
     label: str = Field(min_length=1, max_length=200)
     workspace_revision: str | None = Field(default=None, max_length=200)
     conversation_revision: str | None = Field(default=None, max_length=200)
 
+
 class SteeringRequest(BaseModel):
     action: str
     instruction: str | None = Field(default=None, max_length=20_000)
     checkpoint_id: str | None = Field(default=None, max_length=200)
+
 
 _ALLOWED = {"pause", "resume", "cancel", "redirect", "rewind"}
 
