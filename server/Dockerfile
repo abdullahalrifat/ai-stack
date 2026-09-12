@@ -7,26 +7,19 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    curl \
-    git \
-    make \
-    util-linux \
-    nodejs \
-    npm \
-    tesseract-ocr \
+    curl git make util-linux nodejs npm tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.lock ./
-
-RUN pip install --no-cache-dir -r requirements.lock
+RUN sed -i 's/jarvis-agent-core==0.13.0/jarvis-agent-core==0.14.0/' requirements.lock \
+    && pip install --no-cache-dir -r requirements.lock
 
 COPY app ./app
 COPY evals ./evals
 
 RUN python -m compileall app
-RUN python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.13.0'"
+RUN python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.14.0'"
 RUN mkdir -p /workspace
 
 EXPOSE 8000
-
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
