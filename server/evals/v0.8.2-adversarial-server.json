@@ -1,0 +1,14 @@
+{
+  "version": "0.8.2",
+  "suite": "server-adversarial-boundaries",
+  "cases": [
+    {"id": "repository-injection", "source": "repository", "threat": "prompt-injection"},
+    {"id": "web-injection", "source": "web", "threat": "prompt-injection"},
+    {"id": "browser-injection", "source": "browser", "threat": "prompt-injection"},
+    {"id": "mcp-injection", "source": "mcp", "threat": "prompt-injection"},
+    {"id": "skills-injection", "source": "skills", "threat": "prompt-injection"},
+    {"id": "hooks-injection", "source": "hooks", "threat": "prompt-injection"},
+    {"id": "attachment-injection", "source": "attachments", "threat": "prompt-injection"},
+    {"id": "remote-payload-canary", "source": "cloud-task", "threat": "secret-canary"}
+  ]
+}
