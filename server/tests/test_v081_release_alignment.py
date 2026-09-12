@@ -1,8 +1,8 @@
 from pathlib import Path
 
 
-CORE_VERSION = "0.9.4"
-CORE_SHA256 = "0a78bcf9601a5e521059855b8b53501f118320f67ce939d24f15993acb774bd6"
+CORE_VERSION = "0.9.5"
+CORE_SHA256 = "af06aa90d00694b9df0681b886e2aeb8445a6236bf69a7f5b64b0948b9c4d17b"
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SERVER_ROOT.parent
 
