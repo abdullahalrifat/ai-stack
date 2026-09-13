@@ -16,6 +16,8 @@ from jarvis_core import (
     ProviderHealth,
 )
 
+from .empirical import select_empirical_route
+
 
 def model_registry(available: list[str]) -> CapabilityRegistry:
     registry = CapabilityRegistry()
@@ -111,10 +113,15 @@ def route_model(
     ]
     if not candidates:
         raise LookupError("no healthy model satisfies the required capabilities")
-    benchmarks = _benchmark_registry()
-    if benchmarks.observations:
-        return benchmarks.select(candidates, task).model
-    return max(
+
+    candidate_models = [item.model for item in candidates]
+    fallback = max(
         candidates,
         key=lambda item: (_health[item.model].score, item.priority, item.name),
     ).model
+
+    benchmarks = _benchmark_registry()
+    if benchmarks.observations:
+        fallback = benchmarks.select(candidates, task).model
+
+    return select_empirical_route(candidate_models, task, fallback=fallback)
