@@ -19,11 +19,13 @@ Core change
 
 ## Current release
 
-The current coordinated consumer release is **Jarvis Core 0.15.0**. This release adds provider-neutral token-efficiency primitives for bounded context construction, token/cost estimation, route budgets and adaptive route signals. Server may consume those primitives without importing provider SDKs into Core.
+The current coordinated consumer release is **Jarvis Core 0.16.0**. This release adds provider-neutral empirical route observations, recency-weighted calibration, minimum-sample safeguards and quality floors on top of the existing token-efficiency primitives.
 
-## Compatibility boundary
+## Architecture ownership
 
-AI Stack owns orchestration, provider routing, scheduling, persistence, external integrations and server policy. Core owns provider-neutral contracts, normalization helpers, capabilities, approvals, sandbox requirements and reusable verification/runtime primitives.
+AI Stack owns provider execution, orchestration, telemetry collection, persistence, external integrations and adapters into Core observations. Core owns the provider-neutral observation contract and calibration algorithm. Jarvis owns real workload definitions and task-level evaluation.
+
+For empirical routing, AI Stack must convert measured runtime outcomes into `jarvis_core.RouteObservation` and delegate selection to `jarvis_core.RouteCalibrator`. Do not copy calibration thresholds, scoring or recency logic into AI Stack.
 
 Concrete Ollama, LiteLLM, hosted-provider and infrastructure integrations remain in the application/runtime layer.
 
