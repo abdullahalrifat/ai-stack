@@ -47,7 +47,7 @@ numpy==2.5.1
 openai==2.48.0
 openpyxl==3.1.5
 orjson==3.11.9
-ormsgpack==1.12.0
+ormsgpack==1.12.2
 packaging==26.2
 pathspec==1.1.1
 pillow==12.3.0
