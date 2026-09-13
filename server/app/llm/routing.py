@@ -69,7 +69,9 @@ _health: dict[str, ProviderHealth] = {}
 
 def _benchmark_registry() -> BenchmarkRegistry:
     registry = BenchmarkRegistry()
-    path = Path(os.getenv("JARVIS_MODEL_BENCHMARKS", "/tmp/jarvis-model-benchmarks.jsonl"))
+    path = Path(
+        os.getenv("JARVIS_MODEL_BENCHMARKS", "/tmp/jarvis-model-benchmarks.jsonl")
+    )
     if not path.exists():
         return registry
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -79,7 +81,9 @@ def _benchmark_registry() -> BenchmarkRegistry:
 
 
 def record_model_observation(observation: BenchmarkObservation) -> None:
-    path = Path(os.getenv("JARVIS_MODEL_BENCHMARKS", "/tmp/jarvis-model-benchmarks.jsonl"))
+    path = Path(
+        os.getenv("JARVIS_MODEL_BENCHMARKS", "/tmp/jarvis-model-benchmarks.jsonl")
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     with _lock, path.open("a", encoding="utf-8") as output:
         from dataclasses import asdict
@@ -109,7 +113,8 @@ def route_model(
         item
         for item in registry.list()
         if item.capabilities.supports(required)
-        and _health.setdefault(item.model, ProviderHealth(item.model)).state.value != "open"
+        and _health.setdefault(item.model, ProviderHealth(item.model)).state.value
+        != "open"
     ]
     if not candidates:
         raise LookupError("no healthy model satisfies the required capabilities")
