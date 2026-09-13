@@ -11,7 +11,10 @@ from jarvis_core import RouteCalibrator, RouteObservation
 def _calibrator() -> RouteCalibrator:
     import os
 
-    path = os.getenv("JARVIS_ROUTE_CALIBRATION_FILE", "/tmp/jarvis-route-calibration.json")
+    path = os.getenv(
+        "JARVIS_ROUTE_CALIBRATION_FILE",
+        "/tmp/jarvis-route-calibration.json",
+    )
     return RouteCalibrator(
         Path(path),
         min_samples=int(os.getenv("JARVIS_ROUTE_CALIBRATION_MIN_SAMPLES", "3")),
@@ -54,6 +57,8 @@ def record_runtime_observation(
     )
 
 
-def select_empirical_route(routes: list[str], category: str, *, fallback: str) -> str:
+def select_empirical_route(
+    routes: list[str], category: str, *, fallback: str
+) -> str:
     """Use Core calibration only when evidence clears its safeguards."""
     return _calibrator().select(routes, category, fallback=fallback)
