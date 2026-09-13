@@ -1,0 +1,11 @@
+{
+  "workload_source": "real-jarvis-development",
+  "cases": [
+    {"id": "ci-triage", "task": "ci-triage"},
+    {"id": "provider-review", "task": "provider-architecture"},
+    {"id": "release-readiness", "task": "release-readiness"},
+    {"id": "pr-review", "task": "pr-review"},
+    {"id": "documentation-alignment", "task": "documentation"},
+    {"id": "efficiency-audit", "task": "efficiency"}
+  ]
+}
