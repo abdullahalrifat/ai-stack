@@ -1,0 +1,1 @@
+Jarvis owns task-level workload generation and quality evaluation. AI Stack owns model execution telemetry, cost/latency accounting, and conservative empirical route selection. jarvis-core supplies provider-neutral observation and benchmark primitives.
