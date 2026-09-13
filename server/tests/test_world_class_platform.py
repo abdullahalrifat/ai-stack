@@ -7,6 +7,7 @@ import pytest
 from app.channels.router import _verify_whatsapp
 from app.core.claim_verification import verify_claims
 from app.core.instructions import instruction_prompt, load_server_instructions
+from app.llm.empirical import record_runtime_observation, select_empirical_route
 from app.llm.routing import record_model_health, route_model
 from app.runs.review import parse_review_hunks
 from app.tools.mcp_runtime import MCPProcess
@@ -57,6 +58,24 @@ def test_health_routing_removes_open_circuit(monkeypatch):
     for _ in range(3):
         record_model_health("bad", success=False)
     assert route_model(["bad", "good"]) == "good"
+
+
+def test_empirical_route_requires_core_safeguards(tmp_path, monkeypatch):
+    path = tmp_path / "routes.json"
+    monkeypatch.setenv("JARVIS_ROUTE_CALIBRATION_FILE", str(path))
+    assert select_empirical_route(["measured", "fallback"], "ci-triage", fallback="fallback") == "fallback"
+
+    for _ in range(3):
+        record_runtime_observation(
+            route="measured",
+            category="ci-triage",
+            success=True,
+            quality=0.95,
+            latency_ms=100,
+            source="real-jarvis-development",
+        )
+
+    assert select_empirical_route(["measured", "fallback"], "ci-triage", fallback="fallback") == "measured"
 
 
 def test_unified_diff_is_split_into_reviewable_hunks():

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-CORE_VERSION = "0.15.0"
+CORE_VERSION = "0.16.0"
 
 
 def test_ci_pins_coordinated_core_release():
