@@ -1,0 +1,1 @@
+Real Jarvis workloads provide task categories and evaluation signals. AI Stack persists execution observations and exposes conservative calibrated selection. When evidence is insufficient, the existing benchmark/health route remains authoritative.
