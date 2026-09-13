@@ -19,22 +19,11 @@ Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible rem
 
 Routing uses one front-facing orchestrator identity and validated internal workflows for quick, code, research, finance, deep, and vision tasks. Router output cannot invent a model, grant tools, expand a workspace, or bypass approval.
 
-## Search and current answers
-
-```dotenv
-WEB_SEARCH_ENABLED=true
-WEB_SEARCH_URL=http://searxng:8080/search
-WEB_SEARCH_TIMEOUT_SECONDS=15
-WEB_FETCH_MAX_BYTES=8000000
-```
-
-Server normalizes bounded search results through Core, retains source URLs, and labels snippets/pages as untrusted. `web_fetch` supports public HTML and PDF sources and enforces download and model-context bounds.
-
 ## Shared runtime, traces, and evaluations
 
-Server installs the verified `jarvis-agent-core==0.13.0` package for token enforcement, compaction, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements and provider-neutral model contracts.
+Server installs the verified `jarvis-agent-core==0.15.0` package for token enforcement, context efficiency, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements and provider-neutral model contracts.
 
-Core 0.13.0 defines the provider-neutral model contracts and normalization helpers plus the common-brain capability, approval and sandbox-requirement primitives. Server owns concrete Ollama/LiteLLM/remote-provider integration and keeps provider SDKs out of Core.
+Core 0.15.0 adds provider-neutral context budgets, token/cost estimation, route budgets and adaptive route signals while retaining the application boundary around concrete Ollama/LiteLLM/remote-provider integration. Provider SDKs remain out of Core.
 
 For a clean development installation:
 
@@ -42,7 +31,7 @@ For a clean development installation:
 python -m pip install -r server/requirements.txt
 ```
 
-The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.13.0 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
+The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.15.0 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
 
 ## MCP
 

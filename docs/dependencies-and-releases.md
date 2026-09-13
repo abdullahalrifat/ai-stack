@@ -17,9 +17,13 @@ Core change
 
 `server/requirements.txt` and `server/requirements.lock` remain reproducible pins. Dependency updates should be reviewed together with the exact Core API being consumed.
 
+## Current release
+
+The current coordinated consumer release is **Jarvis Core 0.15.0**. This release adds provider-neutral token-efficiency primitives for bounded context construction, token/cost estimation, route budgets and adaptive route signals. Server may consume those primitives without importing provider SDKs into Core.
+
 ## Compatibility boundary
 
-AI Stack owns orchestration, provider routing, scheduling, persistence, external integrations and server policy. Core owns provider-neutral contracts, normalization helpers, capabilities, approvals, sandbox requirements and reusable verification/runtime primitives. Core 0.13.0 is the common-brain contract for those semantics.
+AI Stack owns orchestration, provider routing, scheduling, persistence, external integrations and server policy. Core owns provider-neutral contracts, normalization helpers, capabilities, approvals, sandbox requirements and reusable verification/runtime primitives.
 
 Concrete Ollama, LiteLLM, hosted-provider and infrastructure integrations remain in the application/runtime layer.
 

@@ -29,8 +29,6 @@ opentelemetry-api>=1.36,<2
 opentelemetry-sdk>=1.36,<2
 opentelemetry-exporter-otlp>=1.36,<2
 
-# These are intentionally installed in the runner image because they are
-# present in ALLOWED_COMMANDS and run_tests.
 pytest
 pytest-cov
 mypy
@@ -38,5 +36,4 @@ ruff
 black
 flake8
 
-# Published shared runtime; sandbox policy and contracts live in core.
-jarvis-agent-core==0.14.0
+jarvis-agent-core==0.15.0
