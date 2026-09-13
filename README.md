@@ -2,9 +2,9 @@
 
 ## Current contract line
 
-AI Stack consumes the provider-neutral **Jarvis Core 0.13.0** common-brain runtime contracts and normalization helpers. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes the provider-neutral **Jarvis Core 0.15.0** common-brain runtime contracts and reusable efficiency primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
-Jarvis Core 0.13.0 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
+Jarvis Core 0.15.0 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
 AI Stack Server is the durable, self-hosted control plane for long-running agent execution.
 
@@ -16,9 +16,15 @@ AI Stack Server is the durable, self-hosted control plane for long-running agent
 - SearXNG: optional self-hosted current-information search;
 - LiteLLM plus Ollama or remote compatible providers: inference routing;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core` **0.13.0**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements and reusable primitives.
+- `jarvis-agent-core` **0.15.0**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets and reusable primitives.
 
 Server requirements, lockfile, Docker image and CI assert the same Core version.
+
+## Token-efficient routing
+
+Core 0.15.0 supplies provider-neutral efficiency accounting for bounded context construction, token estimation, cost estimation, route budgets and adaptive route signals. Server keeps concrete Ollama/LiteLLM/remote-provider policy in the application layer while using the shared contracts to make context and routing decisions measurable and portable.
+
+This boundary is intentionally provider-neutral: changing a local Ollama model or remote OpenAI-compatible gateway does not require changing Jarvis Core or importing provider SDKs into Core.
 
 ## Start the development stack
 
@@ -57,7 +63,7 @@ Provider credentials stay on execution hosts and are not embedded in cloud task 
 
 ## Validation and certification
 
-The current 0.13.0 Core common-brain contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-repository evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
+The current 0.15.0 Core common-brain contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-repository evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
 
 Remaining certification work is retained longitudinal model-quality measurement, hardware-specific soak testing, fully reproducible offline/bootstrap validation and backup/restore/disaster-recovery exercises.
 
