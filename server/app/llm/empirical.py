@@ -18,7 +18,9 @@ def _calibrator() -> RouteCalibrator:
     return RouteCalibrator(
         Path(path),
         min_samples=int(os.getenv("JARVIS_ROUTE_CALIBRATION_MIN_SAMPLES", "3")),
-        quality_floor=float(os.getenv("JARVIS_ROUTE_CALIBRATION_QUALITY_FLOOR", "0.70")),
+        quality_floor=float(
+            os.getenv("JARVIS_ROUTE_CALIBRATION_QUALITY_FLOOR", "0.70")
+        ),
     )
 
 
@@ -57,8 +59,6 @@ def record_runtime_observation(
     )
 
 
-def select_empirical_route(
-    routes: list[str], category: str, *, fallback: str
-) -> str:
+def select_empirical_route(routes: list[str], category: str, *, fallback: str) -> str:
     """Use Core calibration only when evidence clears its safeguards."""
     return _calibrator().select(routes, category, fallback=fallback)
