@@ -1,7 +1,7 @@
 # Fully resolved Python 3.12/Linux environment used by the agent image.
 # Regenerate intentionally after dependency review; requirements.txt remains
 # a short, human-maintained list of direct dependencies.
-jarvis-agent-core==0.14.0
+jarvis-agent-core==0.15.0
 annotated-doc==0.0.4
 annotated-types==0.8.0
 anyio==4.14.2
@@ -47,7 +47,7 @@ numpy==2.5.1
 openai==2.48.0
 openpyxl==3.1.5
 orjson==3.11.9
-ormsgpack==1.12.2
+ormsgpack==1.12.0
 packaging==26.2
 pathspec==1.1.1
 pillow==12.3.0
