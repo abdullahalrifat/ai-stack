@@ -15,7 +15,13 @@ from jarvis_core import (
     ModelProfile,
     ProviderHealth,
 )
-from jarvis_core.cost_router import RouteModel, RouteTier, RoutingSignals, choose_tier, select_model
+from jarvis_core.cost_router import (
+    RouteModel,
+    RouteTier,
+    RoutingSignals,
+    choose_tier,
+    select_model,
+)
 
 from .empirical import select_empirical_route
 
@@ -88,6 +94,7 @@ def record_model_observation(observation: BenchmarkObservation) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with _lock, path.open("a", encoding="utf-8") as output:
         from dataclasses import asdict
+
         output.write(json.dumps(asdict(observation)) + "\n")
 
 
@@ -124,9 +131,11 @@ def route_model(
         return registry.select(preferred=preferred, required=required).model
 
     candidates = [
-        item for item in registry.list()
+        item
+        for item in registry.list()
         if item.capabilities.supports(required)
-        and _health.setdefault(item.model, ProviderHealth(item.model)).state.value != "open"
+        and _health.setdefault(item.model, ProviderHealth(item.model)).state.value
+        != "open"
     ]
     if not candidates:
         raise LookupError("no healthy model satisfies the required capabilities")
@@ -158,20 +167,31 @@ def route_model(
     elif tier is RouteTier.FRONTIER:
         ordered = [RouteTier.FRONTIER]
 
-    available_names = {item.model for item in candidates} | {item.name for item in candidates}
+    available_models = {item.model for item in candidates}
     for candidate_tier in ordered:
-        names = tier_names[candidate_tier] & available_names
+        names = tier_names[candidate_tier] & available_models
         if not names:
             continue
         selected = select_model(
-            tuple(RouteModel(name=item.model, tier=candidate_tier, priority=item.priority) for item in candidates if item.model in names),
+            tuple(
+                RouteModel(
+                    name=item.model,
+                    tier=candidate_tier,
+                    priority=item.priority,
+                )
+                for item in candidates
+                if item.model in names
+            ),
             candidate_tier,
         )
         return selected.name
 
     # Backward-compatible fallback for deployments that have not declared tiers.
     candidate_models = [item.model for item in candidates]
-    fallback = max(candidates, key=lambda item: (_health[item.model].score, item.priority, item.name)).model
+    fallback = max(
+        candidates,
+        key=lambda item: (_health[item.model].score, item.priority, item.name),
+    ).model
     benchmarks = _benchmark_registry()
     if benchmarks.observations:
         fallback = benchmarks.select(candidates, task).model
