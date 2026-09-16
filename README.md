@@ -2,9 +2,9 @@
 
 ## Current contract line
 
-AI Stack consumes the provider-neutral **Jarvis Core 0.16.0** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes the provider-neutral **Jarvis Core 0.16.1** runtime contracts and reusable efficiency/cost-aware routing primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
-Jarvis Core 0.16.0 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
+Jarvis Core 0.16.1 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
 AI Stack Server is the durable, self-hosted control plane for long-running agent execution.
 
@@ -16,13 +16,19 @@ AI Stack Server is the durable, self-hosted control plane for long-running agent
 - SearXNG: optional self-hosted current-information search;
 - LiteLLM plus Ollama or remote compatible providers: inference routing;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core` **0.16.0**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
+- `jarvis-agent-core` **0.16.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, deterministic cost-aware routing, route budgets, empirical observations and conservative calibration.
 
 Server requirements, lockfile, Docker image and CI assert the same Core version.
 
+## Cost-aware local-first routing
+
+Core 0.16.1 supplies provider-neutral tier routing signals and model selection. AI Stack maps configured model ids into local, cheap-cloud and frontier tiers while keeping concrete Ollama/LiteLLM/remote-provider execution in the application layer.
+
+Normal workloads stay local when signals indicate low complexity and risk. Complexity, uncertainty, repeated attempts/tool failures and security sensitivity can cause deterministic escalation to a configured higher tier. If a requested tier has no configured model, the runtime preserves its existing fallback routing rather than silently introducing an undeclared provider dependency.
+
 ## Token-efficient and empirical routing
 
-Core 0.16.0 supplies provider-neutral efficiency accounting plus empirical route calibration. Server keeps concrete Ollama/LiteLLM/remote-provider execution and telemetry in the application layer, adapts measured runtime observations into Core `RouteObservation` records, and delegates route selection back to `RouteCalibrator`.
+Core also supplies provider-neutral efficiency accounting plus empirical route calibration. Server keeps telemetry and concrete provider execution in the application layer, adapts measured runtime observations into Core `RouteObservation` records, and delegates empirical selection back to `RouteCalibrator`.
 
 The calibration path is deliberately conservative: minimum samples, a quality floor and recency weighting must be satisfied before measured evidence can change automatic routing. When evidence is insufficient, existing health/benchmark routing remains the fallback.
 
@@ -65,7 +71,7 @@ Provider credentials stay on execution hosts and are not embedded in cloud task 
 
 ## Validation and certification
 
-The current 0.16.0 Core common-brain contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-workload evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
+The current 0.16.1 Core contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-workload evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
 
 Remaining certification work is retained longitudinal model-quality measurement, hardware-specific soak testing, fully reproducible offline/bootstrap validation and backup/restore/disaster-recovery exercises.
 
