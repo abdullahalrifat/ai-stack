@@ -16,7 +16,6 @@ langchain-openai
 qdrant-client
 
 redis
-
 openai
 langchain-qdrant
 
@@ -36,4 +35,4 @@ ruff
 black
 flake8
 
-jarvis-agent-core==0.16.0
+jarvis-agent-core==0.16.1
