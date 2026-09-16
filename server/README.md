@@ -19,13 +19,13 @@ Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible rem
 
 Routing uses one front-facing orchestrator identity and validated internal workflows for quick, code, research, finance, deep, and vision tasks. Router output cannot invent a model, grant tools, expand a workspace, or bypass approval.
 
-Automatic routing also consumes measured runtime evidence through the provider-neutral Core route selector. AI Stack records execution telemetry as `RouteObservation` data; Core applies minimum-sample, quality-floor and recency safeguards. When evidence is insufficient, existing health and benchmark routing remains authoritative.
+Automatic routing consumes deterministic cost-aware signals from Core before falling back to measured runtime evidence. Configured local, cheap-cloud and frontier model tiers are selected by the Core policy; AI Stack owns the mapping from tier names to concrete provider model ids and execution. Empirical telemetry remains an additional conservative signal with minimum-sample, quality-floor and recency safeguards.
 
 ## Shared runtime, traces, and evaluations
 
-Server installs the verified `jarvis-agent-core==0.16.0` package for token enforcement, context efficiency, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements, provider-neutral model contracts and empirical route selection.
+Server installs the verified `jarvis-agent-core==0.16.1` package for token enforcement, context efficiency, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements, provider-neutral model contracts, cost-aware routing and empirical route selection.
 
-Core 0.16.0 adds provider-neutral route observations, recency-weighted selection, minimum-sample safeguards and quality floors while retaining the application boundary around concrete Ollama/LiteLLM/remote-provider integration. Provider SDKs remain out of Core.
+Core 0.16.1 adds provider-neutral cost-aware tier routing and model selection while retaining the application boundary around concrete Ollama/LiteLLM/remote-provider integration. Provider SDKs remain out of Core.
 
 For a clean development installation:
 
@@ -33,7 +33,7 @@ For a clean development installation:
 python -m pip install -r server/requirements.txt
 ```
 
-The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.16.0 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
+The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.16.1 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
 
 ## MCP
 
@@ -47,6 +47,7 @@ Administrators may configure fixed stdio commands. The model chooses only a conf
 - isolated commands and disposable Git worktrees;
 - explicit approval/discard for write diffs;
 - capability routing, bounded recovery, context compaction, and token budgets;
+- cost-aware local-first model routing with bounded escalation;
 - multi-expert analysis for selected complex requests;
 - Runs UI and OpenAI-compatible entry points;
 - web evidence and administrator-selected MCP tools;
