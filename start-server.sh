@@ -10,7 +10,7 @@ set -euo pipefail
 # ============================================================================
 # Configuration
 # ============================================================================
-SERVER_DIR="/mnt/work/code/ai-infra/ai-stack"
+SERVER_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODEL_NAME="qwen3-8b"
 FAST_MODEL="codellama:7b"
 CONCURRENT_AGENTS=2
