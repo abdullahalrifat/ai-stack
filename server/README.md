@@ -23,9 +23,9 @@ Automatic routing also consumes measured runtime evidence through the provider-n
 
 ## Shared runtime, traces, and evaluations
 
-Server installs the verified `jarvis-agent-core==0.16.0` package for token enforcement, context efficiency, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements, provider-neutral model contracts and empirical route selection.
+Server installs the verified `jarvis-agent-core==0.16.1` package for token enforcement, context efficiency, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements, provider-neutral model contracts and empirical route selection.
 
-Core 0.16.0 adds provider-neutral route observations, recency-weighted selection, minimum-sample safeguards and quality floors while retaining the application boundary around concrete Ollama/LiteLLM/remote-provider integration. Provider SDKs remain out of Core.
+Core 0.16.1 adds provider-neutral route observations, recency-weighted selection, minimum-sample safeguards and quality floors while retaining the application boundary around concrete Ollama/LiteLLM/remote-provider integration. Provider SDKs remain out of Core.
 
 For a clean development installation:
 
@@ -33,7 +33,7 @@ For a clean development installation:
 python -m pip install -r server/requirements.txt
 ```
 
-The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.16.0 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
+The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.16.1 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
 
 ## MCP
 

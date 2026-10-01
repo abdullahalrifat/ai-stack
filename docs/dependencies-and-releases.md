@@ -19,7 +19,7 @@ Core change
 
 ## Current release
 
-The current coordinated consumer release is **Jarvis Core 0.16.0**. This release adds provider-neutral empirical route observations, recency-weighted calibration, minimum-sample safeguards and quality floors on top of the existing token-efficiency primitives.
+The current coordinated consumer release is **Jarvis Core 0.16.1**. This release adds provider-neutral empirical route observations, recency-weighted calibration, minimum-sample safeguards and quality floors on top of the existing token-efficiency primitives.
 
 ## Architecture ownership
 
