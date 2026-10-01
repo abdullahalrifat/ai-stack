@@ -42,8 +42,12 @@ class CloudSandboxPolicy:
         self.pids = pids
         self.storage = storage
         self.network = network
-        self.allow_egress = allow_egress or os.getenv("SANDBOX_ALLOW_EGRESS", "").strip().split(",")
-        self.deny_egress = deny_egress or os.getenv("SANDBOX_DENY_EGRESS", "").strip().split(",")
+        self.allow_egress = allow_egress or os.getenv(
+            "SANDBOX_ALLOW_EGRESS", ""
+        ).strip().split(",")
+        self.deny_egress = deny_egress or os.getenv(
+            "SANDBOX_DENY_EGRESS", ""
+        ).strip().split(",")
 
     def _requirements(self) -> SandboxRequirements:
         requirements = SandboxRequirements(
