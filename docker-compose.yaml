@@ -504,7 +504,7 @@ services:
       retries: 6
       start_period: 10s
     networks:
-      - runner
+      - ai
 
   ####################################################
   ## Runs UI -- React/TypeScript coding task console
