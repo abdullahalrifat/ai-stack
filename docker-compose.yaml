@@ -538,4 +538,4 @@ services:
 
 networks:
   ai:
-    external: true
+    driver: bridge
