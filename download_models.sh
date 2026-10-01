@@ -6,10 +6,7 @@ CONTAINER="ollama"
 
 MODELS=(
   "qwen3:8b"
-  "qwen3:14b"
-  "qwen3-coder:30b"
-  "deepseek-r1:14b"
-  "gemma3:12b"
+  "codellama:7b"
   "nomic-embed-text"
 )
 
