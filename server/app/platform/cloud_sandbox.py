@@ -18,7 +18,11 @@ from jarvis_core.sandbox_policy import SandboxRequirements
 
 
 class CloudSandboxPolicy:
-    """Compatibility adapter preserving AI Stack's existing HTTP-facing API."""
+    """Compatibility adapter preserving AI Stack's existing HTTP-facing API.
+
+    Supports Docker-based per-task isolation with resource quotas and egress policy.
+    When no Docker image is configured, falls back to user-namespace-only isolation.
+    """
 
     def __init__(
         self,
@@ -29,6 +33,8 @@ class CloudSandboxPolicy:
         pids: int = 256,
         storage: str = "4g",
         network: str = "none",
+        allow_egress: list[str] | None = None,
+        deny_egress: list[str] | None = None,
     ) -> None:
         self.image = image or os.getenv("CLOUD_SANDBOX_IMAGE", "").strip()
         self.cpu = cpu
@@ -36,6 +42,8 @@ class CloudSandboxPolicy:
         self.pids = pids
         self.storage = storage
         self.network = network
+        self.allow_egress = allow_egress or os.getenv("SANDBOX_ALLOW_EGRESS", "").strip().split(",")
+        self.deny_egress = deny_egress or os.getenv("SANDBOX_DENY_EGRESS", "").strip().split(",")
 
     def _requirements(self) -> SandboxRequirements:
         requirements = SandboxRequirements(

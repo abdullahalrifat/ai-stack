@@ -44,7 +44,8 @@ TERMINAL_STATUSES = {"completed", "cancelled", "timed_out", "kill_failed"}
 RUNNER_CPU_SECONDS = int(os.getenv("RUNNER_CPU_SECONDS", "90"))
 RUNNER_MEMORY_MB = int(os.getenv("RUNNER_MEMORY_MB", "2048"))
 RUNNER_MAX_OPEN_FILES = int(os.getenv("RUNNER_MAX_OPEN_FILES", "256"))
-RUNNER_NETWORK_TIERS = {"network"}
+RUNNER_DOCKER_IMAGE = os.getenv("RUNNER_DOCKER_IMAGE", "").strip()
+RUNNER_NETWORK_TIERS = {"network", "docker"}
 RUNNER_ENABLE_NETNS = os.getenv("RUNNER_ENABLE_NETNS", "true").strip().lower() in {
     "1",
     "true",
@@ -64,6 +65,13 @@ TIERS: dict[str, dict[str, Any]] = {
         "cpu_seconds": RUNNER_CPU_SECONDS,
         "memory_mb": RUNNER_MEMORY_MB,
         "max_open_files": RUNNER_MAX_OPEN_FILES,
+    },
+    "docker": {
+        "network": False,
+        "cpu_seconds": RUNNER_CPU_SECONDS,
+        "memory_mb": RUNNER_MEMORY_MB,
+        "max_open_files": RUNNER_MAX_OPEN_FILES,
+        "docker_image": RUNNER_DOCKER_IMAGE,
     },
 }
 
