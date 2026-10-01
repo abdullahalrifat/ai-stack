@@ -19,6 +19,15 @@ from jarvis_core import (
 from .empirical import select_empirical_route
 
 
+def _local_model_base_url(provider: str) -> str:
+    """Return base URL for local models based on provider."""
+    if provider == "ollama":
+        return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    if provider == "anthropic_local":
+        return os.getenv("ANTHROPIC_LOCAL_BASE_URL", "http://localhost:8000")
+    return ""
+
+
 def model_registry(available: list[str]) -> CapabilityRegistry:
     registry = CapabilityRegistry()
     configured = os.getenv("JARVIS_MODEL_PROFILES_JSON", "")
@@ -29,12 +38,16 @@ def model_registry(available: list[str]) -> CapabilityRegistry:
             if model not in available:
                 continue
             caps = item.get("capabilities") or {}
+            provider = str(item.get("provider", "openai"))
+            base_url = str(item.get("base_url", "")).rstrip("/")
+            if not base_url:
+                base_url = _local_model_base_url(provider)
             registry.add(
                 ModelProfile(
                     name=str(name),
-                    provider=str(item.get("provider", "openai")),
+                    provider=provider,
                     model=model,
-                    base_url=str(item.get("base_url", "")),
+                    base_url=base_url,
                     priority=int(item.get("priority", 0)),
                     enabled=bool(item.get("enabled", True)),
                     capabilities=ModelCapabilities(
