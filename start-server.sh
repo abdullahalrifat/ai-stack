@@ -75,46 +75,6 @@ verify_resources() {
 }
 
 # ============================================================================
-# Step 2: Ollama Model Installation
-# ============================================================================
-install_models() {
-    log_info "Installing/Ollama models (this may take 2-5 minutes)..."
-
-    # Check if Ollama is installed
-    if ! command -v ollama &>/dev/null; then
-        log_error "Ollama not found. Please install Ollama first."
-        log_warn "Visit: https://ollama.ai/download"
-        exit 1
-    fi
-    log_info "✅ Ollama found"
-
-    # Pull primary model
-    log_info "Pulling primary model: $MODEL_NAME..."
-    if ! ollama pull "$MODEL_NAME" >/dev/null 2>&1; then
-        log_error "Failed to pull $MODEL_NAME"
-        exit 1
-    fi
-    log_info "✅ Primary model $MODEL_NAME installed"
-
-    # Pull fast model (optional but recommended)
-    log_info "Pulling fast model: $FAST_MODEL..."
-    if ! ollama pull "$FAST_MODEL" >/dev/null 2>&1; then
-        log_warn "Failed to pull $FAST_MODEL - continuing without it"
-    else
-        log_info "✅ Fast model $FAST_MODEL installed"
-    fi
-
-    # Verify models are ready
-    log_info "Verifying models are ready..."
-    local MODELS_COUNT=$(ollama list 2>/dev/null | grep -c "$MODEL_NAME" || true)
-    if [ "$MODELS_COUNT" -eq 0 ]; then
-        log_error "Model $MODEL_NAME not available after pull"
-        exit 1
-    fi
-    log_info "✅ All models verified and ready"
-}
-
-# ============================================================================
 # Step 3: Environment Configuration
 # ============================================================================
 configure_environment() {
@@ -391,8 +351,6 @@ main() {
 
     # Execute all steps in sequence
     verify_resources
-    echo ""
-    install_models
     echo ""
     configure_environment
     echo ""
