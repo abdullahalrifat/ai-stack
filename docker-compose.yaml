@@ -539,6 +539,4 @@ services:
 
 networks:
   ai:
-    driver: bridge
-  runner:
-    internal: true
+    external: true
