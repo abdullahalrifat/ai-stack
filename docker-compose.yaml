@@ -289,7 +289,7 @@ services:
 
       # Required for the durable, streamed /runs API (SSE progress, sandbox
       # diff approval). /chat and /execute work without this.
-      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:ai_stack@postgres:5432/ai_stack}
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://ai_stack:${POSTGRES_PASSWORD:-change-this-to-a-long-random-password}@postgres:5432/ai_stack}
 
       WORKSPACE_DIR: ${WORKSPACE_DIR:-/workspace}
       # New requests default to this repository instead of scanning the whole
