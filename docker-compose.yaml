@@ -208,7 +208,7 @@ services:
       - "127.0.0.1:3000:8080"
 
     environment:
-      DATABASE_URL: postgresql://postgres:ai_stack@postgres:5432/ai_stack
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ai_stack
 
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
@@ -402,7 +402,7 @@ services:
       - "127.0.0.1:8081:8000"
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 15s
       timeout: 5s
       retries: 5

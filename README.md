@@ -94,6 +94,21 @@ docker compose logs -f
 # Access LiteLLM at http://<server-ip>:4000
 ```
 
+### 6. Test the deployment with curl
+```bash
+# Test AI Stack server health endpoint (port 8081)
+curl -fsS http://127.0.0.1:8081/health
+
+# Test LiteLLM health endpoint (may return 401 - auth required)
+curl -fsS http://127.0.0.1:4000/health
+
+# Test SearXNG search endpoint
+curl -fsS "http://127.0.0.1:8080/search?q=test" 2>/dev/null | head -1 || echo "SearXNG loading"
+
+# Test AI-runs-ui at port 3001
+curl -fsS http://127.0.0.1:3001/api/health 2>/dev/null || echo "UI loading"
+```
+
 ### 6. For offline/off-grid deployment
 If you want to run AI Stack without external model providers:
 ```bash
