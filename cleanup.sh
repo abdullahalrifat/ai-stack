@@ -38,6 +38,7 @@ docker rmi -f custom-litellm:latest ai-runs-ui:latest ai-stack-server:latest 2>/
 echo "Cleaning up Ollama data..."
 rm -rf ./ollama/models ./ollama/cache
 # Remove any leftover Ollama data
+rm -rf ./postgres 2>/dev/null || true
 docker volume rm postgres_data 2>/dev/null || true
 
 # Remove generated configuration files
