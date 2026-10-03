@@ -231,6 +231,7 @@ services:
 
     networks:
       - ai
+      - proxy
 
   ####################################################
   ## AI Agents
@@ -440,6 +441,7 @@ services:
 
     networks:
       - ai
+      - proxy
 
   agent-runner:
     image: ai-stack-server:latest
@@ -509,7 +511,10 @@ services:
 
     networks:
       - ai
+      - proxy
 
 networks:
   ai:
     driver: bridge
+  proxy:
+    external: true
