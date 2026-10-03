@@ -217,7 +217,7 @@ services:
 
       OPENAI_API_BASE_URL: http://litellm:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
-      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8000/v1
+      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8081/v1
       # Keys correspond positionally to OPENAI_API_BASE_URLS.  The agent
       # endpoint has its own key; leaving this blank makes the seeded
       # connection unusable.
@@ -399,10 +399,10 @@ services:
       IMAGE_GENERATION_TIMEOUT_SECONDS: ${IMAGE_GENERATION_TIMEOUT_SECONDS:-180}
 
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8081:8000"
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/health"]
       interval: 15s
       timeout: 5s
       retries: 5
