@@ -37,6 +37,82 @@ docker compose up -d
 docker compose ps
 ```
 
+## Deploy to Remote Server
+
+To deploy AI Stack on a remote server, follow these steps:
+
+### 1. Prepare the server
+Ensure Docker and Docker Compose are installed on the remote server:
+```bash
+# On Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-plugin
+
+# Add user to docker group
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+### 2. Clone the repository
+```bash
+git clone <repository-url>
+cd ai-stack
+```
+
+### 3. Configure the environment
+Copy the example .env file and customize it for your server:
+```bash
+cp .env.example .env
+```
+
+Edit the `.env` file to match your server configuration:
+- Set `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`, `AGENT_API_KEY`, and `RUNNER_API_KEY` to strong random values
+- Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
+- Set `DEFAULT_MODEL=qwen3-8b` for CPU-mode defaults (8B model for coding, 4B for routine chat)
+- Configure workspace paths: `WORKSPACE_PATH=/path/to/your/code`
+- Adjust resource limits: `RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `MAX_AGENT_STEPS`
+
+### 4. Build and start the stack
+```bash
+# Build the custom images
+./build.sh
+
+# Start the services
+docker compose up -d
+```
+
+### 5. Verify the deployment
+```bash
+# Check running containers
+docker compose ps
+
+# Check service health
+docker compose logs -f
+
+# Access the Open WebUI at http://<server-ip>:3000
+# Access the agent runner API at http://<server-ip>:8000
+# Access LiteLLM at http://<server-ip>:4000
+```
+
+### 6. For offline/off-grid deployment
+If you want to run AI Stack without external model providers:
+```bash
+# Use the offline compose file
+docker compose -f docker-compose.yaml -f docker-compose.offline.yaml config
+
+# Start with offline configuration
+docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
+```
+
+### 7. To destroy and re-install
+```bash
+# Clean up the existing deployment
+./cleanup.sh
+
+# Then follow steps 1-5 above for a fresh installation
+```
+
+
 ## Offline / off-grid operation
 
 AI Stack is designed to run locally without external model providers. Ollama hosts local models, LiteLLM provides the OpenAI-compatible routing surface, and PostgreSQL/Redis/Qdrant provide local state. Remote provider variables are optional and should remain empty for an isolated deployment.

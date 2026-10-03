@@ -37,30 +37,6 @@ services:
   ####################################################
   ## Ollama model provisioning
   ####################################################
-  ollama-init:
-    image: ollama/ollama:latest
-    restart: "no"
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODELS: ${OLLAMA_MODELS:-qwen3:4b-instruct qwen3:8b qwen3:14b deepseek-r1:14b gemma3:12b nomic-embed-text}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        for model in $OLLAMA_MODELS; do
-          echo "Ensuring Ollama model: $model"
-          ollama pull "$model"
-        done
-        ollama list
-    volumes:
-      - ./ollama:/root/.ollama
-    networks:
-      - ai
-
-  ####################################################
   ## PostgreSQL
   ####################################################
   postgres:
@@ -168,8 +144,6 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
 
     healthcheck:
       test:
@@ -234,7 +208,7 @@ services:
       - "127.0.0.1:3000:8080"
 
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://postgres:ai_stack@postgres:5432/ai_stack
 
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
@@ -315,7 +289,7 @@ services:
 
       # Required for the durable, streamed /runs API (SSE progress, sandbox
       # diff approval). /chat and /execute work without this.
-      POSTGRES_URL: ${POSTGRES_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://postgres:ai_stack@postgres:5432/ai_stack}
 
       WORKSPACE_DIR: ${WORKSPACE_DIR:-/workspace}
       # New requests default to this repository instead of scanning the whole
