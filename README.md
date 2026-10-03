@@ -89,8 +89,8 @@ docker compose ps
 # Check service health
 docker compose logs -f
 
-# Access the Open WebUI at http://<server-ip>:3000
-# Access the agent runner API at http://<server-ip>:8000
+# Access the Open WebUI at http://<server-ip>:3003
+# Access the agent runner API at http://<server-ip>:8001
 # Access LiteLLM at http://<server-ip>:4000
 ```
 
@@ -105,7 +105,7 @@ curl -fsS http://127.0.0.1:4000/health
 # Test SearXNG search endpoint
 curl -fsS "http://127.0.0.1:8080/search?q=test" 2>/dev/null | head -1 || echo "SearXNG loading"
 
-# Test AI-runs-ui at port 3001
+# Test AI-runs-ui at port 3002
 curl -fsS http://127.0.0.1:3001/api/health 2>/dev/null || echo "UI loading"
 ```
 

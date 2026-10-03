@@ -205,7 +205,7 @@ services:
         condition: service_healthy
 
     ports:
-      - "3003:8080"
+      - "3003:3003"
 
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ai_stack
@@ -400,10 +400,10 @@ services:
       IMAGE_GENERATION_TIMEOUT_SECONDS: ${IMAGE_GENERATION_TIMEOUT_SECONDS:-180}
 
     ports:
-      - "8081:8000"
+      - "8081:8081"
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -495,7 +495,7 @@ services:
         condition: service_healthy
 
     ports:
-      - "3002:8080"
+      - "3002:3002"
 
     security_opt:
       - no-new-privileges:true
