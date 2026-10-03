@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "127.0.0.1:11434:11434"
+      - "11434:11434"
 
     environment:
       # Retain the router, active executor, and embedding model together to
@@ -84,7 +84,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "127.0.0.1:6333:6333"
+      - "6333:6333"
 
     volumes:
       - ./qdrant:/qdrant/storage
@@ -126,7 +126,7 @@ services:
       - "--port=4000"
 
     ports:
-      - "127.0.0.1:4000:4000"
+      - "4000:4000"
 
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
@@ -169,7 +169,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "127.0.0.1:9099:9099"
+      - "9099:9099"
 
     environment:
       PIPELINES_API_KEY: ${PIPELINES_API_KEY}
@@ -205,7 +205,7 @@ services:
         condition: service_healthy
 
     ports:
-      - "127.0.0.1:3003:8080"
+      - "3003:8080"
 
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ai_stack
@@ -400,7 +400,7 @@ services:
       IMAGE_GENERATION_TIMEOUT_SECONDS: ${IMAGE_GENERATION_TIMEOUT_SECONDS:-180}
 
     ports:
-      - "127.0.0.1:8081:8000"
+      - "8081:8000"
 
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
@@ -495,7 +495,7 @@ services:
         condition: service_healthy
 
     ports:
-      - "127.0.0.1:3002:8080"
+      - "3002:8080"
 
     security_opt:
       - no-new-privileges:true
