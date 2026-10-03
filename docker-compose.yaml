@@ -272,17 +272,17 @@ services:
       # open-webui's OPENAI_API_CONFIGS above if you change it.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3-8b}
       # Fast CPU-mode model used for ordinary Auto / Quick chat requests.
-      FAST_MODEL: ${FAST_MODEL:-quick}
+      FAST_MODEL: ${FAST_MODEL:-qwen3-8b}
       # Semantic routing is a short JSON-only turn before Auto execution.
-      ROUTER_MODEL: ${ROUTER_MODEL:-quick}
-      ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-coder}
+      ROUTER_MODEL: ${ROUTER_MODEL:-qwen3-8b}
+      ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-qwen3-8b}
       ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1536}
       ROUTER_TIMEOUT_SECONDS: ${ROUTER_TIMEOUT_SECONDS:-240}
       ROUTER_ESCALATION_TIMEOUT_SECONDS: ${ROUTER_ESCALATION_TIMEOUT_SECONDS:-480}
       # Financial evidence synthesis stays on the more capable 8B alias.
-      FINANCE_MODEL: ${FINANCE_MODEL:-coder}
+      FINANCE_MODEL: ${FINANCE_MODEL:-qwen3-8b}
       # Used for current web/financial research through agent.orchestrator.
-      RESEARCH_MODEL: ${RESEARCH_MODEL:-quick}
+      RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3-8b}
       AGENT_MODEL_ID: ${AGENT_MODEL_ID:-orchestrator}
 
       QDRANT_URL: http://qdrant:6333
@@ -316,20 +316,20 @@ services:
       # thinking-enabled 8B turn can run ~2.5-3min at CPU inference speed.
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-600}
       LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-3072}
-      ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3-14b}
+      ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3-8b}
       ANALYSIS_SYNTHESIS_MAX_TOKENS: ${ANALYSIS_SYNTHESIS_MAX_TOKENS:-2048}
       ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS: ${ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS:-600}
       # Escalate only after a bounded failure loop, then independently review
       # high-risk diffs before exposing them for approval.
-      AGENT_REASONING_MODEL: ${AGENT_REASONING_MODEL:-qwen3-14b}
+      AGENT_REASONING_MODEL: ${AGENT_REASONING_MODEL:-qwen3-8b}
       AGENT_MODEL_ESCALATIONS: ${AGENT_MODEL_ESCALATIONS:-3}
-      CHANGE_REVIEW_MODEL: ${CHANGE_REVIEW_MODEL:-reasoning}
+      CHANGE_REVIEW_MODEL: ${CHANGE_REVIEW_MODEL:-qwen3-8b}
       CHANGE_REVIEW_MODEL_ENABLED: ${CHANGE_REVIEW_MODEL_ENABLED:-true}
       # Multi-expert dispatch for complex auto-routed requests: bounded expert
       # analyses run in parallel before the tool loop and feed the evidence
       # ledger. Concurrency stays bounded by MAX_CONCURRENT_LLM_CALLS.
       EXPERT_DISPATCH_ENABLED: ${EXPERT_DISPATCH_ENABLED:-true}
-      EXPERT_DISPATCH_MODEL: ${EXPERT_DISPATCH_MODEL:-qwen3-14b}
+      EXPERT_DISPATCH_MODEL: ${EXPERT_DISPATCH_MODEL:-qwen3-8b}
       MAX_PARALLEL_EXPERTS: ${MAX_PARALLEL_EXPERTS:-4}
       EXPERT_MAX_COMPLETION_TOKENS: ${EXPERT_MAX_COMPLETION_TOKENS:-1024}
       EXPERT_DISPATCH_TIMEOUT_SECONDS: ${EXPERT_DISPATCH_TIMEOUT_SECONDS:-600}

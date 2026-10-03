@@ -4,20 +4,10 @@ model_list:
   # General Chat
   ###########################################################
 
-  - model_name: quick
-    litellm_params:
-      model: ollama_chat/qwen3:4b-instruct
-      api_base: http://ollama:11434
-      num_ctx: 32768
-    model_info:
-      supports_function_calling: true
-
   - model_name: qwen3-8b
     litellm_params:
       model: ollama_chat/qwen3:8b
       api_base: http://ollama:11434
       num_ctx: 32768
-      extra_body:
-        think: false
     model_info:
       supports_function_calling: true

@@ -19,7 +19,7 @@ def env_list(name: str, default: str = "") -> list[str]:
 
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3-8b")
 AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "orchestrator")
-FAST_MODEL = os.getenv("FAST_MODEL", "quick")
+FAST_MODEL = os.getenv("FAST_MODEL", "qwen3-8b")
 # Small, low-latency model used only to translate an Auto request into a
 # validated workflow contract. It does not answer the user's request.
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", FAST_MODEL)
@@ -96,7 +96,7 @@ LLM_RETRY_BACKOFF_SECONDS = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2"))
 # Evidence-rich cross-domain comparisons use a stronger model for the one
 # synthesis turn only. If it is unavailable, the executor falls back to the
 # active workflow model without losing the collected evidence.
-ANALYSIS_SYNTHESIS_MODEL = os.getenv("ANALYSIS_SYNTHESIS_MODEL", "qwen3-14b")
+ANALYSIS_SYNTHESIS_MODEL = os.getenv("ANALYSIS_SYNTHESIS_MODEL", "qwen3-8b")
 ANALYSIS_SYNTHESIS_MAX_TOKENS = int(os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "2048"))
 ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
     os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "600")
@@ -104,9 +104,9 @@ ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
 # A stronger model is used only after bounded grounded failures; normal coding
 # remains on the selected/default model. Independent change review is likewise
 # risk-based and never overrides a deterministic rejection.
-AGENT_REASONING_MODEL = os.getenv("AGENT_REASONING_MODEL", "qwen3-14b")
+AGENT_REASONING_MODEL = os.getenv("AGENT_REASONING_MODEL", "qwen3-8b")
 AGENT_MODEL_ESCALATIONS = int(os.getenv("AGENT_MODEL_ESCALATIONS", "3"))
-CHANGE_REVIEW_MODEL = os.getenv("CHANGE_REVIEW_MODEL", "reasoning")
+CHANGE_REVIEW_MODEL = os.getenv("CHANGE_REVIEW_MODEL", "qwen3-8b")
 CHANGE_REVIEW_MODEL_ENABLED = env_flag("CHANGE_REVIEW_MODEL_ENABLED", True)
 # Tier 3 multi-expert dispatch. For complex auto-routed work the executor
 # dispatches several bounded expert analyses in parallel (plain completions,
@@ -116,7 +116,7 @@ CHANGE_REVIEW_MODEL_ENABLED = env_flag("CHANGE_REVIEW_MODEL_ENABLED", True)
 # multi-workflow requests, so ordinary Code/Quick runs and all read-only
 # analyses are unaffected.
 EXPERT_DISPATCH_ENABLED = env_flag("EXPERT_DISPATCH_ENABLED", True)
-EXPERT_DISPATCH_MODEL = os.getenv("EXPERT_DISPATCH_MODEL", "qwen3-14b")
+EXPERT_DISPATCH_MODEL = os.getenv("EXPERT_DISPATCH_MODEL", "qwen3-8b")
 MAX_PARALLEL_EXPERTS = int(os.getenv("MAX_PARALLEL_EXPERTS", "4"))
 EXPERT_MAX_COMPLETION_TOKENS = int(os.getenv("EXPERT_MAX_COMPLETION_TOKENS", "1024"))
 EXPERT_DISPATCH_TIMEOUT_SECONDS = int(

@@ -11,7 +11,7 @@ Usage:
   ./scripts/manage-models.sh enable <model>
   ./scripts/manage-models.sh disable <model>
 
-Aliases: quick, coder, qwen3-8b, qwen3-14b, reasoning, vision, embedding.
+Aliases: qwen3-8b.
 
 `enable` downloads the underlying model if needed. `disable` only unloads it
 from RAM; it does not delete model files. Use `list` to see downloaded models
@@ -21,12 +21,7 @@ EOF
 
 model_name() {
   case "${1:-}" in
-    quick) echo "qwen3:4b-instruct" ;;
-    coder|qwen3-8b) echo "qwen3:8b" ;;
-    qwen3-14b) echo "qwen3:14b" ;;
-    reasoning) echo "deepseek-r1:14b" ;;
-    vision) echo "gemma3:12b" ;;
-    embedding) echo "nomic-embed-text" ;;
+    qwen3-8b) echo "qwen3:8b" ;;
     *) echo "Unknown model alias: ${1:-}" >&2; usage >&2; exit 2 ;;
   esac
 }
