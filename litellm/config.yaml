@@ -1,6 +1,18 @@
 model_list:
 
   ###########################################################
+  # Embedding Model
+  ###########################################################
+
+  - model_name: nomic-embed-text
+    litellm_params:
+      model: ollama_embeddings/nomic-embed-text
+      api_base: http://ollama:11434
+      num_ctx: 8192
+    model_info:
+      supports_function_calling: false
+
+  ###########################################################
   # General Chat
   ###########################################################
 
