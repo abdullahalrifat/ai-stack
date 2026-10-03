@@ -515,6 +515,5 @@ services:
 
 networks:
   ai:
-    driver: bridge
   proxy:
     external: true
