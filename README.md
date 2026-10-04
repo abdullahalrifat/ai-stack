@@ -67,7 +67,7 @@ cp .env.example .env
 
 Edit the `.env` file to match your server configuration:
 - Set `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`, `AGENT_API_KEY`, and `RUNNER_API_KEY` to strong random values
-- Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
+- Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
 - Use `qwen3-4b` for routine chat/routing/research and `qwen3-8b` for coding, finance, synthesis and difficult reasoning
 - Configure workspace paths: `WORKSPACE_PATH=/path/to/your/code`
 - Adjust resource limits: `RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `MAX_AGENT_STEPS`
@@ -138,7 +138,7 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 
 ## CPU / low-memory profile
 
-For a 3-vCPU / 12-GB VM, the default routing keeps the smaller `qwen3:4b` model on the hot path and reserves `qwen3:8b` for coding and harder reasoning. Only two Ollama models are allowed to remain loaded, LLM concurrency is one, expert fan-out is two, and the server/runner are capped at 5 GB / 1.5 GB RAM and 2 / 1 CPU respectively. This leaves the host enough headroom for Ollama, PostgreSQL, Redis, Qdrant and Open WebUI.
+For a 3-vCPU / 12-GB VM, the default routing keeps the smaller `qwen3:4b` model on the hot path and reserves `qwen3:8b` for coding and harder reasoning. Only one Ollama generation model is allowed to remain loaded at a time; both 4B and 8B remain installed and are swapped on demand. LLM concurrency is one, expert fan-out is two, and the server/runner are capped at 5 GB / 1.5 GB RAM and 2 / 1 CPU respectively. This leaves the host enough headroom for Ollama, PostgreSQL, Redis, Qdrant and Open WebUI.
 
 The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is only the host-published port. Open WebUI must use the internal port.
 
