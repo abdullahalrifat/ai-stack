@@ -10,20 +10,23 @@ The supported home architecture is now:
   disables web search, and fails closed if required local Ollama models are
   missing.
 
-## OptiPlex 16 GB recommendation
+## OptiPlex / small CPU VM recommendation
 
-Use `.env.hybrid-16gb.example` as the starting profile. Keep only small
-survival models on the CPU host:
+For a 3-vCPU/14-GB VM, use a 4B-first local profile. Keep both `qwen3:4b`
+and `qwen3:8b` installed for optional escalation, but keep only one generation
+model resident at a time:
 
 ```text
-qwen3:4b-instruct
+qwen3:4b
 qwen3:8b
 nomic-embed-text
 ```
 
-Keep `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_KEEP_ALIVE=5m`, and a 16K local context budget. Both 4B and 8B stay installed, but only one generation model is resident at a time. The OptiPlex should spend its memory and CPU on the durable
-AI Stack control plane, databases, retrieval, agent execution, and survival
-inference rather than attempting to keep larger 12B/14B models resident. The supported local CPU profile uses qwen3:4b and qwen3:8b.
+Use `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, an 8K local context
+budget, and conservative agent/tool concurrency. Routine chat, research,
+finance, coding, synthesis, and review should use `qwen3:4b`. The 8B model is
+reserved for explicit quality escalation rather than automatic multi-expert
+fan-out. Do not configure obsolete 12B/14B/16B local models on the CPU host.
 
 ## Hugging Face configuration
 
