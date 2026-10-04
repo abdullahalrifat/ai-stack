@@ -12,10 +12,10 @@ services:
       - "11434:11434"
 
     environment:
-      # Retain the router, active executor, and embedding model together to
-      # avoid reloading weights between phases of one request.
-      OLLAMA_KEEP_ALIVE: 10m
-      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-2}
+      # Keep only one generation model resident on CPU-constrained hosts. Both
+      # 4B and 8B remain installed; Ollama swaps them as routing escalates.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
       # Open WebUI can attach several tool schemas to one request. 4096 is
       # too small for those prompts. 32768 matches the num_ctx each model
