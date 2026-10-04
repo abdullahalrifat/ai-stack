@@ -21,10 +21,9 @@ qwen3:8b
 nomic-embed-text
 ```
 
-Keep `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, and a 16K local
-context budget. The OptiPlex should spend its memory and CPU on the durable
+Keep `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_KEEP_ALIVE=5m`, and a 16K local context budget. Both 4B and 8B stay installed, but only one generation model is resident at a time. The OptiPlex should spend its memory and CPU on the durable
 AI Stack control plane, databases, retrieval, agent execution, and survival
-inference rather than attempting to keep multiple 12B/14B models resident.
+inference rather than attempting to keep larger 12B/14B models resident. The supported local CPU profile uses qwen3:4b and qwen3:8b.
 
 ## Hugging Face configuration
 

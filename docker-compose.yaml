@@ -12,15 +12,15 @@ services:
       - "11434:11434"
 
     environment:
-      # Retain the router, active executor, and embedding model together to
-      # avoid reloading weights between phases of one request.
-      OLLAMA_KEEP_ALIVE: 10m
-      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-3}
+      # Keep only one generation model resident on CPU-constrained hosts. Both
+      # 4B and 8B remain installed; Ollama swaps them as routing escalates.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
       # Open WebUI can attach several tool schemas to one request. 4096 is
       # too small for those prompts. 32768 matches the num_ctx each model
       # advertises through LiteLLM; lower it on memory-constrained hosts.
-      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-32768}
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-16384}
 
     volumes:
       - ./ollama:/root/.ollama
@@ -217,7 +217,7 @@ services:
 
       OPENAI_API_BASE_URL: http://litellm:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
-      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8081/v1
+      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8000/v1
       # Keys correspond positionally to OPENAI_API_BASE_URLS.  The agent
       # endpoint has its own key; leaving this blank makes the seeded
       # connection unusable.
@@ -272,9 +272,9 @@ services:
       # open-webui's OPENAI_API_CONFIGS above if you change it.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3-8b}
       # Fast CPU-mode model used for ordinary Auto / Quick chat requests.
-      FAST_MODEL: ${FAST_MODEL:-qwen3-8b}
+      FAST_MODEL: ${FAST_MODEL:-qwen3-4b}
       # Semantic routing is a short JSON-only turn before Auto execution.
-      ROUTER_MODEL: ${ROUTER_MODEL:-qwen3-8b}
+      ROUTER_MODEL: ${ROUTER_MODEL:-qwen3-4b}
       ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-qwen3-8b}
       ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-1536}
       ROUTER_TIMEOUT_SECONDS: ${ROUTER_TIMEOUT_SECONDS:-240}
@@ -282,7 +282,7 @@ services:
       # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-qwen3-8b}
       # Used for current web/financial research through agent.orchestrator.
-      RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3-8b}
+      RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3-4b}
       AGENT_MODEL_ID: ${AGENT_MODEL_ID:-orchestrator}
 
       QDRANT_URL: http://qdrant:6333
@@ -302,20 +302,20 @@ services:
 
       SANDBOX_ROOT: ${SANDBOX_ROOT:-/sandboxes}
 
-      MAX_AGENT_STEPS: ${MAX_AGENT_STEPS:-80}
+      MAX_AGENT_STEPS: ${MAX_AGENT_STEPS:-60}
       MAX_EMPTY_MODEL_TURNS: ${MAX_EMPTY_MODEL_TURNS:-5}
       MAX_EMPTY_SEARCH_RESULTS: ${MAX_EMPTY_SEARCH_RESULTS:-5}
       MAX_UNPRODUCTIVE_TOOL_CALLS: ${MAX_UNPRODUCTIVE_TOOL_CALLS:-5}
       # One local CPU/GPU inference worker by default; concurrent requests
       # queue instead of competing for Ollama and appearing stalled.
-      MAX_CONCURRENT_AGENT_RUNS: ${MAX_CONCURRENT_AGENT_RUNS:-2}
+      MAX_CONCURRENT_AGENT_RUNS: ${MAX_CONCURRENT_AGENT_RUNS:-1}
       MAX_CONCURRENT_LLM_CALLS: ${MAX_CONCURRENT_LLM_CALLS:-1}
-      MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-16000}
+      MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-10000}
       # A cold local 8B model can spend ~40s loading and ~60s ingesting a
       # repository/tool prompt before its first streamed token, and a
       # thinking-enabled 8B turn can run ~2.5-3min at CPU inference speed.
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-600}
-      LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-3072}
+      LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-2048}
       ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3-8b}
       ANALYSIS_SYNTHESIS_MAX_TOKENS: ${ANALYSIS_SYNTHESIS_MAX_TOKENS:-2048}
       ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS: ${ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS:-600}
@@ -329,17 +329,17 @@ services:
       # analyses run in parallel before the tool loop and feed the evidence
       # ledger. Concurrency stays bounded by MAX_CONCURRENT_LLM_CALLS.
       EXPERT_DISPATCH_ENABLED: ${EXPERT_DISPATCH_ENABLED:-true}
-      EXPERT_DISPATCH_MODEL: ${EXPERT_DISPATCH_MODEL:-qwen3-8b}
-      MAX_PARALLEL_EXPERTS: ${MAX_PARALLEL_EXPERTS:-4}
-      EXPERT_MAX_COMPLETION_TOKENS: ${EXPERT_MAX_COMPLETION_TOKENS:-1024}
+      EXPERT_DISPATCH_MODEL: ${EXPERT_DISPATCH_MODEL:-qwen3-4b}
+      MAX_PARALLEL_EXPERTS: ${MAX_PARALLEL_EXPERTS:-2}
+      EXPERT_MAX_COMPLETION_TOKENS: ${EXPERT_MAX_COMPLETION_TOKENS:-768}
       EXPERT_DISPATCH_TIMEOUT_SECONDS: ${EXPERT_DISPATCH_TIMEOUT_SECONDS:-600}
       EXPERT_FINDINGS_CONTEXT_CHARS: ${EXPERT_FINDINGS_CONTEXT_CHARS:-2400}
       PLANNER_MAX_COMPLETION_TOKENS: ${PLANNER_MAX_COMPLETION_TOKENS:-384}
       # Bound Open WebUI/Continue input before the agent adds tools and its
       # own instructions, preventing an 8K Ollama context overflow.
       OPENAI_INPUT_MAX_CHARS: ${OPENAI_INPUT_MAX_CHARS:-16000}
-      CONTEXT_TOKEN_LIMIT: ${CONTEXT_TOKEN_LIMIT:-32768}
-      CONTEXT_OUTPUT_RESERVE_TOKENS: ${CONTEXT_OUTPUT_RESERVE_TOKENS:-4096}
+      CONTEXT_TOKEN_LIMIT: ${CONTEXT_TOKEN_LIMIT:-16384}
+      CONTEXT_OUTPUT_RESERVE_TOKENS: ${CONTEXT_OUTPUT_RESERVE_TOKENS:-3072}
       FINANCE_MAX_COMPLETION_TOKENS: ${FINANCE_MAX_COMPLETION_TOKENS:-1536}
       FINANCE_LLM_TIMEOUT_SECONDS: ${FINANCE_LLM_TIMEOUT_SECONDS:-600}
       COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-300}
@@ -380,8 +380,8 @@ services:
       MEMORY_ENABLED: ${MEMORY_ENABLED:-true}
       MEMORY_FOR_CODE_RUNS: ${MEMORY_FOR_CODE_RUNS:-false}
       GENERATED_MEMORY_ENABLED: ${GENERATED_MEMORY_ENABLED:-false}
-      OLLAMA_EMBED_MAX_CHARS: ${OLLAMA_EMBED_MAX_CHARS:-6000}
-      MEMORY_CONTEXT_TOKENS: ${MEMORY_CONTEXT_TOKENS:-2400}
+      OLLAMA_EMBED_MAX_CHARS: ${OLLAMA_EMBED_MAX_CHARS:-4000}
+      MEMORY_CONTEXT_TOKENS: ${MEMORY_CONTEXT_TOKENS:-1600}
       DOCUMENT_MAX_BYTES: ${DOCUMENT_MAX_BYTES:-10000000}
       MODEL_LIST_CACHE_SECONDS: ${MODEL_LIST_CACHE_SECONDS:-300}
       RUNNER_CPU_SECONDS: ${RUNNER_CPU_SECONDS:-300}
@@ -422,8 +422,8 @@ services:
       - DAC_OVERRIDE
 
     pids_limit: 256
-    mem_limit: ${AGENT_MEMORY_LIMIT:-8g}
-    cpus: ${AGENT_CPUS:-4}
+    mem_limit: ${AGENT_MEMORY_LIMIT:-5g}
+    cpus: ${AGENT_CPUS:-2}
 
     depends_on:
       agent-runner:
@@ -470,8 +470,8 @@ services:
     cap_drop:
       - ALL
     pids_limit: 128
-    mem_limit: ${RUNNER_MEMORY_LIMIT:-3g}
-    cpus: ${RUNNER_CPUS:-2}
+    mem_limit: ${RUNNER_MEMORY_LIMIT:-1536m}
+    cpus: ${RUNNER_CPUS:-1}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/ready"]
       interval: 10s

@@ -67,8 +67,8 @@ cp .env.example .env
 
 Edit the `.env` file to match your server configuration:
 - Set `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`, `AGENT_API_KEY`, and `RUNNER_API_KEY` to strong random values
-- Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
-- Set `DEFAULT_MODEL=qwen3-8b` for CPU-mode defaults (8B model for coding, 4B for routine chat)
+- Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
+- Use `qwen3-4b` for routine chat/routing/research and `qwen3-8b` for coding, finance, synthesis and difficult reasoning
 - Configure workspace paths: `WORKSPACE_PATH=/path/to/your/code`
 - Adjust resource limits: `RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `MAX_AGENT_STEPS`
 
@@ -76,6 +76,13 @@ Edit the `.env` file to match your server configuration:
 ```bash
 # Build the custom images
 ./build.sh
+
+# Provision the local CPU models once while connected
+# (skip a model only if it is already present in ./ollama)
+docker compose up -d ollama
+docker exec ollama ollama pull qwen3:4b
+docker exec ollama ollama pull qwen3:8b
+docker exec ollama ollama pull nomic-embed-text
 
 # Start the services
 docker compose up -d
@@ -90,8 +97,9 @@ docker compose ps
 docker compose logs -f
 
 # Access the Open WebUI at http://<server-ip>:3003
-# Access the agent runner API at http://<server-ip>:8001
+# The agent runner and SearXNG are internal Docker services; they are not host-published.
 # Access LiteLLM at http://<server-ip>:4000
+# Access the Runs UI at http://<server-ip>:3002
 ```
 
 ### 6. Test the deployment with curl
@@ -103,10 +111,10 @@ curl -fsS http://127.0.0.1:8081/health
 curl -fsS http://127.0.0.1:4000/health
 
 # Test SearXNG search endpoint
-curl -fsS "http://127.0.0.1:8080/search?q=test" 2>/dev/null | head -1 || echo "SearXNG loading"
+docker compose exec -T searxng wget -qO- "http://127.0.0.1:8080/search?q=test" | head -1 || echo "SearXNG loading"
 
 # Test AI-runs-ui at port 3002
-curl -fsS http://127.0.0.1:3001/api/health 2>/dev/null || echo "UI loading"
+curl -fsS http://127.0.0.1:3002/ 2>/dev/null | head -1 || echo "UI loading"
 ```
 
 ### 6. For offline/off-grid deployment
@@ -127,6 +135,12 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 # Then follow steps 1-5 above for a fresh installation
 ```
 
+
+## CPU / low-memory profile
+
+For a 3-vCPU / 12-GB VM, the default routing keeps the smaller `qwen3:4b` model on the hot path and reserves `qwen3:8b` for coding and harder reasoning. Only one Ollama generation model is allowed to remain loaded at a time; both 4B and 8B remain installed and are swapped on demand. LLM concurrency is one, expert fan-out is two, and the server/runner are capped at 5 GB / 1.5 GB RAM and 2 / 1 CPU respectively. This leaves the host enough headroom for Ollama, PostgreSQL, Redis, Qdrant and Open WebUI.
+
+The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is only the host-published port. Open WebUI must use the internal port.
 
 ## Offline / off-grid operation
 
