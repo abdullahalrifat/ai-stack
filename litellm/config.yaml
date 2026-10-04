@@ -13,13 +13,25 @@ model_list:
       supports_function_calling: false
 
   ###########################################################
-  # General Chat
+  # Fast / low-cost CPU model
+  ###########################################################
+
+  - model_name: qwen3-4b
+    litellm_params:
+      model: ollama_chat/qwen3:4b
+      api_base: http://ollama:11434
+      num_ctx: 16384
+    model_info:
+      supports_function_calling: true
+
+  ###########################################################
+  # General / coding model
   ###########################################################
 
   - model_name: qwen3-8b
     litellm_params:
       model: ollama_chat/qwen3:8b
       api_base: http://ollama:11434
-      num_ctx: 32768
+      num_ctx: 16384
     model_info:
       supports_function_calling: true
