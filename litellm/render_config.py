@@ -1,8 +1,9 @@
 """Render LiteLLM configuration with optional hybrid remote providers.
 
 The checked-in config remains local-first and offline-safe. When
-INFERENCE_MODE=hybrid and Hugging Face is configured, concrete remote model IDs are promoted to HF-backed primary deployments and automatically fall
-back to concrete local Ollama model IDs.
+INFERENCE_MODE=hybrid and Hugging Face is configured, concrete remote model IDs
+are promoted to HF-backed primary deployments and automatically fall back to
+concrete local Ollama model IDs.
 """
 
 from __future__ import annotations
