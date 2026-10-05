@@ -3,7 +3,7 @@
 The checked-in config remains local-first and offline-safe. When
 INFERENCE_MODE=hybrid and Hugging Face is configured, selected capability
 aliases are promoted to HF-backed primary deployments and automatically fall
-back to their local Ollama aliases.
+back to concrete local Ollama model IDs.
 """
 
 from __future__ import annotations
@@ -91,14 +91,14 @@ def remote_model_entries(env: dict[str, str]) -> str:
             raise ValueError("ANTHROPIC_MODEL and ANTHROPIC_API_KEY must be configured together")
         entries.append(
             """
-  - model_name: remote-claude
+  - model_name: %s
     litellm_params:
       model: %s
       api_key: os.environ/ANTHROPIC_API_KEY
     model_info:
       supports_function_calling: true
 """
-            % _yaml_string(f"anthropic/{anthropic_model}")
+            % _yaml_string(anthropic_model)
         )
 
     settings = _hf_settings(env)
@@ -108,7 +108,7 @@ def remote_model_entries(env: dict[str, str]) -> str:
             raise ValueError("HF_MODEL, HF_INFERENCE_BASE_URL, and HF_API_KEY must be configured together")
         entries.append(
             """
-  - model_name: remote-hf
+  - model_name: %s
     litellm_params:
       model: %s
       api_base: %s
@@ -116,7 +116,7 @@ def remote_model_entries(env: dict[str, str]) -> str:
     model_info:
       supports_function_calling: true
 """
-            % (_yaml_string(f"openai/{hf_model}"), _yaml_string(settings["base"]))
+            % (_yaml_string(hf_model), _yaml_string(settings["base"]))
         )
     elif settings["base"] or settings["key"]:
         if not (settings["base"] and settings["key"]):
@@ -127,15 +127,7 @@ def remote_model_entries(env: dict[str, str]) -> str:
     return "".join(entries)
 
 
-def _local_alias_rewrites(source: str, env: dict[str, str]) -> str:
-    hybrid, _ = _hybrid_entries(env)
-    if not hybrid:
-        return source
-    return source
-
-
 def render_config(source: str, env: dict[str, str]) -> str:
-    source = _local_alias_rewrites(source, env)
     entries = remote_model_entries(env)
     if not entries:
         return source
