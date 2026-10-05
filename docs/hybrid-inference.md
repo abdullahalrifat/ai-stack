@@ -12,17 +12,19 @@ The supported home architecture is now:
 
 ## OptiPlex / small CPU VM recommendation
 
-For a 3-vCPU/14-GB VM, use a 4B-only local profile. Keep only one generation
-model installed and resident:
+For the OptiPlex / small CPU VM, use a two-tier local setup. Keep both generation
+models installed, but only one resident at a time:
 
 ```text
-qwen3:4b
+qwen3:1.7b  # default / routine work
+qwen3:4b    # heavy coding, reasoning, review
 nomic-embed-text
 ```
 
 Use `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, an 8K local context
-budget, and conservative agent/tool concurrency. Routine chat, research,
-finance, coding, synthesis, and review should use `qwen3:4b`. Do not configure obsolete larger local models on the CPU host.
+budget, and conservative agent/tool concurrency. The 1.7B model handles normal
+requests; the 4B model is selected only when the workload needs more capacity.
+Do not configure obsolete larger local models on the CPU host.
 
 ## Hugging Face configuration
 
@@ -47,19 +49,10 @@ The role-specific value overrides `HF_MODEL`.
 
 ## Fallback behavior
 
-When hybrid mode is enabled, the public aliases remain stable:
-
-```text
-coder    -> HF coder    -> coder-local (Ollama)
-reasoning -> HF reasoning -> reasoning-local (Ollama)
-vision   -> HF vision   -> vision-local (Ollama)
-```
-
-LiteLLM performs the provider failover after the configured primary model
-exhausts its retry policy. The client does not need provider-specific logic.
-
-`quick` remains the local 4B Ollama model by default so routing/planning stays cheap and
-available even when HF is unavailable.
+Hybrid routing uses concrete provider model IDs only. When a configured remote
+model is unavailable, LiteLLM falls back directly to the concrete local model
+ID `qwen3-4b` for coding/reasoning/vision workloads. There are no synthetic
+local aliases such as `coder-local`.
 
 ## Safety rules
 
