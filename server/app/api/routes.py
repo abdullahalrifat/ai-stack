@@ -758,7 +758,7 @@ def models():
         "object": "list",
         "data": [
             {
-                "id": AGENT_MODEL_ID,
+                "id": DEFAULT_MODEL,
                 "object": "model",
                 "owned_by": "ai-stack-agent",
             }
