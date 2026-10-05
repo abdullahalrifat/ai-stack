@@ -69,7 +69,7 @@ def configured_candidates(default_model: str) -> tuple[RouteCandidate, ...]:
         )
     if not candidates:
         candidates.append(
-            RouteCandidate("default", default_model, "openai", 0.6, 0.6, 0.6, 0.5, 0.2)
+            RouteCandidate(default_model, default_model, "openai", 0.6, 0.6, 0.6, 0.5, 0.2)
         )
     return tuple(candidates)
 
