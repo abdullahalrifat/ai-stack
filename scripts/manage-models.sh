@@ -11,7 +11,7 @@ Usage:
   ./scripts/manage-models.sh enable <model>
   ./scripts/manage-models.sh disable <model>
 
-Aliases: qwen3:4b, nomic-embed-text.
+
 
 `enable` downloads the underlying model if needed. `disable` only unloads it
 from RAM; it does not delete model files. Use `list` to see downloaded models
