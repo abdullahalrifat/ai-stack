@@ -191,7 +191,7 @@ def test_openai_research_profile_forces_research_mode():
     assert runner.call_args.kwargs["force_research"] is True
 
 
-def test_openai_models_expose_only_central_router_agent():
+def test_openai_models_expose_only_canonical_model():
     ids = {model["id"] for model in routes.models()["data"]}
 
     assert ids == {DEFAULT_MODEL}
