@@ -148,7 +148,7 @@ def test_stream_closes_transport_when_run_is_cancelled(_available):
             client.chat_with_tools_stream(
                 [],
                 [],
-                model="coder",
+                model="qwen3-4b",
                 should_cancel=lambda: next(checks),
             )
         )
@@ -181,7 +181,7 @@ def test_stream_wall_clock_deadline_stops_a_heartbeat_stall(_available):
         patch("app.llm.client.get_client", return_value=fake_client),
         pytest.raises(TimeoutError, match="deadline"),
     ):
-        list(client.chat_with_tools_stream([], [], model="coder", timeout_seconds=0.05))
+        list(client.chat_with_tools_stream([], [], model="qwen3-4b", timeout_seconds=0.05))
 
     assert time.monotonic() - started < 1
     assert response.closed is True
@@ -204,7 +204,7 @@ def test_planner_completion_streams_when_cancellation_context_exists(_available)
         patch("app.llm.client.get_client", return_value=fake_client),
         cancellation_context(lambda: False),
     ):
-        assert client.chat([], model="coder") == "one two"
+        assert client.chat([], model="qwen3-4b") == "one two"
 
     assert completion.call_args.kwargs["stream"] is True
 
