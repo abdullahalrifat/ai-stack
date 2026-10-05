@@ -17,14 +17,14 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3-4b")
-FAST_MODEL = os.getenv("FAST_MODEL", "qwen3-4b")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3-1.7b")
+FAST_MODEL = os.getenv("FAST_MODEL", "qwen3-1.7b")
 # Small, low-latency model used only to translate an Auto request into a
 # validated workflow contract. It does not answer the user's request.
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", FAST_MODEL)
 ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "1536"))
 ROUTER_TIMEOUT_SECONDS = int(os.getenv("ROUTER_TIMEOUT_SECONDS", "240"))
-FINANCE_MODEL = os.getenv("FINANCE_MODEL", DEFAULT_MODEL)
+FINANCE_MODEL = os.getenv("FINANCE_MODEL", "qwen3-4b")
 # Used by the Open WebUI for current web/financial research when
 # no per-run model was explicitly selected in the Runs UI.
 RESEARCH_MODEL = os.getenv("RESEARCH_MODEL", FAST_MODEL)
