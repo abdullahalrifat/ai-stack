@@ -23,6 +23,7 @@ class AgentProfile:
 
 PROFILES: dict[str, AgentProfile] = {
     "auto": AgentProfile(DEFAULT_MODEL, "auto"),
+    DEFAULT_MODEL: AgentProfile(DEFAULT_MODEL, "auto"),
     "quick": AgentProfile(FAST_MODEL, "quick"),
     "code": AgentProfile(DEFAULT_MODEL, "code"),
     "research": AgentProfile(RESEARCH_MODEL, "research", force_research=True),
