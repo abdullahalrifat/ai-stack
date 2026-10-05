@@ -13,7 +13,19 @@ model_list:
       supports_function_calling: false
 
   ###########################################################
-  # Fast / low-cost CPU model
+  # Small / low-cost CPU model
+  ###########################################################
+
+  - model_name: qwen3-1.7b
+    litellm_params:
+      model: ollama_chat/qwen3:1.7b
+      api_base: http://ollama:11434
+      num_ctx: 8192
+    model_info:
+      supports_function_calling: true
+
+  ###########################################################
+  # Heavy local CPU model
   ###########################################################
 
   - model_name: qwen3-4b
