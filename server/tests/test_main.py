@@ -178,7 +178,7 @@ def test_openai_prompt_marks_history_as_reference_and_latest_user_as_task():
     assert prompt.endswith("Review this codebase for gaps.")
 
 
-def test_openai_research_profile_forces_research_mode():
+def test_openai_concrete_model_selector_does_not_force_research_mode():
     research_request = schemas.OpenAIChatCompletionRequest(
         model=RESEARCH_MODEL,
         messages=[schemas.OpenAIChatMessage(role="user", content="summarize this")],
