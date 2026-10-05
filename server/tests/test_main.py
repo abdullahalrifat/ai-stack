@@ -9,6 +9,7 @@ from app.api import dependencies, routes, schemas
 from app.api.context import compact_openai_messages, openai_prompt
 from app.api.profiles import PROFILES, resolve_workflow
 from app.core.config import (
+    AGENT_REASONING_MODEL,
     DEFAULT_MODEL,
     FAST_MODEL,
     FINANCE_LLM_TIMEOUT_SECONDS,
@@ -365,7 +366,7 @@ def test_run_event_stream_renews_and_releases_foreground_lease(monkeypatch):
 def test_auto_profile_uses_default_model_while_quick_uses_fast_model():
     assert resolve_workflow("quick").model == FAST_MODEL
     assert resolve_workflow("quick").model == FAST_MODEL
-    assert resolve_workflow("code").model == DEFAULT_MODEL
+    assert resolve_workflow("code").model == AGENT_REASONING_MODEL
     assert resolve_workflow("finance").model == FINANCE_MODEL
     assert resolve_workflow("finance").max_completion_tokens == FINANCE_MAX_COMPLETION_TOKENS
     assert resolve_workflow("finance").timeout_seconds == FINANCE_LLM_TIMEOUT_SECONDS
