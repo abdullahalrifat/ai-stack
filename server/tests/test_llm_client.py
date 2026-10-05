@@ -43,13 +43,13 @@ def test_tool_completion_accepts_profile_output_budget(_available):
     fake_client, completion = _completion_client()
 
     with patch("app.llm.client.get_client", return_value=fake_client):
-        client.chat_with_tools([], [], model="coder", max_tokens=640)
+        client.chat_with_tools([], [], model="qwen3-4b", max_tokens=640)
 
     assert completion.call_args.kwargs["max_tokens"] == 640
 
 
 @patch("app.llm.client._ensure_model_available")
-def test_tool_completion_accepts_profile_timeout(_available):
+def test_tool_completion_accepts_model_timeout(_available):
     fake_client, completion = _completion_client()
 
     with patch("app.llm.client.get_client", return_value=fake_client):
@@ -65,7 +65,7 @@ def test_plain_completion_accepts_structured_json_mode(_available):
     with patch("app.llm.client.get_client", return_value=fake_client):
         client.chat(
             [{"role": "user", "content": "route this"}],
-            model="quick",
+            model="qwen3-1.7b",
             response_format={"type": "json_object"},
         )
 
