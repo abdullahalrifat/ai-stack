@@ -198,8 +198,8 @@ async def execute(request: ExecuteRequest):
             "Direct execute is read-only. Use POST /runs for reviewed sandbox writes.",
         )
     profile = (
-        resolve_profile(request.model or AGENT_MODEL_ID)
-        if (request.model or AGENT_MODEL_ID) in PROFILES
+        resolve_profile(request.model or DEFAULT_MODEL)
+        if (request.model or DEFAULT_MODEL) in PROFILES
         else None
     )
     workspace = resolve_request_workspace(request.workspace, request.task)
