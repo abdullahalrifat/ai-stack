@@ -223,8 +223,8 @@ services:
       # connection unusable.
       OPENAI_API_KEYS: ${LITELLM_MASTER_KEY};${AGENT_API_KEY}
       # Open WebUI joins an OpenAI connection prefix with a dot, producing
-      # the displayed model id "agent.orchestrator".
-      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["orchestrator"]}}'
+      # the displayed model id "agent.qwen3:4b".
+      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["qwen3:4b"]}}'
 
     volumes:
       - ./open-webui:/app/backend/data
@@ -267,23 +267,23 @@ services:
 
       # DEFAULT_MODEL is what /chat, /execute, and /runs use unless a request
       # overrides it. AGENT_MODEL_ID is the id the agent advertises at
-      # /v1/models and is what Open WebUI's "agent.orchestrator" connection
+      # /v1/models and is what Open WebUI's "agent.qwen3:4b" connection
       # expects to see -- keep it in sync with the model_ids entry in
       # open-webui's OPENAI_API_CONFIGS above if you change it.
-      DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3-4b}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3:4b}
       # Fast CPU-mode model used for ordinary Auto / Quick chat requests.
-      FAST_MODEL: ${FAST_MODEL:-qwen3-4b}
+      FAST_MODEL: ${FAST_MODEL:-qwen3:4b}
       # Semantic routing is a short JSON-only turn before Auto execution.
-      ROUTER_MODEL: ${ROUTER_MODEL:-qwen3-4b}
-      ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-qwen3-8b}
+      ROUTER_MODEL: ${ROUTER_MODEL:-qwen3:4b}
+      ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-qwen3:4b}
       ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-768}
       ROUTER_TIMEOUT_SECONDS: ${ROUTER_TIMEOUT_SECONDS:-180}
       ROUTER_ESCALATION_TIMEOUT_SECONDS: ${ROUTER_ESCALATION_TIMEOUT_SECONDS:-360}
       # Financial evidence synthesis stays on the more capable 8B alias.
-      FINANCE_MODEL: ${FINANCE_MODEL:-qwen3-4b}
-      # Used for current web/financial research through agent.orchestrator.
-      RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3-4b}
-      AGENT_MODEL_ID: ${AGENT_MODEL_ID:-orchestrator}
+      FINANCE_MODEL: ${FINANCE_MODEL:-qwen3:4b}
+      # Used for current web/financial research through agent.qwen3:4b.
+      RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3:4b}
+      AGENT_MODEL_ID: ${AGENT_MODEL_ID:-qwen3:4b}
 
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -316,20 +316,20 @@ services:
       # thinking-enabled 8B turn can run ~2.5-3min at CPU inference speed.
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-480}
       LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-1536}
-      ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3-4b}
+      ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3:4b}
       ANALYSIS_SYNTHESIS_MAX_TOKENS: ${ANALYSIS_SYNTHESIS_MAX_TOKENS:-1024}
       ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS: ${ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS:-360}
       # Escalate only after a bounded failure loop, then independently review
       # high-risk diffs before exposing them for approval.
-      AGENT_REASONING_MODEL: ${AGENT_REASONING_MODEL:-qwen3-4b}
+      AGENT_REASONING_MODEL: ${AGENT_REASONING_MODEL:-qwen3:4b}
       AGENT_MODEL_ESCALATIONS: ${AGENT_MODEL_ESCALATIONS:-1}
-      CHANGE_REVIEW_MODEL: ${CHANGE_REVIEW_MODEL:-qwen3-4b}
+      CHANGE_REVIEW_MODEL: ${CHANGE_REVIEW_MODEL:-qwen3:4b}
       CHANGE_REVIEW_MODEL_ENABLED: ${CHANGE_REVIEW_MODEL_ENABLED:-true}
       # Multi-expert dispatch for complex auto-routed requests: bounded expert
       # analyses run in parallel before the tool loop and feed the evidence
       # ledger. Concurrency stays bounded by MAX_CONCURRENT_LLM_CALLS.
       EXPERT_DISPATCH_ENABLED: ${EXPERT_DISPATCH_ENABLED:-false}
-      EXPERT_DISPATCH_MODEL: ${EXPERT_DISPATCH_MODEL:-qwen3-4b}
+      EXPERT_DISPATCH_MODEL: ${EXPERT_DISPATCH_MODEL:-qwen3:4b}
       MAX_PARALLEL_EXPERTS: ${MAX_PARALLEL_EXPERTS:-1}
       EXPERT_MAX_COMPLETION_TOKENS: ${EXPERT_MAX_COMPLETION_TOKENS:-512}
       EXPERT_DISPATCH_TIMEOUT_SECONDS: ${EXPERT_DISPATCH_TIMEOUT_SECONDS:-600}
