@@ -68,7 +68,7 @@ cp .env.example .env
 Edit the `.env` file to match your server configuration:
 - Set `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`, `AGENT_API_KEY`, and `RUNNER_API_KEY` to strong random values
 - Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
-- Use `qwen3-4b` for routine chat/routing/research and `qwen3-8b` for coding, finance, synthesis and difficult reasoning
+- Use `qwen3:4b` for routine chat/routing/research and `qwen3:4b` for coding, finance, synthesis and difficult reasoning
 - Configure workspace paths: `WORKSPACE_PATH=/path/to/your/code`
 - Adjust resource limits: `RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `MAX_AGENT_STEPS`
 
@@ -151,7 +151,7 @@ On the machine running Jarvis CLI:
 ```bash
 export JARVIS_PROVIDER=openai
 export JARVIS_BASE_URL=http://<ai-stack-host>:8081/v1
-export JARVIS_MODEL=orchestrator
+export JARVIS_MODEL=qwen3:4b
 export JARVIS_API_KEY='<the AGENT_API_KEY from ai-stack .env>'
 
 jarvis model-doctor
@@ -165,7 +165,7 @@ If you want Jarvis CLI to own the tool loop and AI Stack to provide only inferen
 ```bash
 export JARVIS_PROVIDER=openai
 export JARVIS_BASE_URL=http://<ai-stack-host>:4000/v1
-export JARVIS_MODEL=qwen3-4b
+export JARVIS_MODEL=qwen3:4b
 export JARVIS_API_KEY='<the LITELLM_MASTER_KEY from ai-stack .env>'
 jarvis model-doctor
 ```
