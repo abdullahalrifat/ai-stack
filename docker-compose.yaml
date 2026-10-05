@@ -223,7 +223,7 @@ services:
       # connection unusable.
       OPENAI_API_KEYS: ${LITELLM_MASTER_KEY};${AGENT_API_KEY}
       # Open WebUI joins an OpenAI connection prefix with a dot, producing
-      # the displayed model id "agent.qwen3:4b".
+      # the displayed model id "qwen3:4b".
       OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["qwen3:4b"]}}'
 
     volumes:
@@ -266,8 +266,8 @@ services:
       RUNNER_URL: ${RUNNER_URL:-http://agent-runner:8001}
 
       # DEFAULT_MODEL is what /chat, /execute, and /runs use unless a request
-      # overrides it. AGENT_MODEL_ID is the id the agent advertises at
-      # /v1/models and is what Open WebUI's "agent.qwen3:4b" connection
+      # overrides it. DEFAULT_MODEL is the id the agent advertises at
+      # /v1/models and is what Open WebUI's "qwen3:4b" connection
       # expects to see -- keep it in sync with the model_ids entry in
       # open-webui's OPENAI_API_CONFIGS above if you change it.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3:4b}
@@ -281,9 +281,8 @@ services:
       ROUTER_ESCALATION_TIMEOUT_SECONDS: ${ROUTER_ESCALATION_TIMEOUT_SECONDS:-360}
       # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-qwen3:4b}
-      # Used for current web/financial research through agent.qwen3:4b.
+      # Used for current web/financial research through qwen3:4b.
       RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3:4b}
-      AGENT_MODEL_ID: ${AGENT_MODEL_ID:-qwen3:4b}
 
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
