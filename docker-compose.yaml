@@ -11,6 +11,12 @@ services:
     ports:
       - "11434:11434"
 
+    # Hard cgroup limits: the VM has only 3 total CPU cores / 14 GB RAM.
+    # Leave substantial headroom for Proxmox/SSH/Docker and other services.
+    cpus: ${OLLAMA_CPUS:-1.10}
+    mem_limit: ${OLLAMA_MEMORY_LIMIT:-6g}
+    pids_limit: 256
+
     environment:
       # Keep exactly one generation model resident on CPU-constrained hosts.
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
@@ -412,8 +418,8 @@ services:
       - DAC_OVERRIDE
 
     pids_limit: 256
-    mem_limit: ${AGENT_MEMORY_LIMIT:-4g}
-    cpus: ${AGENT_CPUS:-2}
+    mem_limit: ${AGENT_MEMORY_LIMIT:-2g}
+    cpus: ${AGENT_CPUS:-0.50}
 
     depends_on:
       agent-runner:
@@ -460,8 +466,8 @@ services:
     cap_drop:
       - ALL
     pids_limit: 128
-    mem_limit: ${RUNNER_MEMORY_LIMIT:-1g}
-    cpus: ${RUNNER_CPUS:-1}
+    mem_limit: ${RUNNER_MEMORY_LIMIT:-768m}
+    cpus: ${RUNNER_CPUS:-0.25}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/ready"]
       interval: 10s
