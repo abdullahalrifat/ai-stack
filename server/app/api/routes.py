@@ -28,7 +28,6 @@ from app.agent.service import (
 from app.agent.state import AgentState
 from app.core.config import (
     DEFAULT_MODEL,
-    DEFAULT_MODEL,
     DEFAULT_WORKSPACE,
     DOCUMENT_MAX_BYTES,
     IMAGE_GENERATION_TIMEOUT_SECONDS,
@@ -772,7 +771,7 @@ def available_models():
     """Public, non-sensitive catalog for the Task Router model selector.
 
     Starting a run and all run data remain authenticated; this endpoint only
-    returns gateway model aliases and never exposes credentials or settings.
+    returns the configured gateway model ids and never exposes credentials or settings.
     """
     try:
         return {"models": get_available_models()}
