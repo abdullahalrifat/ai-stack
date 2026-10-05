@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 
 from app.core.config import (
-    AGENT_MODEL_ID,
     DEFAULT_MODEL,
     FAST_MODEL,
     FINANCE_LLM_TIMEOUT_SECONDS,
@@ -23,7 +22,6 @@ class AgentProfile:
 
 
 PROFILES: dict[str, AgentProfile] = {
-    AGENT_MODEL_ID: AgentProfile(DEFAULT_MODEL, "auto"),
     "auto": AgentProfile(DEFAULT_MODEL, "auto"),
     "quick": AgentProfile(FAST_MODEL, "quick"),
     "code": AgentProfile(DEFAULT_MODEL, "code"),
@@ -35,14 +33,14 @@ PROFILES: dict[str, AgentProfile] = {
         max_completion_tokens=FINANCE_MAX_COMPLETION_TOKENS,
         timeout_seconds=FINANCE_LLM_TIMEOUT_SECONDS,
     ),
-    "deep": AgentProfile("reasoning", "deep"),
-    "vision": AgentProfile("vision", "vision"),
+    "deep": AgentProfile(DEFAULT_MODEL, "deep"),
+    "vision": AgentProfile(DEFAULT_MODEL, "vision"),
 }
 
 
 def resolve_profile(model_id: str | None) -> AgentProfile:
-    if not model_id or model_id == AGENT_MODEL_ID:
-        return PROFILES[AGENT_MODEL_ID]
+    if not model_id:
+        return PROFILES["auto"]
     try:
         return PROFILES[model_id]
     except KeyError as exc:
