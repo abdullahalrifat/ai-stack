@@ -21,7 +21,7 @@ EOF
 
 model_name() {
   case "${1:-}" in
-    qwen3:4b) echo "qwen3:8b" ;;
+    qwen3:4b) echo "qwen3:4b" ;;
     nomic-embed-text) echo "nomic-embed-text" ;;
     *) echo "Unknown model alias: ${1:-}" >&2; usage >&2; exit 2 ;;
   esac
