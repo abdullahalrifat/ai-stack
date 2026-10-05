@@ -53,7 +53,7 @@ def test_tool_completion_accepts_model_timeout(_available):
     fake_client, completion = _completion_client()
 
     with patch("app.llm.client.get_client", return_value=fake_client):
-        client.chat_with_tools([], [], model="coder", timeout_seconds=300)
+        client.chat_with_tools([], [], model="qwen3-4b", timeout_seconds=300)
 
     assert completion.call_args.kwargs["timeout"] == 300
 
@@ -114,7 +114,7 @@ def test_stream_holds_llm_slot_for_the_complete_iteration(_available):
         patch("app.llm.client.get_client", return_value=fake_client),
         patch.object(client, "_llm_slots", Slot()),
     ):
-        stream = client.chat_with_tools_stream([], [], model="coder")
+        stream = client.chat_with_tools_stream([], [], model="qwen3-4b")
         assert events == []
         assert list(stream) == ["first", "second"]
 
