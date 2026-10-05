@@ -13,7 +13,7 @@ services:
 
     # Hard cgroup limits: the VM has only 3 total CPU cores / 14 GB RAM.
     # Leave substantial headroom for Proxmox/SSH/Docker and other services.
-    cpus: ${OLLAMA_CPUS:-1.10}
+    cpus: ${OLLAMA_CPUS:-1.50}
     mem_limit: ${OLLAMA_MEMORY_LIMIT:-6g}
     pids_limit: 256
 
