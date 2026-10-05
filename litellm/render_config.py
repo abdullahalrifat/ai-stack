@@ -47,7 +47,7 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
     if not settings["base"] and not settings["key"]:
         return "", []
 
-    roles = {"coder": "coder-local", "reasoning": "reasoning-local", "vision": "vision-local"}
+    roles = {"coder": "qwen3-4b", "reasoning": "qwen3-4b", "vision": "qwen3-4b"}
     entries: list[str] = []
     fallbacks: list[str] = []
     for role, local_alias in roles.items():
@@ -121,8 +121,6 @@ def _local_alias_rewrites(source: str, env: dict[str, str]) -> str:
     hybrid, _ = _hybrid_entries(env)
     if not hybrid:
         return source
-    for public, local in (("coder", "coder-local"), ("reasoning", "reasoning-local"), ("vision", "vision-local")):
-        source = source.replace(f"  - model_name: {public}\n", f"  - model_name: {local}\n", 1)
     return source
 
 
