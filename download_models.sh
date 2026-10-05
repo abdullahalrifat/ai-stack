@@ -6,7 +6,6 @@ CONTAINER="ollama"
 
 MODELS=(
   "qwen3:4b"
-  "qwen3:8b"
   "nomic-embed-text"
 )
 
