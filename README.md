@@ -138,9 +138,39 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 
 ## CPU / low-memory profile
 
-For a 3-vCPU / 12-GB VM, the default routing keeps the smaller `qwen3:4b` model on the hot path and reserves `qwen3:8b` for coding and harder reasoning. Only one Ollama generation model is allowed to remain loaded at a time; both 4B and 8B remain installed and are swapped on demand. LLM concurrency is one, expert fan-out is two, and the server/runner are capped at 5 GB / 1.5 GB RAM and 2 / 1 CPU respectively. This leaves the host enough headroom for Ollama, PostgreSQL, Redis, Qdrant and Open WebUI.
+For a 3-vCPU / 14-GB VM, the hot path uses `qwen3:4b`. Only one Ollama generation model is allowed to remain loaded at a time; `qwen3:8b` remains installed for explicit escalation. LLM concurrency is one, expert dispatch is disabled, the agent/runner are capped at 4 GB / 1 GB RAM and 2 / 1 CPU, and the model context is 8K.
 
-The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is only the host-published port. Open WebUI must use the internal port.
+The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is the host-published port. Open WebUI uses the internal URL.
+
+### Jarvis CLI integration
+
+Jarvis CLI can use AI Stack as an OpenAI-compatible local endpoint. This avoids running a second Ollama instance.
+
+On the machine running Jarvis CLI:
+
+```bash
+export JARVIS_PROVIDER=openai
+export JARVIS_BASE_URL=http://<ai-stack-host>:8081/v1
+export JARVIS_MODEL=orchestrator
+export JARVIS_API_KEY='<the AGENT_API_KEY from ai-stack .env>'
+
+jarvis model-doctor
+jarvis "review this repository and fix the highest-impact issue"
+```
+
+If Jarvis CLI runs on the same VM as AI Stack, use `http://127.0.0.1:8081/v1`. From another LAN machine, use the VM's private IP and restrict port 8081 with the firewall to trusted clients. Do not expose the agent API publicly without authentication and network controls.
+
+If you want Jarvis CLI to own the tool loop and AI Stack to provide only inference, use LiteLLM instead:
+
+```bash
+export JARVIS_PROVIDER=openai
+export JARVIS_BASE_URL=http://<ai-stack-host>:4000/v1
+export JARVIS_MODEL=qwen3-4b
+export JARVIS_API_KEY='<the LITELLM_MASTER_KEY from ai-stack .env>'
+jarvis model-doctor
+```
+
+The agent endpoint is recommended for repository tasks that should use AI Stack's server-side agent tools; the LiteLLM endpoint is recommended when Jarvis CLI should remain the tool-owning runtime.
 
 ## Offline / off-grid operation
 
