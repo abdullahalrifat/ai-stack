@@ -12,8 +12,7 @@ services:
       - "11434:11434"
 
     environment:
-      # Keep only one generation model resident on CPU-constrained hosts. Both
-      # 4B and 8B remain installed; Ollama swaps them as routing escalates.
+      # Keep exactly one generation model resident on CPU-constrained hosts.
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-2m}
       OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
@@ -224,7 +223,7 @@ services:
       OPENAI_API_KEYS: ${LITELLM_MASTER_KEY};${AGENT_API_KEY}
       # Open WebUI joins an OpenAI connection prefix with a dot, producing
       # the displayed model id "agent.orchestrator".
-      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["orchestrator"]}}'
+      OPENAI_API_CONFIGS: '{"1":{"prefix_id":"agent","model_ids":["qwen3-4b"]}}'
 
     volumes:
       - ./open-webui:/app/backend/data
@@ -265,25 +264,18 @@ services:
       RUNNER_API_KEY: ${RUNNER_API_KEY:-${AGENT_API_KEY}}
       RUNNER_URL: ${RUNNER_URL:-http://agent-runner:8001}
 
-      # DEFAULT_MODEL is what /chat, /execute, and /runs use unless a request
-      # overrides it. AGENT_MODEL_ID is the id the agent advertises at
-      # /v1/models and is what Open WebUI's "agent.orchestrator" connection
-      # expects to see -- keep it in sync with the model_ids entry in
-      # open-webui's OPENAI_API_CONFIGS above if you change it.
+      # DEFAULT_MODEL is the concrete model used by /chat, /execute, and /runs.
+      # Open WebUI uses the same concrete model id for the server-side agent.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-qwen3-4b}
       # Fast CPU-mode model used for ordinary Auto / Quick chat requests.
       FAST_MODEL: ${FAST_MODEL:-qwen3-4b}
       # Semantic routing is a short JSON-only turn before Auto execution.
       ROUTER_MODEL: ${ROUTER_MODEL:-qwen3-4b}
-      ROUTER_ESCALATION_MODEL: ${ROUTER_ESCALATION_MODEL:-qwen3-8b}
       ROUTER_MAX_COMPLETION_TOKENS: ${ROUTER_MAX_COMPLETION_TOKENS:-768}
       ROUTER_TIMEOUT_SECONDS: ${ROUTER_TIMEOUT_SECONDS:-180}
-      ROUTER_ESCALATION_TIMEOUT_SECONDS: ${ROUTER_ESCALATION_TIMEOUT_SECONDS:-360}
-      # Financial evidence synthesis stays on the more capable 8B alias.
       FINANCE_MODEL: ${FINANCE_MODEL:-qwen3-4b}
-      # Used for current web/financial research through agent.orchestrator.
+      # Used for current web/financial research.
       RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3-4b}
-      AGENT_MODEL_ID: ${AGENT_MODEL_ID:-orchestrator}
 
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -311,9 +303,7 @@ services:
       MAX_CONCURRENT_AGENT_RUNS: ${MAX_CONCURRENT_AGENT_RUNS:-1}
       MAX_CONCURRENT_LLM_CALLS: ${MAX_CONCURRENT_LLM_CALLS:-1}
       MAX_TOOL_OUTPUT_CHARS: ${MAX_TOOL_OUTPUT_CHARS:-10000}
-      # A cold local 8B model can spend ~40s loading and ~60s ingesting a
-      # repository/tool prompt before its first streamed token, and a
-      # thinking-enabled 8B turn can run ~2.5-3min at CPU inference speed.
+      # Keep the single 4B local model path predictable on CPU-only hosts.
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-480}
       LLM_MAX_COMPLETION_TOKENS: ${LLM_MAX_COMPLETION_TOKENS:-1536}
       ANALYSIS_SYNTHESIS_MODEL: ${ANALYSIS_SYNTHESIS_MODEL:-qwen3-4b}
