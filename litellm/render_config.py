@@ -1,8 +1,7 @@
 """Render LiteLLM configuration with optional hybrid remote providers.
 
 The checked-in config remains local-first and offline-safe. When
-INFERENCE_MODE=hybrid and Hugging Face is configured, selected capability
-aliases are promoted to HF-backed primary deployments and automatically fall
+INFERENCE_MODE=hybrid and Hugging Face is configured, concrete remote model IDs are promoted to HF-backed primary deployments and automatically fall
 back to concrete local Ollama model IDs.
 """
 
@@ -79,6 +78,8 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
             f"    - {_yaml_string(model)}: [{_yaml_string(local_model)}]\\n"
         )
     return "".join(entries), fallbacks
+
+
 def remote_model_entries(env: dict[str, str]) -> str:
     if not _remote_enabled(env):
         return ""
@@ -98,7 +99,7 @@ def remote_model_entries(env: dict[str, str]) -> str:
     model_info:
       supports_function_calling: true
 """
-            % _yaml_string(anthropic_model)
+            % (_yaml_string(anthropic_model), _yaml_string(f"anthropic/{anthropic_model}"))
         )
 
     settings = _hf_settings(env)
