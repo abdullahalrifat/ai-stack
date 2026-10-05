@@ -27,7 +27,6 @@ from app.agent.service import (
 )
 from app.agent.state import AgentState
 from app.core.config import (
-    AGENT_MODEL_ID,
     DEFAULT_MODEL,
     DEFAULT_WORKSPACE,
     DOCUMENT_MAX_BYTES,
@@ -166,8 +165,8 @@ async def chat(request: ChatRequest):
 
     try:
         profile = (
-            resolve_profile(request.model or AGENT_MODEL_ID)
-            if (request.model or AGENT_MODEL_ID) in PROFILES
+            resolve_profile(request.model or DEFAULT_MODEL)
+            if (request.model or DEFAULT_MODEL) in PROFILES
             else None
         )
         workspace = resolve_request_workspace(request.workspace, request.message)
