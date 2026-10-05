@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from app.agent.dispatch import (
     _select_experts,
     _validate_finding,
@@ -7,6 +9,14 @@ from app.agent.dispatch import (
     findings_context,
 )
 from app.agent.state import AgentState
+
+
+@pytest.fixture(autouse=True)
+def _enable_full_expert_dispatch():
+    # Unit tests exercise dispatch selection itself; production defaults may
+    # disable dispatch on constrained CPU hosts.
+    with patch("app.agent.dispatch.MAX_PARALLEL_EXPERTS", 4):
+        yield
 
 
 def _state(**overrides):
