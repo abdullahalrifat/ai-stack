@@ -203,7 +203,7 @@ export function App() {
         id: result.run_id,
         status: result.status,
         task: followUp,
-        model: "orchestrator",
+        model: "qwen3-4b",
         conversation_id: session,
         project_id: active.project_id || projectId || null,
         requested_workspace: active.requested_workspace,
