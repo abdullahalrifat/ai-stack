@@ -18,15 +18,12 @@ model resident at a time:
 
 ```text
 qwen3:4b
-qwen3:8b
 nomic-embed-text
 ```
 
 Use `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, an 8K local context
 budget, and conservative agent/tool concurrency. Routine chat, research,
-finance, coding, synthesis, and review should use `qwen3:4b`. The 8B model is
-reserved for explicit quality escalation rather than automatic multi-expert
-fan-out. Do not configure obsolete 12B/14B/16B local models on the CPU host.
+finance, coding, synthesis, and review should use `qwen3:4b`. Do not configure obsolete larger local models on the CPU host.
 
 ## Hugging Face configuration
 
