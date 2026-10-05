@@ -27,7 +27,7 @@ from app.agent.service import (
 )
 from app.agent.state import AgentState
 from app.core.config import (
-    AGENT_MODEL_ID,
+    DEFAULT_MODEL,
     DEFAULT_MODEL,
     DEFAULT_WORKSPACE,
     DOCUMENT_MAX_BYTES,
@@ -166,8 +166,8 @@ async def chat(request: ChatRequest):
 
     try:
         profile = (
-            resolve_profile(request.model or AGENT_MODEL_ID)
-            if (request.model or AGENT_MODEL_ID) in PROFILES
+            resolve_profile(request.model or DEFAULT_MODEL)
+            if (request.model or DEFAULT_MODEL) in PROFILES
             else None
         )
         workspace = resolve_request_workspace(request.workspace, request.message)
@@ -199,8 +199,8 @@ async def execute(request: ExecuteRequest):
             "Direct execute is read-only. Use POST /runs for reviewed sandbox writes.",
         )
     profile = (
-        resolve_profile(request.model or AGENT_MODEL_ID)
-        if (request.model or AGENT_MODEL_ID) in PROFILES
+        resolve_profile(request.model or DEFAULT_MODEL)
+        if (request.model or DEFAULT_MODEL) in PROFILES
         else None
     )
     workspace = resolve_request_workspace(request.workspace, request.task)
@@ -249,7 +249,7 @@ async def create_run(request: RunRequest):
     run_id = await run_in_threadpool(
         store.create_run,
         task=request.task,
-        model=request.model or AGENT_MODEL_ID,
+        model=request.model or DEFAULT_MODEL,
         workspace=workspace,
         conversation_id=request.conversation_id,
         document_scope=request.document_scope,
@@ -635,7 +635,7 @@ async def openai_chat(
                 "id": f"chatcmpl-{created}",
                 "object": "chat.completion.chunk",
                 "created": created,
-                "model": request.model or AGENT_MODEL_ID,
+                "model": request.model or DEFAULT_MODEL,
                 "choices": [
                     {"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}
                 ],
@@ -656,7 +656,7 @@ async def openai_chat(
                         "id": f"chatcmpl-{created}",
                         "object": "chat.completion.chunk",
                         "created": created,
-                        "model": request.model or AGENT_MODEL_ID,
+                        "model": request.model or DEFAULT_MODEL,
                         "choices": [
                             {
                                 "index": 0,
@@ -675,7 +675,7 @@ async def openai_chat(
                     "id": f"chatcmpl-{created}",
                     "object": "chat.completion.chunk",
                     "created": created,
-                    "model": request.model or AGENT_MODEL_ID,
+                    "model": request.model or DEFAULT_MODEL,
                     "choices": [
                         {
                             "index": 0,
@@ -694,7 +694,7 @@ async def openai_chat(
                     "id": f"chatcmpl-{created}",
                     "object": "chat.completion.chunk",
                     "created": created,
-                    "model": request.model or AGENT_MODEL_ID,
+                    "model": request.model or DEFAULT_MODEL,
                     "choices": [
                         {
                             "index": 0,
@@ -708,7 +708,7 @@ async def openai_chat(
                 "id": f"chatcmpl-{created}",
                 "object": "chat.completion.chunk",
                 "created": created,
-                "model": request.model or AGENT_MODEL_ID,
+                "model": request.model or DEFAULT_MODEL,
                 "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
             }
             yield f"data: {json.dumps(final)}\n\n"
@@ -737,7 +737,7 @@ async def openai_chat(
         "id": f"chatcmpl-{created}",
         "object": "chat.completion",
         "created": created,
-        "model": request.model or AGENT_MODEL_ID,
+        "model": request.model or DEFAULT_MODEL,
         "choices": [
             {
                 "index": 0,
@@ -759,7 +759,7 @@ def models():
         "object": "list",
         "data": [
             {
-                "id": AGENT_MODEL_ID,
+                "id": DEFAULT_MODEL,
                 "object": "model",
                 "owned_by": "ai-stack-agent",
             }
@@ -824,7 +824,7 @@ async def generate_image(request: ImageGenerationRequest):
 
 @router.get("/v1/models/{model_id}", dependencies=[Depends(verify_api_key)])
 def model_detail(model_id: str):
-    if model_id != AGENT_MODEL_ID:
+    if model_id != DEFAULT_MODEL:
         raise HTTPException(404, "Agent model not found")
     return {"id": model_id, "object": "model", "owned_by": "local"}
 
