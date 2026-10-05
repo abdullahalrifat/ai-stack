@@ -125,14 +125,22 @@ def _iter_stream_with_deadline(response, timeout_seconds: int, should_cancel=Non
         worker.join(timeout=1)
 
 
+def _llm_endpoint() -> tuple[str | None, str | None]:
+    """Return the configured inference endpoint without changing public model IDs."""
+    if os.getenv("INFERENCE_ENABLED", "false").lower() == "true":
+        return os.getenv("INFERENCE_BASE_URL"), os.getenv("INFERENCE_API_KEY") or os.getenv("OPENAI_API_KEY")
+    return os.getenv("OPENAI_API_BASE"), os.getenv("OPENAI_API_KEY")
+
+
 def get_client():
 
     global _client
 
     if _client is None:
+        base_url, api_key = _llm_endpoint()
         _client = OpenAI(
-            base_url=os.getenv("OPENAI_API_BASE"),
-            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=base_url,
+            api_key=api_key,
             # Retrying a timed-out local inference request duplicates work on
             # Ollama's single queue, making every subsequent response slower.
             max_retries=0,
@@ -167,8 +175,8 @@ def get_available_models(force_refresh: bool = False):
     ):
         return _model_cache["models"]
 
-    base_url = os.getenv("OPENAI_API_BASE", "http://litellm:4000/v1")
-    api_key = os.getenv("OPENAI_API_KEY")
+    base_url, api_key = _llm_endpoint()
+    base_url = base_url or "http://litellm:4000/v1"
 
     response = requests.get(
         f"{base_url}/models",
