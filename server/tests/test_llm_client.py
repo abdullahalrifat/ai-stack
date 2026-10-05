@@ -30,7 +30,7 @@ def test_tool_completion_has_bounded_local_inference_settings(_available):
 
     with patch("app.llm.client.get_client", return_value=fake_client):
         result = client.chat_with_tools(
-            [{"role": "user", "content": "hello"}], [], model="qwen3-8b"
+            [{"role": "user", "content": "hello"}], [], model="qwen3-4b"
         )
 
     assert result.content == "ok"
