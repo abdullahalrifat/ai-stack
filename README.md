@@ -81,7 +81,7 @@ Edit the `.env` file to match your server configuration:
 # (skip a model only if it is already present in ./ollama)
 docker compose up -d ollama
 docker exec ollama ollama pull qwen3:4b
-docker exec ollama ollama pull qwen3:8b
+docker exec ollama ollama pull qwen3:4b
 docker exec ollama ollama pull nomic-embed-text
 
 # Start the services
@@ -138,7 +138,7 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 
 ## CPU / low-memory profile
 
-For a 3-vCPU / 14-GB VM, the hot path uses `qwen3:4b`. Only one Ollama generation model is allowed to remain loaded at a time; `qwen3:8b` remains installed for explicit escalation. LLM concurrency is one, expert dispatch is disabled, the agent/runner are capped at 4 GB / 1 GB RAM and 2 / 1 CPU, and the model context is 8K.
+For a 3-vCPU / 14-GB VM, the hot path uses `qwen3:4b`. Only one Ollama generation model is allowed to remain loaded at a time; `qwen3:4b` remains installed for explicit escalation. LLM concurrency is one, expert dispatch is disabled, the agent/runner are capped at 4 GB / 1 GB RAM and 2 / 1 CPU, and the model context is 8K.
 
 The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is the host-published port. Open WebUI uses the internal URL.
 
