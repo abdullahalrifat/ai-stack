@@ -16,7 +16,7 @@ model_list:
   # Fast / low-cost CPU model
   ###########################################################
 
-  - model_name: qwen3-4b
+  - model_name: qwen3:4b
     litellm_params:
       model: ollama_chat/qwen3:4b
       api_base: http://ollama:11434
@@ -28,7 +28,7 @@ model_list:
   # General / coding model
   ###########################################################
 
-  - model_name: qwen3-8b
+  - model_name: qwen3:4b
     litellm_params:
       model: ollama_chat/qwen3:8b
       api_base: http://ollama:11434
