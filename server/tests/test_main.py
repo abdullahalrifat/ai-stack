@@ -89,13 +89,13 @@ def test_openai_chat_rejects_unknown_model():
         messages=[schemas.OpenAIChatMessage(role="user", content="hello")],
     )
 
-    with pytest.raises(HTTPException, match="Unknown agent profile"):
+    with pytest.raises(HTTPException, match="Unknown model"):
         asyncio.run(routes.openai_chat(bad_request, None))
 
 
 def test_openai_chat_rejects_direct_write_request():
     write_request = schemas.OpenAIChatCompletionRequest(
-        model="code",
+        model=DEFAULT_MODEL,
         messages=[schemas.OpenAIChatMessage(role="user", content="edit it")],
         allow_write=True,
     )
