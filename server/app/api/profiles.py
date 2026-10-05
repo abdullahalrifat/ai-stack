@@ -1,4 +1,8 @@
-"""Open WebUI-visible agent profiles and their execution policy."""
+"""Concrete model IDs and their execution policy.
+
+Model IDs are the only public selectors. Workflow names are internal routing
+concepts and are never exposed as model aliases.
+"""
 
 from dataclasses import dataclass
 
@@ -15,34 +19,29 @@ from app.core.config import (
 @dataclass(frozen=True)
 class AgentProfile:
     model: str
-    prompt_mode: str = "code"
+    prompt_mode: str = "default"
     force_research: bool = False
     max_completion_tokens: int | None = None
     timeout_seconds: int | None = None
 
 
 PROFILES: dict[str, AgentProfile] = {
-    "auto": AgentProfile(DEFAULT_MODEL, "auto"),
-    DEFAULT_MODEL: AgentProfile(DEFAULT_MODEL, "auto"),
-    "quick": AgentProfile(FAST_MODEL, "quick"),
-    "code": AgentProfile(DEFAULT_MODEL, "code"),
-    "research": AgentProfile(RESEARCH_MODEL, "research", force_research=True),
-    "finance": AgentProfile(
+    DEFAULT_MODEL: AgentProfile(DEFAULT_MODEL, "default"),
+    FAST_MODEL: AgentProfile(FAST_MODEL, "fast"),
+    RESEARCH_MODEL: AgentProfile(RESEARCH_MODEL, "research", force_research=True),
+    FINANCE_MODEL: AgentProfile(
         FINANCE_MODEL,
         "finance",
         force_research=True,
         max_completion_tokens=FINANCE_MAX_COMPLETION_TOKENS,
         timeout_seconds=FINANCE_LLM_TIMEOUT_SECONDS,
     ),
-    "deep": AgentProfile(DEFAULT_MODEL, "deep"),
-    "vision": AgentProfile(DEFAULT_MODEL, "vision"),
 }
 
 
 def resolve_profile(model_id: str | None) -> AgentProfile:
-    if not model_id:
-        return PROFILES["auto"]
+    model_id = model_id or DEFAULT_MODEL
     try:
         return PROFILES[model_id]
     except KeyError as exc:
-        raise ValueError(f"Unknown agent profile '{model_id}'") from exc
+        raise ValueError(f"Unknown model '{model_id}'") from exc
