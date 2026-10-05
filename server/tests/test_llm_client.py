@@ -76,7 +76,14 @@ def test_plain_completion_accepts_structured_json_mode(_available):
 def test_plain_completion_accepts_operation_specific_timeout(_available):
     fake_client, completion = _completion_client()
 
-    with patch.object(client, "get_client", return_value=fake_client):
+    with (
+        patch.object(client, "get_client", return_value=fake_client),
+        patch.object(
+            client.default_scheduler,
+            "submit_sync",
+            side_effect=lambda fn, key=None: fn(),
+        ),
+    ):
         client.chat(
             [{"role": "user", "content": "route this"}],
             timeout_seconds=240,
