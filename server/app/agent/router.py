@@ -279,30 +279,6 @@ def _task_id(value) -> str:
     return text[:48]
 
 
-def _requires_router_escalation(message: str, context: str) -> bool:
-    """Use the stronger planner only for evidence that exceeds the fast path."""
-    source_count = len(
-        {
-            source.casefold()
-            for source in re.findall(r'"source"\s*:\s*"([^"]+)"', context)
-        }
-    )
-    return bool(
-        len(context) > 5_000
-        or source_count > 2
-        or bool(re.search(r'"needs_ocr"\s*:\s*true', context, re.IGNORECASE))
-        or bool(re.search(r'"gaps"\s*:\s*\[\s*\[', context, re.IGNORECASE))
-        or (
-            re.search(
-                r"\b(compare|reconcile|cross-reference)\b",
-                message,
-                re.IGNORECASE,
-            )
-            and source_count > 1
-        )
-    )
-
-
 def _grounded_values(values: list[str], grounding: str) -> tuple[list[str], list[str]]:
     grounded, rejected = [], []
     normalized_grounding = " ".join(grounding.casefold().split())
