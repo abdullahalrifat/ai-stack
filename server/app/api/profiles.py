@@ -7,6 +7,7 @@ concepts and are never exposed as model aliases.
 from dataclasses import dataclass
 
 from app.core.config import (
+    AGENT_REASONING_MODEL,
     DEFAULT_MODEL,
     FAST_MODEL,
     FINANCE_LLM_TIMEOUT_SECONDS,
@@ -27,7 +28,7 @@ class AgentProfile:
 
 WORKFLOW_POLICIES: dict[str, AgentProfile] = {
     "quick": AgentProfile(FAST_MODEL, "fast"),
-    "code": AgentProfile(DEFAULT_MODEL, "code"),
+    "code": AgentProfile(AGENT_REASONING_MODEL, "code"),
     "research": AgentProfile(RESEARCH_MODEL, "research", force_research=True),
     "finance": AgentProfile(
         FINANCE_MODEL,
@@ -36,17 +37,17 @@ WORKFLOW_POLICIES: dict[str, AgentProfile] = {
         max_completion_tokens=FINANCE_MAX_COMPLETION_TOKENS,
         timeout_seconds=FINANCE_LLM_TIMEOUT_SECONDS,
     ),
-    "deep": AgentProfile(DEFAULT_MODEL, "deep"),
-    "vision": AgentProfile(DEFAULT_MODEL, "vision"),
+    "deep": AgentProfile(AGENT_REASONING_MODEL, "deep"),
+    "vision": AgentProfile(AGENT_REASONING_MODEL, "vision"),
 }
 
 # Public selectors are concrete model IDs only. Multiple workflows may share
 # the same model, so workflow policy must not be encoded in a model-id map.
 PROFILES: dict[str, AgentProfile] = {
-    DEFAULT_MODEL: AgentProfile(DEFAULT_MODEL),
-    FAST_MODEL: AgentProfile(FAST_MODEL),
-    RESEARCH_MODEL: AgentProfile(RESEARCH_MODEL),
-    FINANCE_MODEL: AgentProfile(FINANCE_MODEL),
+    model_id: AgentProfile(model_id)
+    for model_id in dict.fromkeys(
+        (DEFAULT_MODEL, FAST_MODEL, RESEARCH_MODEL, FINANCE_MODEL, AGENT_REASONING_MODEL)
+    )
 }
 
 
