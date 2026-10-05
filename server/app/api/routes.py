@@ -754,14 +754,16 @@ async def openai_chat(
 
 @router.get("/v1/models", dependencies=[Depends(verify_api_key)])
 def models():
+    """Advertise only concrete configured model IDs."""
     return {
         "object": "list",
         "data": [
             {
-                "id": DEFAULT_MODEL,
+                "id": model_id,
                 "object": "model",
                 "owned_by": "ai-stack-agent",
             }
+            for model_id in PROFILES
         ],
     }
 
