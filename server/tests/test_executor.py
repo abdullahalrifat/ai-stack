@@ -750,6 +750,7 @@ def test_execute_plan_corrects_absolute_sandbox_path(
     assert sum(1 for kind, _ in events if kind == "path_denial_recovery") >= 2
 
 
+@patch("app.agent.executor.EXPERT_DISPATCH_ENABLED", True)
 @patch("app.agent.executor.dispatch_experts")
 @patch("app.agent.executor.registry")
 @patch("app.agent.executor.chat_with_tools")
