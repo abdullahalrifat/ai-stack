@@ -47,16 +47,25 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
     if not settings["base"] and not settings["key"]:
         return "", []
 
-    roles = {"coder": "qwen3-4b", "reasoning": "qwen3-4b", "vision": "qwen3-4b"}
+    # Roles are internal routing concepts. The public/provider selector is
+    # always the concrete remote model ID, with a concrete local model as
+    # fallback.
+    roles = {
+        "coder": "qwen3-4b",
+        "reasoning": "qwen3-4b",
+        "vision": "qwen3-4b",
+    }
     entries: list[str] = []
     fallbacks: list[str] = []
-    for role, local_alias in roles.items():
+    seen_models: set[str] = set()
+    for role, local_model in roles.items():
         model = _hf_model(env, role)
         if not model:
             continue
-        entries.append(
-            f"""
-  - model_name: {role}
+        if model not in seen_models:
+            entries.append(
+                f"""
+  - model_name: {_yaml_string(model)}
     litellm_params:
       model: {_yaml_string(f"openai/{model}")}
       api_base: {_yaml_string(settings["base"])}
@@ -64,11 +73,12 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
     model_info:
       supports_function_calling: true
 """
+            )
+            seen_models.add(model)
+        fallbacks.append(
+            f"    - {_yaml_string(model)}: [{_yaml_string(local_model)}]\\n"
         )
-        fallbacks.append(f"    - {role}: [{local_alias}]\n")
     return "".join(entries), fallbacks
-
-
 def remote_model_entries(env: dict[str, str]) -> str:
     if not _remote_enabled(env):
         return ""
