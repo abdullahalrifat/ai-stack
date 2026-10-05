@@ -13,7 +13,7 @@ services:
 
     environment:
       # Keep exactly one generation model resident on CPU-constrained hosts.
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-2m}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
       OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
       # Open WebUI can attach several tool schemas to one request. 4096 is
