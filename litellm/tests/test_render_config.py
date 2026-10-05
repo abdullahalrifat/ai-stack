@@ -48,8 +48,7 @@ def test_hybrid_promotes_hf_and_adds_ollama_fallbacks():
     assert "model_name: org/coder" in rendered
     assert "openai/org/coder" in rendered
     assert "https://example.endpoints.huggingface.cloud/v1" in rendered
-    assert '"org/coder": ["qwen3-4b"]' in rendered
-    assert '"org/coder": ["qwen3-4b"]' in rendered
+    assert rendered.count('"org/coder": ["qwen3-4b"]') == 1
     assert "secret" not in rendered
 
 
