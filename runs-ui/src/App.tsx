@@ -31,6 +31,7 @@ export function App() {
   const [error, setError] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [followUp, setFollowUp] = useState("");
+  const [models, setModels] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const cursor = useRef(0);
   const sources = useMemo(() => sourceUrls(answer), [answer]);
@@ -45,6 +46,12 @@ export function App() {
   };
   useEffect(() => {
     void loadRuns();
+  }, [key]);
+  useEffect(() => {
+    if (!key) return;
+    api<{ data: { id: string }[] }>(key, "/v1/models")
+      .then((data) => setModels(data.data.map((model) => model.id)))
+      .catch((e) => setError(String(e)));
   }, [key]);
   useEffect(() => {
     if (!key) return;
@@ -118,7 +125,8 @@ export function App() {
     setError("");
     if (!task.trim()) return;
     try {
-      const selected = "qwen3-4b";
+      const selected = models[0];
+      if (!selected) throw new Error("No model is available from the AI Stack model catalog.");
       const session = conversationId || crypto.randomUUID();
       setConversationId(session);
       if (files.length > 0) await uploadDocuments(key, files.slice(0, 10), session);
