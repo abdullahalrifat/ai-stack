@@ -147,9 +147,6 @@ def resolve_agent_model(model: str | None):
     if not model:
         return DEFAULT_MODEL
 
-    if model == "auto":
-        return route_model(get_available_models(), preferred="auto")
-
     _ensure_model_available(model)
 
     return model
