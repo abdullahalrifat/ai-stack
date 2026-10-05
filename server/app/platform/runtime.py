@@ -113,7 +113,7 @@ def tick_platform_once() -> dict[str, int]:
         try:
             run_id = get_run_store().create_run(
                 task=str(payload["task"]),
-                model=str(payload.get("model") or "orchestrator"),
+                model=str(payload.get("model") or DEFAULT_MODEL),
                 workspace=str(payload["workspace"]),
                 conversation_id=payload.get("conversation_id"),
                 document_scope=payload.get("document_scope"),
