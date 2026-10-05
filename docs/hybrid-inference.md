@@ -13,12 +13,12 @@ The supported home architecture is now:
 ## OptiPlex / small CPU VM recommendation
 
 For a 3-vCPU/14-GB VM, use a 4B-first local profile. Keep both `qwen3:4b`
-and `qwen3:8b` installed for optional escalation, but keep only one generation
+and `qwen3:4b` installed for optional escalation, but keep only one generation
 model resident at a time:
 
 ```text
 qwen3:4b
-qwen3:8b
+qwen3:4b
 nomic-embed-text
 ```
 
