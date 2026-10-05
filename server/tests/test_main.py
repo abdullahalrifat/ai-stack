@@ -9,7 +9,7 @@ from app.api import dependencies, routes, schemas
 from app.api.context import compact_openai_messages, openai_prompt
 from app.api.profiles import PROFILES
 from app.core.config import (
-    AGENT_MODEL_ID,
+    DEFAULT_MODEL,
     DEFAULT_MODEL,
     FAST_MODEL,
     FINANCE_LLM_TIMEOUT_SECONDS,
@@ -21,7 +21,7 @@ from app import main as app_main
 
 def request(stream: bool = False) -> schemas.OpenAIChatCompletionRequest:
     return schemas.OpenAIChatCompletionRequest(
-        model=AGENT_MODEL_ID,
+        model=DEFAULT_MODEL,
         messages=[schemas.OpenAIChatMessage(role="user", content="hello")],
         stream=stream,
     )
@@ -179,7 +179,7 @@ def test_openai_prompt_marks_history_as_reference_and_latest_user_as_task():
 
 def test_openai_research_profile_forces_research_mode():
     research_request = schemas.OpenAIChatCompletionRequest(
-        model="research",
+        model="qwen3:4b",
         messages=[schemas.OpenAIChatMessage(role="user", content="summarize this")],
     )
     with patch(
@@ -194,7 +194,7 @@ def test_openai_research_profile_forces_research_mode():
 def test_openai_models_expose_only_central_router_agent():
     ids = {model["id"] for model in routes.models()["data"]}
 
-    assert ids == {AGENT_MODEL_ID}
+    assert ids == {DEFAULT_MODEL}
 
 
 def test_cancel_reports_immediate_terminal_status_for_queued_run():
@@ -373,9 +373,9 @@ def test_auto_profile_uses_default_model_while_quick_uses_fast_model():
 
 def test_available_models_is_a_public_gateway_catalog():
     with patch(
-        "app.api.routes.get_available_models", return_value=["qwen3-8b", "reasoning"]
+        "app.api.routes.get_available_models", return_value=["qwen3:4b", "reasoning"]
     ):
-        assert routes.available_models() == {"models": ["qwen3-8b", "reasoning"]}
+        assert routes.available_models() == {"models": ["qwen3:4b", "reasoning"]}
 
 
 def test_image_generation_status_is_explicit_when_unconfigured(monkeypatch):
