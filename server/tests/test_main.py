@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.api import dependencies, routes, schemas
 from app.api.context import compact_openai_messages, openai_prompt
-from app.api.profiles import PROFILES
+from app.api.profiles import PROFILES, resolve_workflow
 from app.core.config import (
     DEFAULT_MODEL,
     FAST_MODEL,
@@ -193,7 +193,7 @@ def test_openai_research_profile_forces_research_mode():
 def test_openai_models_expose_only_central_router_agent():
     ids = {model["id"] for model in routes.models()["data"]}
 
-    assert ids == {DEFAULT_MODEL}
+    assert ids == set(PROFILES)
 
 
 def test_cancel_reports_immediate_terminal_status_for_queued_run():
@@ -362,12 +362,12 @@ def test_run_event_stream_renews_and_releases_foreground_lease(monkeypatch):
 
 
 def test_auto_profile_uses_default_model_while_quick_uses_fast_model():
-    assert PROFILES["auto"].model == DEFAULT_MODEL
-    assert PROFILES["quick"].model == FAST_MODEL
-    assert PROFILES["code"].model == DEFAULT_MODEL
-    assert PROFILES["finance"].model == FINANCE_MODEL
-    assert PROFILES["finance"].max_completion_tokens == FINANCE_MAX_COMPLETION_TOKENS
-    assert PROFILES["finance"].timeout_seconds == FINANCE_LLM_TIMEOUT_SECONDS
+    assert resolve_workflow("quick").model == FAST_MODEL
+    assert resolve_workflow("quick").model == FAST_MODEL
+    assert resolve_workflow("code").model == DEFAULT_MODEL
+    assert resolve_workflow("finance").model == FINANCE_MODEL
+    assert resolve_workflow("finance").max_completion_tokens == FINANCE_MAX_COMPLETION_TOKENS
+    assert resolve_workflow("finance").timeout_seconds == FINANCE_LLM_TIMEOUT_SECONDS
 
 
 def test_available_models_is_a_public_gateway_catalog():
