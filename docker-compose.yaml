@@ -14,7 +14,7 @@ services:
     # HARD CPU SAFETY BOUNDARY: Ollama is the heaviest process in this
     # CPU-only deployment. Never allow one model generation to consume the
     # entire VM. Defaults target the 3-vCPU/14-GB home profile.
-    cpus: ${OLLAMA_CPUS:-1.25}
+    cpus: ${OLLAMA_CPUS:-1.10}
     mem_limit: ${OLLAMA_MEMORY_LIMIT:-6g}
     pids_limit: 256
 
@@ -425,7 +425,7 @@ services:
     pids_limit: 256
     mem_limit: ${AGENT_MEMORY_LIMIT:-2g}
     # Keep orchestration lightweight; model inference belongs in Ollama.
-    cpus: ${AGENT_CPUS:-0.75}
+    cpus: ${AGENT_CPUS:-0.50}
 
     depends_on:
       agent-runner:
@@ -475,7 +475,7 @@ services:
     mem_limit: ${RUNNER_MEMORY_LIMIT:-768m}
     # Command execution is deliberately constrained so a runaway pytest,
     # compiler, or script cannot starve Ollama or the VM.
-    cpus: ${RUNNER_CPUS:-0.50}
+    cpus: ${RUNNER_CPUS:-0.25}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/ready"]
       interval: 10s
