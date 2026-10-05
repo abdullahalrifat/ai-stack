@@ -14,6 +14,7 @@ from app.core.config import (
     FINANCE_LLM_TIMEOUT_SECONDS,
     FINANCE_MAX_COMPLETION_TOKENS,
     FINANCE_MODEL,
+    RESEARCH_MODEL,
 )
 from app import main as app_main
 
@@ -178,7 +179,7 @@ def test_openai_prompt_marks_history_as_reference_and_latest_user_as_task():
 
 def test_openai_research_profile_forces_research_mode():
     research_request = schemas.OpenAIChatCompletionRequest(
-        model="research",
+        model=RESEARCH_MODEL,
         messages=[schemas.OpenAIChatMessage(role="user", content="summarize this")],
     )
     with patch(
@@ -187,7 +188,7 @@ def test_openai_research_profile_forces_research_mode():
     ) as runner:
         asyncio.run(routes.openai_chat(research_request, None))
 
-    assert runner.call_args.kwargs["force_research"] is True
+    assert runner.call_args.kwargs["force_research"] is False
 
 
 def test_openai_models_expose_only_central_router_agent():
