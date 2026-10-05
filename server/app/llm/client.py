@@ -12,7 +12,6 @@ from ..core.cancellation import (
     raise_if_cancelled,
 )
 from ..core.config import (
-    AGENT_MODEL_ID,
     DEFAULT_MODEL,
     LLM_MAX_COMPLETION_TOKENS,
     LLM_MAX_RETRIES,
@@ -23,7 +22,6 @@ from ..core.config import (
 )
 from .cache import default_cache, msg_key, make_message_like
 from .scheduler import default_scheduler
-from .routing import route_model
 from .metrics import incr, record_timing, get_metrics
 from ..core.exceptions import RunCancelled
 
@@ -147,12 +145,6 @@ def resolve_agent_model(model: str | None):
 
     if not model:
         return DEFAULT_MODEL
-
-    if model == AGENT_MODEL_ID:
-        return DEFAULT_MODEL
-
-    if model == "auto":
-        return route_model(get_available_models(), preferred="auto")
 
     _ensure_model_available(model)
 

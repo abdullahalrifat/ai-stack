@@ -68,7 +68,7 @@ cp .env.example .env
 Edit the `.env` file to match your server configuration:
 - Set `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`, `AGENT_API_KEY`, and `RUNNER_API_KEY` to strong random values
 - Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
-- Use `qwen3-4b` for routine chat/routing/research and `qwen3-8b` for coding, finance, synthesis and difficult reasoning
+- Use `qwen3-4b` as the only local generation model for chat, routing, coding, research, finance and reasoning
 - Configure workspace paths: `WORKSPACE_PATH=/path/to/your/code`
 - Adjust resource limits: `RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `MAX_AGENT_STEPS`
 
@@ -81,7 +81,6 @@ Edit the `.env` file to match your server configuration:
 # (skip a model only if it is already present in ./ollama)
 docker compose up -d ollama
 docker exec ollama ollama pull qwen3:4b
-docker exec ollama ollama pull qwen3:8b
 docker exec ollama ollama pull nomic-embed-text
 
 # Start the services
@@ -138,7 +137,7 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 
 ## CPU / low-memory profile
 
-For a 3-vCPU / 14-GB VM, the hot path uses `qwen3:4b`. Only one Ollama generation model is allowed to remain loaded at a time; `qwen3:8b` remains installed for explicit escalation. LLM concurrency is one, expert dispatch is disabled, the agent/runner are capped at 4 GB / 1 GB RAM and 2 / 1 CPU, and the model context is 8K.
+For a 3-vCPU / 14-GB VM, the hot path uses `qwen3:4b`. Only one local generation model is provisioned and loaded. LLM concurrency is one, expert dispatch is disabled, the agent/runner are capped at 4 GB / 1 GB RAM and 2 / 1 CPU, and the model context is 8K.
 
 The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is the host-published port. Open WebUI uses the internal URL.
 
@@ -151,7 +150,7 @@ On the machine running Jarvis CLI:
 ```bash
 export JARVIS_PROVIDER=openai
 export JARVIS_BASE_URL=http://<ai-stack-host>:8081/v1
-export JARVIS_MODEL=orchestrator
+export JARVIS_MODEL=qwen3-4b
 export JARVIS_API_KEY='<the AGENT_API_KEY from ai-stack .env>'
 
 jarvis model-doctor

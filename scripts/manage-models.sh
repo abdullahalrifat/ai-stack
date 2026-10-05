@@ -11,7 +11,7 @@ Usage:
   ./scripts/manage-models.sh enable <model>
   ./scripts/manage-models.sh disable <model>
 
-Aliases: qwen3-8b, nomic-embed-text.
+Aliases: nomic-embed-text.
 
 `enable` downloads the underlying model if needed. `disable` only unloads it
 from RAM; it does not delete model files. Use `list` to see downloaded models
@@ -21,7 +21,6 @@ EOF
 
 model_name() {
   case "${1:-}" in
-    qwen3-8b) echo "qwen3:8b" ;;
     nomic-embed-text) echo "nomic-embed-text" ;;
     *) echo "Unknown model alias: ${1:-}" >&2; usage >&2; exit 2 ;;
   esac

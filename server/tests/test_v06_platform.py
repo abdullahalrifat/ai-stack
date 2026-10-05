@@ -30,7 +30,7 @@ def test_effective_route_uses_durable_route_event(monkeypatch):
             ]
 
     monkeypatch.setattr(runtime, "get_run_store", lambda: Store())
-    assert runtime._effective_route("run-1", "orchestrator") == "qwen3-coder"
+    assert runtime._effective_route("run-1", "qwen3-4b") == "qwen3-coder"
 
 
 def test_incorrect_completion_uses_answer_audit(monkeypatch):

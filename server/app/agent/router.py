@@ -13,8 +13,6 @@ from dataclasses import dataclass, field, replace
 from openai import APITimeoutError
 
 from ..core.config import (
-    ROUTER_ESCALATION_MODEL,
-    ROUTER_ESCALATION_TIMEOUT_SECONDS,
     ROUTER_MAX_COMPLETION_TOKENS,
     ROUTER_MODEL,
     ROUTER_TIMEOUT_SECONDS,
@@ -444,11 +442,7 @@ def route_request(
     context = json.dumps(excerpts[:8], ensure_ascii=False, default=str)[:6_000]
     router_message = _bounded_router_message(message)
     try:
-        router_model = (
-            ROUTER_ESCALATION_MODEL
-            if _requires_router_escalation(message, context)
-            else ROUTER_MODEL
-        )
+        router_model = ROUTER_MODEL
         response = chat(
             [
                 {"role": "system", "content": ROUTER_PROMPT},
@@ -460,11 +454,7 @@ def route_request(
             model=router_model,
             max_tokens=ROUTER_MAX_COMPLETION_TOKENS,
             response_format={"type": "json_object"},
-            timeout_seconds=(
-                ROUTER_ESCALATION_TIMEOUT_SECONDS
-                if router_model == ROUTER_ESCALATION_MODEL
-                else ROUTER_TIMEOUT_SECONDS
-            ),
+            timeout_seconds=ROUTER_TIMEOUT_SECONDS,
         )
         data = extract_json(response)
     except (ParserError, ValueError, TypeError, KeyError):
@@ -594,9 +584,5 @@ def route_request(
         extracted_records=extracted_records,
         validation_warnings=validation_warnings,
         tasks=tasks,
-        source=(
-            "model_escalated"
-            if router_model == ROUTER_ESCALATION_MODEL and router_model != ROUTER_MODEL
-            else "model"
-        ),
+        source="model",
     )

@@ -11,6 +11,7 @@ from typing import Any
 from jarvis_core import RouteCandidate
 
 from app.agent.service import submit_run
+from app.core.config import DEFAULT_MODEL
 from app.runs.store import get_run_store
 
 from .store import PlatformStore
@@ -113,7 +114,7 @@ def tick_platform_once() -> dict[str, int]:
         try:
             run_id = get_run_store().create_run(
                 task=str(payload["task"]),
-                model=str(payload.get("model") or "orchestrator"),
+                model=str(payload.get("model") or DEFAULT_MODEL),
                 workspace=str(payload["workspace"]),
                 conversation_id=payload.get("conversation_id"),
                 document_scope=payload.get("document_scope"),

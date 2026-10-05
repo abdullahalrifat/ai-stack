@@ -7,7 +7,7 @@ produces the same tool-call sequence (``evals/replay.py``).
 
 Usage:
     python evals/record.py --base http://127.0.0.1:8000 --key "$AGENT_API_KEY" \
-        --prompt "Review this repository for reliability issues." --profile code \
+        --prompt "Review this repository for reliability issues." --model qwen3-4b \
         --output golden/my-trace.json
 """
 
@@ -48,7 +48,7 @@ def record(
     base: str,
     key: str,
     prompt: str,
-    profile: str,
+    model: str,
     workspace: str | None = None,
     allow_write: bool = False,
     timeout_seconds: int = 600,
@@ -56,7 +56,7 @@ def record(
     headers = {"Authorization": f"Bearer {key}"}
     payload = {
         "task": prompt,
-        "model": profile,
+        "model": model,
         "allow_write": allow_write,
     }
     if workspace:
@@ -84,7 +84,7 @@ def record(
         messages,
         run_id=run_id,
         prompt=prompt,
-        profile=profile,
+        model=model,
         model=run.get("model") or profile,
         workspace=workspace or run.get("requested_workspace") or ".",
         allow_write=allow_write,
@@ -130,7 +130,7 @@ def main(argv=None) -> int:
     parser.add_argument("--base", required=True, help="Agent service base URL")
     parser.add_argument("--key", required=True, help="AGENT_API_KEY value")
     parser.add_argument("--prompt", required=True)
-    parser.add_argument("--profile", default="code")
+    parser.add_argument("--model", default="qwen3-4b")
     parser.add_argument("--workspace", default=None)
     parser.add_argument("--allow-write", action="store_true")
     parser.add_argument("--output", required=True, help="Path to write the trace")
@@ -140,7 +140,7 @@ def main(argv=None) -> int:
         base=args.base,
         key=args.key,
         prompt=args.prompt,
-        profile=args.profile,
+        model=args.model,
         workspace=args.workspace,
         allow_write=args.allow_write,
     )

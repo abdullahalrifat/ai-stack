@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..api.profiles import resolve_profile
+from ..api.profiles import resolve_profile, resolve_workflow
 from ..core.cancellation import cancellation_context, raise_if_cancelled
 from ..core.config import (
     DEFAULT_MODEL,
@@ -112,7 +112,7 @@ def _apply_auto_route(state, on_event=None) -> None:
     if state.document_evidence:
         routing_context.append({"document_evidence": state.document_evidence})
     decision = route_request(state.user_message, routing_context)
-    profile = resolve_profile(decision.workflow)
+    profile = resolve_workflow(decision.workflow)
     state.model = profile.model
     state.prompt_mode = profile.prompt_mode
     state.max_completion_tokens = profile.max_completion_tokens

@@ -12,18 +12,12 @@ SPEC.loader.exec_module(render_config)
 
 
 BASE = """model_list:
-  - model_name: quick
+  - model_name: qwen3-1.7b
     litellm_params:
-      model: ollama/test
-  - model_name: coder
+      model: ollama/qwen3:1.7b
+  - model_name: qwen3-4b
     litellm_params:
-      model: ollama/coder
-  - model_name: reasoning
-    litellm_params:
-      model: ollama/reasoning
-  - model_name: vision
-    litellm_params:
-      model: ollama/vision
+      model: ollama/qwen3:4b
 
 ###########################################################
 # General Settings
@@ -49,15 +43,12 @@ def test_hybrid_promotes_hf_and_adds_ollama_fallbacks():
         },
     )
 
-    assert "model_name: coder-local" in rendered
-    assert "model_name: reasoning-local" in rendered
-    assert "model_name: vision-local" in rendered
-    assert "model_name: coder\n" in rendered
+    assert "model_name: qwen3-1.7b" in rendered
+    assert "model_name: qwen3-4b" in rendered
+    assert "model_name: org/coder" in rendered
     assert "openai/org/coder" in rendered
     assert "https://example.endpoints.huggingface.cloud/v1" in rendered
-    assert "coder: [coder-local]" in rendered
-    assert "reasoning: [reasoning-local]" in rendered
-    assert "vision: [vision-local]" in rendered
+    assert rendered.count('"org/coder": ["qwen3-4b"]') == 1
     assert "secret" not in rendered
 
 
@@ -91,7 +82,7 @@ def test_local_mode_never_adds_remote_models_even_if_credentials_exist():
         },
     )
     assert rendered == BASE
-    assert "remote-hf" not in rendered
+    assert "model_name: org/coder" not in rendered
 
 
 @pytest.mark.parametrize(

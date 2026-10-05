@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.agent.service import submit_run
 from app.api.dependencies import require_run_store, verify_api_key
-from app.core.config import AGENT_MODEL_ID
+from app.core.config import DEFAULT_MODEL
 from app.runs.store import get_run_store
 from app.tools.filesystem import resolve_request_workspace
 
@@ -51,7 +51,7 @@ async def _queue(
         identity=identity,
         payload=payload,
         task=task,
-        model=AGENT_MODEL_ID,
+        model=DEFAULT_MODEL,
         workspace=resolved,
         conversation_id=conversation_id,
     )

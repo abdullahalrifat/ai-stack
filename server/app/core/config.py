@@ -17,20 +17,15 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3-4b")
-AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "orchestrator")
-FAST_MODEL = os.getenv("FAST_MODEL", "qwen3-4b")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3-1.7b")
+FAST_MODEL = os.getenv("FAST_MODEL", "qwen3-1.7b")
 # Small, low-latency model used only to translate an Auto request into a
 # validated workflow contract. It does not answer the user's request.
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", FAST_MODEL)
-ROUTER_ESCALATION_MODEL = os.getenv("ROUTER_ESCALATION_MODEL", DEFAULT_MODEL)
 ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "1536"))
 ROUTER_TIMEOUT_SECONDS = int(os.getenv("ROUTER_TIMEOUT_SECONDS", "240"))
-ROUTER_ESCALATION_TIMEOUT_SECONDS = int(
-    os.getenv("ROUTER_ESCALATION_TIMEOUT_SECONDS", "480")
-)
-FINANCE_MODEL = os.getenv("FINANCE_MODEL", DEFAULT_MODEL)
-# Used by the Open WebUI orchestrator for current web/financial research when
+FINANCE_MODEL = os.getenv("FINANCE_MODEL", "qwen3-4b")
+# Used by the Open WebUI for current web/financial research when
 # no per-run model was explicitly selected in the Runs UI.
 RESEARCH_MODEL = os.getenv("RESEARCH_MODEL", FAST_MODEL)
 
@@ -75,7 +70,7 @@ MAX_EMPTY_MODEL_TURNS = int(os.getenv("MAX_EMPTY_MODEL_TURNS", "3"))
 # not useful new evidence. Synthesize from earlier findings instead.
 MAX_EMPTY_SEARCH_RESULTS = int(os.getenv("MAX_EMPTY_SEARCH_RESULTS", "3"))
 MAX_UNPRODUCTIVE_TOOL_CALLS = int(os.getenv("MAX_UNPRODUCTIVE_TOOL_CALLS", "3"))
-# A local 8B model has a finite context window.  Keep individual tool payloads
+# The local 4B model has a finite context window. Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
 MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "10000"))
 # Model-visible budget for a single tool result once structured summarization

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.dependencies import require_run_store, verify_api_key
+from app.core.config import DEFAULT_MODEL
 from app.tools.filesystem import resolve_request_workspace
 
 from .autonomous_store import AutonomousPlatformStore as PlatformStore
@@ -56,7 +57,7 @@ class ScheduledRunRequest(BaseModel):
     name: str
     task: str
     workspace: str
-    model: str = "orchestrator"
+    model: str = DEFAULT_MODEL
     allow_write: bool = False
     project_id: str | None = None
     conversation_id: str | None = None
