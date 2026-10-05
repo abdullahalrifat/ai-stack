@@ -36,7 +36,6 @@ def _number(value: Any, default: float) -> float:
 @dataclass(frozen=True)
 class ExpertRoute:
     role: str
-    profile: str
     model: str
     provider: str
     score: float
@@ -57,7 +56,7 @@ def configured_candidates(default_model: str) -> tuple[RouteCandidate, ...]:
             continue
         candidates.append(
             RouteCandidate(
-                profile=str(item.get("profile") or item["model"]),
+                profile=str(item["model"]),
                 model=str(item["model"]),
                 provider=str(item.get("provider", "openai")),
                 quality=_number(item.get("quality"), 0.5),
@@ -81,7 +80,6 @@ def expert_routes(roles: list[str], default_model: str) -> dict[str, ExpertRoute
     return {
         item.role: ExpertRoute(
             role=item.role,
-            profile=item.profile,
             model=item.model,
             provider=item.provider,
             score=item.score,
