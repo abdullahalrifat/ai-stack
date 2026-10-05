@@ -57,6 +57,7 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
     entries: list[str] = []
     fallbacks: list[str] = []
     seen_models: set[str] = set()
+    seen_fallbacks: set[tuple[str, str]] = set()
     for role, local_model in roles.items():
         model = _hf_model(env, role)
         if not model:
