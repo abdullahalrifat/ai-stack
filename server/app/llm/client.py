@@ -13,7 +13,6 @@ from ..core.cancellation import (
 )
 from ..core.config import (
     DEFAULT_MODEL,
-    DEFAULT_MODEL,
     LLM_MAX_COMPLETION_TOKENS,
     LLM_MAX_RETRIES,
     LLM_RETRY_BACKOFF_SECONDS,
