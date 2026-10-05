@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from app.core.config import (
     DEFAULT_MODEL,
-    DEFAULT_MODEL,
     FAST_MODEL,
     FINANCE_LLM_TIMEOUT_SECONDS,
     FINANCE_MAX_COMPLETION_TOKENS,
@@ -35,8 +34,8 @@ PROFILES: dict[str, AgentProfile] = {
         max_completion_tokens=FINANCE_MAX_COMPLETION_TOKENS,
         timeout_seconds=FINANCE_LLM_TIMEOUT_SECONDS,
     ),
-    "deep": AgentProfile("reasoning", "deep"),
-    "vision": AgentProfile("vision", "vision"),
+    "deep": AgentProfile(DEFAULT_MODEL, "deep"),
+    "vision": AgentProfile(DEFAULT_MODEL, "vision"),
 }
 
 
