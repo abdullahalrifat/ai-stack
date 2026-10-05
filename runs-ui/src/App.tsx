@@ -118,7 +118,7 @@ export function App() {
     setError("");
     if (!task.trim()) return;
     try {
-      const selected = "orchestrator";
+      const selected = "qwen3-4b";
       const session = conversationId || crypto.randomUUID();
       setConversationId(session);
       if (files.length > 0) await uploadDocuments(key, files.slice(0, 10), session);
