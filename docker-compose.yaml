@@ -261,6 +261,9 @@ services:
 
     environment:
       OPENAI_API_BASE: http://litellm:4000/v1
+      INFERENCE_ENABLED: ${INFERENCE_ENABLED:-false}
+      INFERENCE_BASE_URL: ${INFERENCE_BASE_URL:-http://jarvis-inference:8080/v1}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
 
       AGENT_API_KEY: ${AGENT_API_KEY}
