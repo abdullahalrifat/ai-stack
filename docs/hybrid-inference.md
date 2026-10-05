@@ -12,9 +12,8 @@ The supported home architecture is now:
 
 ## OptiPlex / small CPU VM recommendation
 
-For a 3-vCPU/14-GB VM, use a 4B-first local profile. Keep both `qwen3:4b`
-and `qwen3:8b` installed for optional escalation, but keep only one generation
-model resident at a time:
+For a 3-vCPU/14-GB VM, use a 4B-only local profile. Keep only one generation
+model installed and resident:
 
 ```text
 qwen3:4b
@@ -59,7 +58,7 @@ vision   -> HF vision   -> vision-local (Ollama)
 LiteLLM performs the provider failover after the configured primary model
 exhausts its retry policy. The client does not need provider-specific logic.
 
-`quick` remains local Ollama by default so routing/planning stays cheap and
+`quick` remains the local 4B Ollama model by default so routing/planning stays cheap and
 available even when HF is unavailable.
 
 ## Safety rules
