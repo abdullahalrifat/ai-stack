@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(
 def _create_run(store: RunStore, client_id: str | None = None) -> str:
     return store.create_run(
         task="lease integration test",
-        model="orchestrator",
+        model="qwen3-4b",
         workspace="/workspace",
         conversation_id=str(uuid.uuid4()),
         document_scope=None,
