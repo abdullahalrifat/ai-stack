@@ -17,7 +17,7 @@ In production, use long unique service keys, mount `ARTIFACT_ROOT` on persistent
 
 Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible remote endpoints. `JARVIS_MODEL_PROFILES_JSON` optionally describes model capabilities; model `auto` selects an available profile satisfying requested capabilities.
 
-Routing uses one front-facing orchestrator identity and validated internal workflows for quick, code, research, finance, deep, and vision tasks. Router output cannot invent a model, grant tools, expand a workspace, or bypass approval.
+Routing uses one front-facing qwen3:4b identity and validated internal workflows for quick, code, research, finance, deep, and vision tasks. Router output cannot invent a model, grant tools, expand a workspace, or bypass approval.
 
 Automatic routing also consumes measured runtime evidence through the provider-neutral Core route selector. AI Stack records execution telemetry as `RouteObservation` data; Core applies minimum-sample, quality-floor and recency safeguards. When evidence is insufficient, existing health and benchmark routing remains authoritative.
 
