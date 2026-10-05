@@ -12,7 +12,7 @@ from ..core.cancellation import (
     raise_if_cancelled,
 )
 from ..core.config import (
-    AGENT_MODEL_ID,
+    DEFAULT_MODEL,
     DEFAULT_MODEL,
     LLM_MAX_COMPLETION_TOKENS,
     LLM_MAX_RETRIES,
@@ -148,7 +148,7 @@ def resolve_agent_model(model: str | None):
     if not model:
         return DEFAULT_MODEL
 
-    if model == AGENT_MODEL_ID:
+    if model == DEFAULT_MODEL:
         return DEFAULT_MODEL
 
     if model == "auto":
