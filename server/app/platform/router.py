@@ -56,7 +56,7 @@ class ScheduledRunRequest(BaseModel):
     name: str
     task: str
     workspace: str
-    model: str = "orchestrator"
+    model: str = DEFAULT_MODEL
     allow_write: bool = False
     project_id: str | None = None
     conversation_id: str | None = None
