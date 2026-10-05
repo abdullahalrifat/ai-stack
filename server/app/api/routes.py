@@ -825,7 +825,7 @@ async def generate_image(request: ImageGenerationRequest):
 
 @router.get("/v1/models/{model_id}", dependencies=[Depends(verify_api_key)])
 def model_detail(model_id: str):
-    if model_id != DEFAULT_MODEL:
+    if model_id not in PROFILES:
         raise HTTPException(404, "Agent model not found")
     return {"id": model_id, "object": "model", "owned_by": "local"}
 
