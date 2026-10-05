@@ -11,6 +11,7 @@ from typing import Any
 from jarvis_core import RouteCandidate
 
 from app.agent.service import submit_run
+from app.core.config import DEFAULT_MODEL
 from app.runs.store import get_run_store
 
 from .store import PlatformStore
