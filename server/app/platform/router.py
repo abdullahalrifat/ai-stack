@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.dependencies import require_run_store, verify_api_key
+from app.core.config import DEFAULT_MODEL
 from app.tools.filesystem import resolve_request_workspace
 
 from .autonomous_store import AutonomousPlatformStore as PlatformStore
