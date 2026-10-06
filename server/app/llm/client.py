@@ -125,11 +125,13 @@ def _iter_stream_with_deadline(response, timeout_seconds: int, should_cancel=Non
         worker.join(timeout=1)
 
 
-def _llm_endpoint() -> tuple[str | None, str | None]:
-    """Return the configured inference endpoint without changing public model IDs."""
-    if os.getenv("INFERENCE_ENABLED", "false").lower() == "true":
-        return os.getenv("INFERENCE_BASE_URL"), os.getenv("INFERENCE_API_KEY") or os.getenv("OPENAI_API_KEY")
-    return os.getenv("OPENAI_API_BASE"), os.getenv("OPENAI_API_KEY")
+def _llm_endpoint() -> tuple[str, str]:
+    """Return the dedicated inference gateway endpoint."""
+    base_url = os.getenv("INFERENCE_BASE_URL", "").strip().rstrip("/")
+    api_key = os.getenv("INFERENCE_API_KEY", "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+    if not base_url:
+        raise RuntimeError("INFERENCE_BASE_URL is required; configure jarvis-inference")
+    return base_url, api_key
 
 
 def get_client():
@@ -176,8 +178,6 @@ def get_available_models(force_refresh: bool = False):
         return _model_cache["models"]
 
     base_url, api_key = _llm_endpoint()
-    base_url = base_url or "http://litellm:4000/v1"
-
     response = requests.get(
         f"{base_url}/models",
         headers={"Authorization": f"Bearer {api_key}"},

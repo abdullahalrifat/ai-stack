@@ -98,7 +98,9 @@ def test_plain_completion_accepts_operation_specific_timeout(_available):
 
 
 @patch("app.llm.client.OpenAI")
-def test_client_disables_sdk_retries_for_local_inference(openai):
+def test_client_disables_sdk_retries_for_inference_gateway(openai, monkeypatch):
+    monkeypatch.setenv("INFERENCE_BASE_URL", "http://inference:8080/v1")
+    monkeypatch.setenv("INFERENCE_API_KEY", "secret")
     previous = client._client
     client._client = None
     try:

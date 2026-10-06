@@ -579,7 +579,7 @@ async def openai_chat(
         raise HTTPException(400, str(exc)) from exc
 
     # Bound client-supplied history before the executor adds its own prompt
-    # and tool schemas. This protects the 8K local Ollama context from large
+    # and tool schemas. This protects the configured inference model context from large
     # Open WebUI/Continue codebase payloads.
     prompt = openai_prompt(request.messages)
     if not prompt.strip():

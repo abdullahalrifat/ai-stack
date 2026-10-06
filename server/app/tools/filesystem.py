@@ -64,7 +64,6 @@ IGNORE_DIRS = {
     # unreadable from the agent container and can contain huge model/database
     # artifacts that waste an entire repository-review run.
     "agent-sandboxes",
-    "ollama",
     "postgres",
     "qdrant",
     "redis",

@@ -26,7 +26,7 @@ def compact_openai_messages(
     Continue and Open WebUI can send large codebase snippets or tool payloads
     as ordinary chat messages. The agent subsequently adds its own system
     prompt and tool schemas, so forwarding those messages verbatim can exceed
-    Ollama's context before the agent gets a chance to act. The agent has its
+    the inference gateway's model context before the agent gets a chance to act. The agent has its
     own authoritative system prompt, so client system messages are deliberately
     excluded rather than treated as user work. Keep the newest user request and
     recent history; discard oldest material first.

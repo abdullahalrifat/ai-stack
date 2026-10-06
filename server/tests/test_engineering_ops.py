@@ -5,12 +5,17 @@ import hashlib
 from app.platform.engineering import identity_context, inference_status, soak_profile
 
 
-def test_inference_status_never_exposes_remote_secret(monkeypatch):
-    monkeypatch.setenv("INFERENCE_MODE", "hybrid")
-    monkeypatch.setenv("HF_INFERENCE_BASE_URL", "https://example.invalid/v1")
-    monkeypatch.setenv("HF_API_KEY", "secret-value")
+def test_inference_status_uses_dedicated_gateway(monkeypatch):
+    monkeypatch.setenv("INFERENCE_BASE_URL", "http://inference:8080/v1")
+    monkeypatch.setattr(
+        "app.platform.engineering.get_available_models",
+        lambda: ["qwen3:1.7b", "qwen3:4b", "nomic-embed-text"],
+    )
     status = inference_status()
-    assert status["remote_configured"] is True
+    assert status["mode"] == "dedicated-inference"
+    assert status["primary_provider"] == "jarvis-inference"
+    assert status["remote_configured"] is False
+    assert status["remote_base_url_configured"] is True
     assert "secret-value" not in str(status)
 
 

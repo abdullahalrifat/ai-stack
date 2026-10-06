@@ -14,7 +14,7 @@ AI Stack Server is the durable, self-hosted control plane for long-running agent
 - `runs-ui/`: run, evidence and approval interface;
 - PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
-- LiteLLM for OpenAI-compatible routing plus the dedicated jarvis-inference VM; AI Stack Ollama is embeddings-only;
+- dedicated `jarvis-inference` VM for all model execution, including embeddings;
 - `contracts/`: versioned Server client protocol;
 - `jarvis-agent-core` **0.16.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
 
@@ -22,11 +22,11 @@ Server requirements, lockfile, Docker image and CI assert the same Core version.
 
 ## Token-efficient and empirical routing
 
-Core 0.16.1 supplies provider-neutral efficiency accounting plus empirical route calibration. Server keeps concrete Ollama/LiteLLM/remote-provider execution and telemetry in the application layer, adapts measured runtime observations into Core `RouteObservation` records, and delegates route selection back to `RouteCalibrator`.
+Core 0.16.1 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
 
 The calibration path is deliberately conservative: minimum samples, a quality floor and recency weighting must be satisfied before measured evidence can change automatic routing. When evidence is insufficient, existing health/benchmark routing remains the fallback.
 
-This boundary is intentionally provider-neutral: changing a local Ollama model or remote OpenAI-compatible gateway does not require changing Jarvis Core or importing provider SDKs into Core.
+This boundary is intentionally provider-neutral: changing inference models or the gateway implementation does not require changing Jarvis Core or importing provider-specific SDKs into Core.
 
 ## Start the development stack
 
@@ -66,9 +66,9 @@ cp .env.example .env
 ```
 
 Edit the `.env` file to match your server configuration:
-- Set `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`, `AGENT_API_KEY`, and `RUNNER_API_KEY` to strong random values
-- Set `INFERENCE_ENABLED=true`, `INFERENCE_BASE_URL` to the private jarvis-inference VM, and `INFERENCE_API_KEY` to the gateway key
-- Keep AI Stack Ollama limited to `nomic-embed-text`; generation must go through jarvis-inference
+- Set `POSTGRES_PASSWORD`, `AGENT_API_KEY`, `RUNNER_API_KEY`, and `INFERENCE_API_KEY` to strong random values
+- Set `INFERENCE_BASE_URL` to the private jarvis-inference VM
+- All chat and embedding inference must go through jarvis-inference; AI Stack does not run Ollama
 - Use concrete model IDs `qwen3:1.7b` and `qwen3:4b`
 - Configure workspace paths: `WORKSPACE_PATH=/path/to/your/code`
 - Adjust resource limits: `RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `MAX_AGENT_STEPS`
@@ -77,10 +77,6 @@ Edit the `.env` file to match your server configuration:
 ```bash
 # Build the custom images
 ./build.sh
-
-# Provision only the local embedding model
-docker compose up -d ollama
-docker exec ollama ollama pull nomic-embed-text
 
 # Start the services
 docker compose up -d
@@ -96,7 +92,6 @@ docker compose logs -f
 
 # Access the Open WebUI at http://<server-ip>:3003
 # The agent runner and SearXNG are internal Docker services; they are not host-published.
-# Access LiteLLM at http://<server-ip>:4000
 # Access the Runs UI at http://<server-ip>:3002
 ```
 
@@ -104,9 +99,6 @@ docker compose logs -f
 ```bash
 # Test AI Stack server health endpoint (port 8081)
 curl -fsS http://127.0.0.1:8081/health
-
-# Test LiteLLM health endpoint (may return 401 - auth required)
-curl -fsS http://127.0.0.1:4000/health
 
 # Test SearXNG search endpoint
 docker compose exec -T searxng wget -qO- "http://127.0.0.1:8080/search?q=test" | head -1 || echo "SearXNG loading"
@@ -136,7 +128,7 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 
 ## CPU / low-memory profile
 
-AI Stack is the control plane. Generation runs on the dedicated jarvis-inference VM, which owns Ollama, model loading, queueing and resource limits. AI Stack keeps only `nomic-embed-text` locally for embeddings. Generation concurrency remains one end-to-end.
+AI Stack is the control plane. All generation and embeddings run on the dedicated jarvis-inference VM, which owns Ollama, model loading, queueing and resource limits. AI Stack keeps no model runtime or model weights. Generation concurrency remains one end-to-end.
 
 The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is the host-published port. Open WebUI uses the internal URL.
 
@@ -158,21 +150,21 @@ jarvis "review this repository and fix the highest-impact issue"
 
 If Jarvis CLI runs on the same VM as AI Stack, use `http://127.0.0.1:8081/v1`. From another LAN machine, use the VM's private IP and restrict port 8081 with the firewall to trusted clients. Do not expose the agent API publicly without authentication and network controls.
 
-If you want Jarvis CLI to own the tool loop and AI Stack to provide only inference, use LiteLLM instead:
+For a direct model client, point it at the dedicated inference VM instead:
 
 ```bash
 export JARVIS_PROVIDER=openai
-export JARVIS_BASE_URL=http://<ai-stack-host>:4000/v1
+export JARVIS_BASE_URL=http://<inference-vm-ip>:8080/v1
 export JARVIS_MODEL=qwen3:4b
-export JARVIS_API_KEY='<the LITELLM_MASTER_KEY from ai-stack .env>'
+export JARVIS_API_KEY='<the INFERENCE_API_KEY from jarvis-inference .env>'
 jarvis model-doctor
 ```
 
-The agent endpoint is recommended for repository tasks that should use AI Stack's server-side agent tools; the LiteLLM endpoint is recommended when Jarvis CLI should remain the tool-owning runtime.
+Use the AI Stack agent endpoint when repository tasks should use Server-side tools and durable Runs; use jarvis-inference directly when the caller only needs model inference.
 
 ## Offline / off-grid operation
 
-AI Stack is designed to run without external model providers. The dedicated jarvis-inference VM hosts local generation models, LiteLLM provides an optional OpenAI-compatible routing surface, and PostgreSQL/Redis/Qdrant provide local state. AI Stack Ollama is used only for embeddings. Remote provider variables are optional and should remain empty for an isolated deployment.
+AI Stack is designed to run without external model providers. The dedicated jarvis-inference VM hosts local generation and embedding models, while PostgreSQL/Redis/Qdrant provide local state. Remote provider variables are optional and should remain empty for an isolated deployment.
 
 For a genuinely off-grid deployment, provision Docker images and Ollama models while connected, then disconnect the host. Use the dedicated offline Compose override:
 
@@ -182,7 +174,7 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 docker compose -f docker-compose.yaml -f docker-compose.offline.yaml ps
 ```
 
-The offline override disables external web search, clears remote-provider configuration, and makes model provisioning fail closed if a configured Ollama model is absent from the persistent `./ollama` volume. It never runs `ollama pull` while offline.
+The offline override disables external web search and clears remote-provider configuration. The inference VM remains a separate trusted dependency reachable over the private network.
 
 ## Durable autonomous execution
 

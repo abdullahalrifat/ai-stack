@@ -1,21 +1,21 @@
+"""OpenAI-compatible embeddings via the dedicated inference gateway."""
+
+from __future__ import annotations
+
 import os
 
 import requests
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
+INFERENCE_BASE_URL = os.getenv("INFERENCE_BASE_URL", "").rstrip("/")
+INFERENCE_API_KEY = os.getenv("INFERENCE_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+EMBED_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+EMBED_MAX_CHARS = int(os.getenv("EMBED_MAX_CHARS", "6000"))
 
-
-EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-EMBED_MAX_CHARS = int(os.getenv("OLLAMA_EMBED_MAX_CHARS", "6000"))
-
-
-# Reused across calls for connection pooling instead of opening a new
-# connection on every embedding request.
 _session = requests.Session()
 
 
 def _bounded_embedding_text(text: str, limit: int = EMBED_MAX_CHARS) -> str:
-    """Fit embedding input below the local model's physical 2K-token batch."""
+    """Keep embedding input bounded before sending it to the inference VM."""
     text = text.strip()
     if len(text) <= limit:
         return text
@@ -25,19 +25,21 @@ def _bounded_embedding_text(text: str, limit: int = EMBED_MAX_CHARS) -> str:
 
 
 def create_embedding(text: str) -> list[float]:
-
     if not text or not text.strip():
         raise ValueError("Cannot create embedding for empty text")
-    bounded_text = _bounded_embedding_text(text, EMBED_MAX_CHARS)
+    if not INFERENCE_BASE_URL:
+        raise RuntimeError("INFERENCE_BASE_URL is required for embeddings")
 
+    bounded_text = _bounded_embedding_text(text, EMBED_MAX_CHARS)
     response = _session.post(
-        f"{OLLAMA_URL}/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": bounded_text},
+        f"{INFERENCE_BASE_URL}/embeddings",
+        headers={"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {},
+        json={"model": EMBED_MODEL, "input": bounded_text, "encoding_format": "float"},
         timeout=60,
     )
-
     response.raise_for_status()
-
     data = response.json()
-
-    return data["embedding"]
+    items = data.get("data") or []
+    if not items:
+        raise RuntimeError("Inference gateway returned no embedding")
+    return [float(value) for value in items[0]["embedding"]]

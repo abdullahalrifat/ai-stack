@@ -27,29 +27,33 @@ def _flag(name: str, default: bool = False) -> bool:
 
 
 def inference_status() -> dict[str, Any]:
-    mode = os.getenv("INFERENCE_MODE", "local").strip().lower()
-    base_url = os.getenv("HF_INFERENCE_BASE_URL", "")
-    remote_configured = bool(base_url and os.getenv("HF_API_KEY"))
+    """Return health and model information from the dedicated inference VM."""
+    base_url = os.getenv("INFERENCE_BASE_URL", "").rstrip("/")
+    configured = bool(base_url)
     roles = {
-        "coder": os.getenv("HF_CODER_MODEL") or os.getenv("HF_MODEL") or DEFAULT_MODEL,
-        "reasoning": os.getenv("HF_REASONING_MODEL") or os.getenv("HF_MODEL") or DEFAULT_MODEL,
-        "vision": os.getenv("HF_VISION_MODEL") or os.getenv("HF_MODEL") or DEFAULT_MODEL,
+        "coder": os.getenv("AGENT_REASONING_MODEL") or DEFAULT_MODEL,
+        "reasoning": os.getenv("AGENT_REASONING_MODEL") or DEFAULT_MODEL,
+        "vision": DEFAULT_MODEL,
     }
     try:
         available = list(get_available_models())
         gateway = {"status": "healthy", "models": available}
     except Exception as exc:
         gateway = {"status": "unavailable", "error": str(exc)[:500]}
-    primary = "hf" if mode == "hybrid" and remote_configured else "ollama"
+        available = []
     return {
-        "mode": mode,
-        "primary_provider": primary,
-        "fallback_provider": "ollama",
-        "remote_configured": remote_configured,
-        "remote_base_url_configured": bool(base_url),
-        "roles": {role: {"primary": (model if primary == "hf" else None), "fallback": "ollama"} for role, model in roles.items()},
-        "local_gateway": gateway,
-        "default_model_alias": DEFAULT_MODEL,
+        "mode": "dedicated-inference",
+        "primary_provider": "jarvis-inference",
+        "fallback_provider": None,
+        "remote_configured": False,
+        "remote_base_url_configured": configured,
+        "roles": {
+            role: {"model": model, "provider": "jarvis-inference"}
+            for role, model in roles.items()
+        },
+        "gateway": gateway,
+        "models": available,
+        "default_model": DEFAULT_MODEL,
         "web_search_enabled": _flag("WEB_SEARCH_ENABLED", True),
     }
 
