@@ -30,7 +30,7 @@ def create_embedding(text: str) -> list[float]:
     if not INFERENCE_BASE_URL:
         raise RuntimeError("INFERENCE_BASE_URL is required for embeddings")
 
-    bounded_text = _bounded_embedding_text(text)
+    bounded_text = _bounded_embedding_text(text, EMBED_MAX_CHARS)
     response = _session.post(
         f"{INFERENCE_BASE_URL}/embeddings",
         headers={"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {},
