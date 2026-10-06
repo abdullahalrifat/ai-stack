@@ -47,7 +47,7 @@ jobs:
           image: ghcr.io/abdullahalrifat/ai-stack-server:${{ github.sha }}
           format: spdx-json
           output-file: server-image.spdx.json
-      - uses: actions/attest-build-provenance@4d10147e8f2c7c1c5f6e9b9b0f8f4a4c0e7c6a9f
+      - uses: actions/attest-build-provenance@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           subject-path: server-image.spdx.json
