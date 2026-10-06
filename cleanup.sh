@@ -32,18 +32,15 @@ docker container prune -f 2>/dev/null || true
 
 # Remove custom-built images
 echo "Removing custom-built images..."
-docker rmi -f custom-litellm:latest ai-runs-ui:latest ai-stack-server:latest 2>/dev/null || true
+docker rmi -f ai-runs-ui:latest ai-stack-server:latest 2>/dev/null || true
 
 # Remove Ollama data and models
-echo "Cleaning up Ollama data..."
 rm -rf ./ollama/models ./ollama/cache
 # Remove any leftover Ollama data
 rm -rf ./postgres 2>/dev/null || true
 docker volume rm postgres_data 2>/dev/null || true
 
 # Remove generated configuration files
-echo "Removing generated configuration..."
-rm -f /tmp/litellm-config.yaml
 
 # Remove .env if it was generated from example (optional)
 read -p "Do you want to remove the .env file as well? (y/N) " -n 1 -r
