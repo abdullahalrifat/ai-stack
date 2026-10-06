@@ -221,3 +221,20 @@ See [TODO.md](TODO.md) for prioritized maturity tracking.
 - [Server protocol](contracts/jarvis-protocol-v1.json)
 
 See [.env.example](.env.example) for the configuration surface.
+
+
+## Jarvis integration
+
+Jarvis is the user-facing CLI and AI Stack is its control plane. Configure the Jarvis machine with `AI_STACK_BASE_URL` and `AI_STACK_API_KEY` (the same secret configured as AI Stack `AGENT_API_KEY`). Jarvis should not connect directly to Ollama for normal operation.
+
+The request path is:
+
+```text
+Jarvis CLI
+  -> AI Stack
+     -> tools / memory / RAG / orchestration
+     -> jarvis-inference (only when model inference is needed)
+        -> Ollama
+```
+
+AI Stack owns model routing and embeddings configuration. `jarvis-inference` is the only service that runs Ollama and owns model lifecycle.
