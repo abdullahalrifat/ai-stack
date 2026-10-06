@@ -14,10 +14,14 @@ SPEC.loader.exec_module(render_config)
 BASE = """model_list:
   - model_name: qwen3:1.7b
     litellm_params:
-      model: ollama/qwen3:1.7b
+      model: openai/qwen3:1.7b
+      api_base: os.environ/INFERENCE_BASE_URL
+      api_key: os.environ/INFERENCE_API_KEY
   - model_name: qwen3:4b
     litellm_params:
-      model: ollama/qwen3:4b
+      model: openai/qwen3:4b
+      api_base: os.environ/INFERENCE_BASE_URL
+      api_key: os.environ/INFERENCE_API_KEY
 
 ###########################################################
 # General Settings
