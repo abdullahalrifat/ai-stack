@@ -51,7 +51,7 @@ The role-specific value overrides `HF_MODEL`.
 
 Hybrid routing uses concrete provider model IDs only. When a configured remote
 model is unavailable, LiteLLM falls back directly to the concrete local model
-ID `qwen3-4b` for coding/reasoning/vision workloads. There are no synthetic local model aliases.
+ID `qwen3:4b` for coding/reasoning/vision workloads. There are no synthetic local model aliases.
 
 ## Safety rules
 
