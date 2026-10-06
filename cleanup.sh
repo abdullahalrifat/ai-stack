@@ -9,8 +9,7 @@
 # 1. Stop and remove all Docker containers
 # 2. Remove Docker volumes for persistent data
 # 3. Remove custom-built images
-# 4. Clean up ollama models and data
-# 5. Remove generated configuration files
+## 5. Remove generated configuration files
 
 set -euo pipefail
 
@@ -34,8 +33,6 @@ docker container prune -f 2>/dev/null || true
 echo "Removing custom-built images..."
 docker rmi -f ai-runs-ui:latest ai-stack-server:latest 2>/dev/null || true
 
-# Remove Ollama data and models
-rm -rf ./ollama/models ./ollama/cache
 # Remove any leftover Ollama data
 rm -rf ./postgres 2>/dev/null || true
 docker volume rm postgres_data 2>/dev/null || true
