@@ -36,7 +36,7 @@ def test_local_only_config_is_unchanged():
     assert render_config.render_config(BASE, {}) == BASE
 
 
-def test_hybrid_promotes_hf_and_adds_ollama_fallbacks():
+def test_hybrid_promotes_hf_and_adds_inference_fallbacks():
     rendered = render_config.render_config(
         BASE,
         {
