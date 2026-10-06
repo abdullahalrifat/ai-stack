@@ -5,8 +5,6 @@ set -e
 CONTAINER="ollama"
 
 MODELS=(
-  "qwen3:1.7b"
-  "qwen3:4b"
   "nomic-embed-text"
 )
 
