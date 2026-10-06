@@ -198,7 +198,7 @@ export function App() {
           body: JSON.stringify({
             task: taskWithLegacyContext,
             workspace: active.requested_workspace,
-            model: "qwen3-4b",
+            model: "qwen3:4b",
             conversation_id: session,
             document_scope: active.document_scope || null,
             project_id: active.project_id || projectId || null,
@@ -211,7 +211,7 @@ export function App() {
         id: result.run_id,
         status: result.status,
         task: followUp,
-        model: "qwen3-4b",
+        model: "qwen3:4b",
         conversation_id: session,
         project_id: active.project_id || projectId || null,
         requested_workspace: active.requested_workspace,

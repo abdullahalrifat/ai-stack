@@ -1,62 +1,63 @@
-# Hybrid inference: Hugging Face primary, Ollama survival
+# Inference architecture
 
-The supported home architecture is now:
+AI Stack is the control plane. Generation is delegated to the dedicated
+`jarvis-inference` VM through its OpenAI-compatible `/v1` endpoint.
 
-- **Hybrid mode:** Hugging Face is the preferred high-performance provider for
-  coding, reasoning, and vision; local Ollama is the deterministic fallback.
-- **Local mode:** Ollama only. Remote credentials are ignored by the LiteLLM
-  renderer.
-- **Offline mode:** the offline compose override clears remote credentials,
-  disables web search, and fails closed if required local Ollama models are
-  missing.
+The supported architecture is:
+- AI Stack: agent execution, tools, memory, search, UI and durable state.
+- jarvis-inference: Ollama, model lifecycle, queueing, resource admission and generation.
+- AI Stack Ollama: embeddings only (`nomic-embed-text`).
+- One active generation and one loaded generation model on the inference VM.
 
-## OptiPlex / small CPU VM recommendation
+## Dedicated inference configuration
 
-For the OptiPlex / small CPU VM, use a two-tier local setup. Keep both generation
-models installed, but only one resident at a time:
+Set:
 
 ```text
-qwen3:1.7b  # default / routine work
-qwen3:4b    # heavy coding, reasoning, review
-nomic-embed-text
+INFERENCE_ENABLED=true
+INFERENCE_BASE_URL=http://<inference-vm-ip>:8080/v1
+INFERENCE_API_KEY=<same key configured on jarvis-inference>
+DEFAULT_MODEL=qwen3:1.7b
+FAST_MODEL=qwen3:1.7b
+ROUTER_MODEL=qwen3:1.7b
+RESEARCH_MODEL=qwen3:1.7b
+FINANCE_MODEL=qwen3:4b
+AGENT_REASONING_MODEL=qwen3:4b
+CHANGE_REVIEW_MODEL=qwen3:4b
 ```
 
-Use `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`, an 8K local context
-budget, and conservative agent/tool concurrency. The 1.7B model handles normal
-requests; the 4B model is selected only when the workload needs more capacity.
-Do not configure obsolete larger local models on the CPU host.
+Use private networking/VLAN/firewall rules between the two VMs. Do not expose
+the inference gateway or Ollama directly to the public Internet.
 
-## Hugging Face configuration
+## Model IDs
 
-For a single HF endpoint/model:
+Model IDs are the actual Ollama model IDs:
+- `qwen3:1.7b` — routine/fast work.
+- `qwen3:4b` — heavier coding, reasoning, finance and review.
 
-```text
-INFERENCE_MODE=hybrid
-HF_MODEL=<model-id>
-HF_INFERENCE_BASE_URL=https://<endpoint>.endpoints.huggingface.cloud/v1
-HF_API_KEY=<token>
-```
+Synthetic aliases such as `qwen3-4b`, `qwen3-1.7b` and `orchestrator` are not
+part of the contract.
 
-For role-specific deployments, prefer:
+## Local embeddings
 
-```text
-HF_CODER_MODEL=<coding-model>
-HF_REASONING_MODEL=<reasoning-model>
-HF_VISION_MODEL=<vision-model>
-```
+AI Stack keeps a small local Ollama instance only for `nomic-embed-text`.
+It should not download or load the generation models.
 
-The role-specific value overrides `HF_MODEL`.
+The local Ollama service is loopback-bound and should have a small CPU/RAM
+budget because embeddings are background/support work.
 
-## Fallback behavior
+## Optional remote providers
 
-Hybrid routing uses concrete provider model IDs only. When a configured remote
-model is unavailable, LiteLLM falls back directly to the concrete local model
-ID `qwen3-4b` for coding/reasoning/vision workloads. There are no synthetic local model aliases.
+Hugging Face/Anthropic can still be configured as explicit remote providers.
+Those providers are separate from the dedicated local inference gateway.
 
-## Safety rules
+When hybrid routing is enabled, remote role-specific models may be preferred,
+with fallback to the concrete local model IDs served by `jarvis-inference`.
 
-- Do not configure HF credentials in an air-gapped deployment.
-- Do not use a catch-all cloud fallback for embeddings or local survival tasks.
-- Keep remote access behind the existing API authentication and network
-  boundary; never expose the LiteLLM container directly to the Internet.
-- Treat HF as an inference service, not as a dependency of `jarvis-core`.
+Do not place provider credentials in model IDs or request payloads.
+
+## Operational rule
+
+Do not run a second generation Ollama on the AI Stack VM. That would duplicate
+RAM usage, model storage and CPU contention and would bypass the inference
+gateway's queue, digest and resource controls.
