@@ -107,7 +107,7 @@ def test_initial_client_lease_uses_database_clock():
 
     store.create_run(
         task="inspect",
-        model="qwen3-4b",
+        model="qwen3:4b",
         workspace="/workspace/repo",
         conversation_id="conversation",
         document_scope=None,
