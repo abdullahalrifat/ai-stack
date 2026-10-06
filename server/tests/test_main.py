@@ -374,9 +374,9 @@ def test_auto_profile_uses_default_model_while_quick_uses_fast_model():
 
 def test_available_models_is_a_public_gateway_catalog():
     with patch(
-        "app.api.routes.get_available_models", return_value=["qwen3-4b"]
+        "app.api.routes.get_available_models", return_value=["qwen3:4b"]
     ):
-        assert routes.available_models() == {"models": ["qwen3-4b"]}
+        assert routes.available_models() == {"models": ["qwen3:4b"]}
 
 
 def test_image_generation_status_is_explicit_when_unconfigured(monkeypatch):
