@@ -14,7 +14,7 @@ AI Stack Server is the durable, self-hosted control plane for long-running agent
 - `runs-ui/`: run, evidence and approval interface;
 - PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
-- LiteLLM plus Ollama or remote compatible providers: inference routing;
+- LiteLLM for OpenAI-compatible routing plus the dedicated jarvis-inference VM; AI Stack Ollama is embeddings-only;
 - `contracts/`: versioned Server client protocol;
 - `jarvis-agent-core` **0.16.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
 
@@ -67,8 +67,9 @@ cp .env.example .env
 
 Edit the `.env` file to match your server configuration:
 - Set `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`, `AGENT_API_KEY`, and `RUNNER_API_KEY` to strong random values
-- Adjust `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KEEP_ALIVE`, and `OLLAMA_CONTEXT_LENGTH` based on your GPU/CPU memory
-- Use `qwen3:4b` as the only local generation model for chat, routing, coding, research, finance and reasoning
+- Set `INFERENCE_ENABLED=true`, `INFERENCE_BASE_URL` to the private jarvis-inference VM, and `INFERENCE_API_KEY` to the gateway key
+- Keep AI Stack Ollama limited to `nomic-embed-text`; generation must go through jarvis-inference
+- Use concrete model IDs `qwen3:1.7b` and `qwen3:4b`
 - Configure workspace paths: `WORKSPACE_PATH=/path/to/your/code`
 - Adjust resource limits: `RUNNER_CPU_SECONDS`, `RUNNER_MEMORY_MB`, `MAX_AGENT_STEPS`
 
@@ -77,10 +78,8 @@ Edit the `.env` file to match your server configuration:
 # Build the custom images
 ./build.sh
 
-# Provision the local CPU models once while connected
-# (skip a model only if it is already present in ./ollama)
+# Provision only the local embedding model
 docker compose up -d ollama
-docker exec ollama ollama pull qwen3:4b
 docker exec ollama ollama pull nomic-embed-text
 
 # Start the services
@@ -137,7 +136,7 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 
 ## CPU / low-memory profile
 
-For a 3-vCPU / 14-GB VM, the hot path uses `qwen3:4b`. Only one local generation model is provisioned and loaded. LLM concurrency is one, expert dispatch is disabled, the agent/runner are capped at 4 GB / 1 GB RAM and 2 / 1 CPU, and the model context is 8K.
+AI Stack is the control plane. Generation runs on the dedicated jarvis-inference VM, which owns Ollama, model loading, queueing and resource limits. AI Stack keeps only `nomic-embed-text` locally for embeddings. Generation concurrency remains one end-to-end.
 
 The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is the host-published port. Open WebUI uses the internal URL.
 
@@ -150,7 +149,7 @@ On the machine running Jarvis CLI:
 ```bash
 export JARVIS_PROVIDER=openai
 export JARVIS_BASE_URL=http://<ai-stack-host>:8081/v1
-export JARVIS_MODEL=qwen3:4b
+export JARVIS_MODEL=qwen3:1.7b
 export JARVIS_API_KEY='<the AGENT_API_KEY from ai-stack .env>'
 
 jarvis model-doctor
@@ -173,7 +172,7 @@ The agent endpoint is recommended for repository tasks that should use AI Stack'
 
 ## Offline / off-grid operation
 
-AI Stack is designed to run locally without external model providers. Ollama hosts local models, LiteLLM provides the OpenAI-compatible routing surface, and PostgreSQL/Redis/Qdrant provide local state. Remote provider variables are optional and should remain empty for an isolated deployment.
+AI Stack is designed to run without external model providers. The dedicated jarvis-inference VM hosts local generation models, LiteLLM provides an optional OpenAI-compatible routing surface, and PostgreSQL/Redis/Qdrant provide local state. AI Stack Ollama is used only for embeddings. Remote provider variables are optional and should remain empty for an isolated deployment.
 
 For a genuinely off-grid deployment, provision Docker images and Ollama models while connected, then disconnect the host. Use the dedicated offline Compose override:
 
