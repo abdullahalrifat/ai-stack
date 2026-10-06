@@ -7,8 +7,3 @@ services:
   server:
     environment:
       WEB_SEARCH_ENABLED: "false"
-      ANTHROPIC_MODEL: ""
-      ANTHROPIC_API_KEY: ""
-      HF_MODEL: ""
-      HF_INFERENCE_BASE_URL: ""
-      HF_API_KEY: ""
