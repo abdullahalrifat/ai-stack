@@ -32,7 +32,7 @@ def test_heterogeneous_routes_preserve_provider_and_use_distinct_models(monkeypa
             [
                 {
                     "model": "qwen3:4b",
-                    "provider": "ollama",
+                    "provider": "jarvis-inference",
                     "quality": 0.9,
                     "tool_success": 0.9,
                     "structured_success": 0.8,
@@ -55,7 +55,7 @@ def test_heterogeneous_routes_preserve_provider_and_use_distinct_models(monkeypa
     )
     routes = expert_routes(["implementation", "verification"], "fallback")
     assert routes["implementation"].model != routes["verification"].model
-    assert routes["implementation"].provider == "ollama"
+    assert routes["implementation"].provider == "jarvis-inference"
     assert routes["verification"].provider == "anthropic"
 
 
