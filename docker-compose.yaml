@@ -127,14 +127,9 @@ services:
       VECTOR_DB: qdrant
       QDRANT_URI: http://qdrant:6333
 
-      OPENAI_API_BASE_URL: http://litellm:4000/v1
-      OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8000/v1
-      # Keys correspond positionally to OPENAI_API_BASE_URLS.  The agent
-      # endpoint has its own key; leaving this blank makes the seeded
-      # connection unusable.
-      OPENAI_API_KEYS: ${LITELLM_MASTER_KEY};${AGENT_API_KEY}
-      # Open WebUI joins an OpenAI connection prefix with a dot, producing
-      # the displayed concrete model id "agent.qwen3:4b".
+      OPENAI_API_BASE_URL: ${INFERENCE_BASE_URL}
+      OPENAI_API_BASE_URLS: ${INFERENCE_BASE_URL}
+      OPENAI_API_KEYS: ${INFERENCE_API_KEY:-}
 
 
     volumes:
@@ -170,7 +165,7 @@ services:
       INFERENCE_ENABLED: "true"
       INFERENCE_BASE_URL: ${INFERENCE_BASE_URL}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
-      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      OPENAI_API_KEY: ${INFERENCE_API_KEY:-}
 
       AGENT_API_KEY: ${AGENT_API_KEY}
       # Authentication is mandatory unless explicitly disabled for isolated
