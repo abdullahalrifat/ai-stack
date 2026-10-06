@@ -42,11 +42,27 @@ from pathlib import Path
 
 data = json.loads(Path("/tmp/jarvis-inference-models.json").read_text())
 models = {item["id"] for item in data.get("data", [])}
-required = {"qwen3:1.7b", "qwen3:4b", "nomic-embed-text"}
+required = {"qwen3:1.7b", "qwen3:4b"}
 missing = sorted(required - models)
 if missing:
     raise SystemExit(f"Missing inference models: {', '.join(missing)}")
-print("OK: required inference models are available")
+print("OK: required chat models are available")
+PY
+
+curl "${curl_args[@]}" -H "Content-Type: application/json" \
+  -d '{"model":"nomic-embed-text","input":"inference preflight"}' \
+  "${INFERENCE_BASE_URL}/embeddings" >/tmp/jarvis-inference-embedding.json \
+  || fail "nomic-embed-text embedding endpoint is unavailable"
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+data = json.loads(Path("/tmp/jarvis-inference-embedding.json").read_text())
+items = data.get("data") or []
+if not items or not items[0].get("embedding"):
+    raise SystemExit("Inference gateway returned no embedding vector")
+print("OK: embedding model is available")
 PY
 
 docker compose config --quiet
