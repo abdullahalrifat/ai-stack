@@ -1,40 +1,12 @@
 services:
-  # Offline mode must never attempt an Ollama registry pull. Required models
-  # must already exist in the persistent ./ollama volume.
-  ollama-init:
-    environment:
-      OLLAMA_OFFLINE: "true"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        for model in $${OLLAMA_MODELS}; do
-          echo "Checking local Ollama model: $${model}"
-          if ! ollama show "$${model}" >/dev/null 2>&1; then
-            echo "ERROR: required local model is missing: $${model}" >&2
-            echo "Provision it while connected, then retry offline startup." >&2
-            exit 1
-          fi
-        done
-        ollama list
-
-  # A fully disconnected deployment has no useful external search path.
-  # Keep the service disabled rather than allowing accidental network access.
+  # Offline mode disables external search and cloud-provider credentials.
+  # The dedicated inference VM remains reachable over the private network.
   searxng:
     profiles: ["online"]
 
   server:
     environment:
       WEB_SEARCH_ENABLED: "false"
-      ANTHROPIC_MODEL: ""
-      ANTHROPIC_API_KEY: ""
-      HF_MODEL: ""
-      HF_INFERENCE_BASE_URL: ""
-      HF_API_KEY: ""
-
-  # Remote provider configuration is intentionally blank in offline mode.
-  litellm:
-    environment:
       ANTHROPIC_MODEL: ""
       ANTHROPIC_API_KEY: ""
       HF_MODEL: ""
