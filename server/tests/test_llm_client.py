@@ -30,7 +30,7 @@ def test_tool_completion_has_bounded_local_inference_settings(_available):
 
     with patch("app.llm.client.get_client", return_value=fake_client):
         result = client.chat_with_tools(
-            [{"role": "user", "content": "hello"}], [], model="qwen3-4b"
+            [{"role": "user", "content": "hello"}], [], model="qwen3:4b"
         )
 
     assert result.content == "ok"
@@ -43,7 +43,7 @@ def test_tool_completion_accepts_profile_output_budget(_available):
     fake_client, completion = _completion_client()
 
     with patch("app.llm.client.get_client", return_value=fake_client):
-        client.chat_with_tools([], [], model="qwen3-4b", max_tokens=640)
+        client.chat_with_tools([], [], model="qwen3:4b", max_tokens=640)
 
     assert completion.call_args.kwargs["max_tokens"] == 640
 
@@ -53,7 +53,7 @@ def test_tool_completion_accepts_model_timeout(_available):
     fake_client, completion = _completion_client()
 
     with patch("app.llm.client.get_client", return_value=fake_client):
-        client.chat_with_tools([], [], model="qwen3-4b", timeout_seconds=300)
+        client.chat_with_tools([], [], model="qwen3:4b", timeout_seconds=300)
 
     assert completion.call_args.kwargs["timeout"] == 300
 
@@ -65,7 +65,7 @@ def test_plain_completion_accepts_structured_json_mode(_available):
     with patch("app.llm.client.get_client", return_value=fake_client):
         client.chat(
             [{"role": "user", "content": "route this"}],
-            model="qwen3-1.7b",
+            model="qwen3:1.7b",
             response_format={"type": "json_object"},
         )
 
@@ -126,7 +126,7 @@ def test_stream_holds_llm_slot_for_the_complete_iteration(_available):
         patch("app.llm.client.get_client", return_value=fake_client),
         patch.object(client, "_llm_slots", Slot()),
     ):
-        stream = client.chat_with_tools_stream([], [], model="qwen3-4b")
+        stream = client.chat_with_tools_stream([], [], model="qwen3:4b")
         assert events == []
         assert list(stream) == ["first", "second"]
 
@@ -160,7 +160,7 @@ def test_stream_closes_transport_when_run_is_cancelled(_available):
             client.chat_with_tools_stream(
                 [],
                 [],
-                model="qwen3-4b",
+                model="qwen3:4b",
                 should_cancel=lambda: next(checks),
             )
         )
@@ -193,7 +193,7 @@ def test_stream_wall_clock_deadline_stops_a_heartbeat_stall(_available):
         patch("app.llm.client.get_client", return_value=fake_client),
         pytest.raises(TimeoutError, match="deadline"),
     ):
-        list(client.chat_with_tools_stream([], [], model="qwen3-4b", timeout_seconds=0.05))
+        list(client.chat_with_tools_stream([], [], model="qwen3:4b", timeout_seconds=0.05))
 
     assert time.monotonic() - started < 1
     assert response.closed is True
@@ -216,7 +216,7 @@ def test_planner_completion_streams_when_cancellation_context_exists(_available)
         patch("app.llm.client.get_client", return_value=fake_client),
         cancellation_context(lambda: False),
     ):
-        assert client.chat([], model="qwen3-4b") == "one two"
+        assert client.chat([], model="qwen3:4b") == "one two"
 
     assert completion.call_args.kwargs["stream"] is True
 
