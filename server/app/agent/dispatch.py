@@ -175,9 +175,8 @@ def _unavailable(role: str, reason: str) -> dict[str, Any]:
 
 
 def _run_expert(state, role: str, route: ExpertRoute) -> dict[str, Any]:
-    # Server inference flows through LiteLLM, so provider selection is encoded by
-    # the configured model alias. We preserve the complete route for observability
-    # instead of discarding profile/provider metadata at dispatch time.
+    # Server inference flows through the dedicated OpenAI-compatible gateway.
+    # Preserve route metadata for observability without provider-specific logic.
     response = chat(
         [
             {"role": "system", "content": EXPERT_DISPATCH_PROMPT},
