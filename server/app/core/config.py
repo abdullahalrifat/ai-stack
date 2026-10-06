@@ -36,8 +36,8 @@ WEB_SEARCH_TIMEOUT_SECONDS = int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "15"))
 # from MAX_TOOL_OUTPUT_CHARS, which bounds only the text given to the model.
 WEB_FETCH_MAX_BYTES = int(os.getenv("WEB_FETCH_MAX_BYTES", "8000000"))
 
-# Optional Automatic1111/Forge-compatible image generation API. Ollama vision
-# models analyze images but do not create them, so generation stays separate.
+# Optional Automatic1111/Forge-compatible image generation API. Vision inference
+# is served by the dedicated inference gateway; image generation stays separate.
 IMAGE_GENERATION_URL = os.getenv("IMAGE_GENERATION_URL", "").rstrip("/")
 IMAGE_GENERATION_TIMEOUT_SECONDS = int(
     os.getenv("IMAGE_GENERATION_TIMEOUT_SECONDS", "180")
@@ -83,8 +83,8 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "6000"))
 TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "6"))
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
 LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "1536"))
-# Transient gateway errors (connection refused while Ollama reloads a model,
-# 5xx, rate limits) are retried with exponential backoff before a run fails.
+# Transient inference-gateway errors (connection failures, 5xx, rate limits)
+# are retried with exponential backoff before a run fails.
 # Stream-setup failures are retried; errors after output has begun are not.
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
 LLM_RETRY_BACKOFF_SECONDS = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2"))
@@ -200,8 +200,8 @@ CONTEXT_COMPACT_THRESHOLD_TOKENS = int(
     os.getenv("CONTEXT_COMPACT_THRESHOLD_TOKENS", "24000")
 )
 
-# Embeddings are useful for explicit RAG workflows but expensive on a host
-# that keeps one Ollama model resident. Keep routine Code/Quick turns fast.
+# Embeddings are served by the dedicated inference gateway so the control-plane
+# VM does not load or manage model weights.
 MEMORY_ENABLED = env_flag("MEMORY_ENABLED", True)
 MEMORY_FOR_CODE_RUNS = env_flag("MEMORY_FOR_CODE_RUNS", False)
 # Model-generated answers are not trusted source material by default. Persist
