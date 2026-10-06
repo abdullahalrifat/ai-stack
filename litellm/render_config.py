@@ -1,9 +1,9 @@
 """Render LiteLLM configuration with optional hybrid remote providers.
 
-The checked-in config remains local-first and offline-safe. When
+The checked-in config remains provider-aware and keeps generation on the dedicated inference gateway. When
 INFERENCE_MODE=hybrid and Hugging Face is configured, concrete remote model IDs
-are promoted to HF-backed primary deployments and automatically fall back to
-concrete local Ollama model IDs.
+are promoted to HF-backed primary deployments and fall back to the concrete
+model IDs served by jarvis-inference.
 """
 
 from __future__ import annotations
@@ -51,9 +51,9 @@ def _hybrid_entries(env: dict[str, str]) -> tuple[str, list[str]]:
     # always the concrete remote model ID, with a concrete local model as
     # fallback.
     roles = {
-        "coder": "qwen3-4b",
-        "reasoning": "qwen3-4b",
-        "vision": "qwen3-4b",
+        "coder": "qwen3:4b",
+        "reasoning": "qwen3:4b",
+        "vision": "qwen3:4b",
     }
     entries: list[str] = []
     fallbacks: list[str] = []
