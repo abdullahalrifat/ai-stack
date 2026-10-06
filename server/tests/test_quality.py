@@ -31,7 +31,7 @@ def test_heterogeneous_routes_preserve_provider_and_use_distinct_models(monkeypa
         json.dumps(
             [
                 {
-                    "model": "qwen3-4b",
+                    "model": "qwen3:4b",
                     "provider": "ollama",
                     "quality": 0.9,
                     "tool_success": 0.9,
@@ -41,7 +41,7 @@ def test_heterogeneous_routes_preserve_provider_and_use_distinct_models(monkeypa
                     "roles": ["implementation"],
                 },
                 {
-                    "model": "qwen3-1.7b",
+                    "model": "qwen3:1.7b",
                     "provider": "anthropic",
                     "quality": 0.8,
                     "tool_success": 0.8,
@@ -92,4 +92,4 @@ def test_legacy_test_double_remains_compatible():
 
 def test_malformed_routes_fall_back(monkeypatch):
     monkeypatch.setenv("QUALITY_MODEL_ROUTES", "not-json")
-    assert configured_candidates("qwen3-1.7b")[0].model == "qwen3-1.7b"
+    assert configured_candidates("qwen3:1.7b")[0].model == "qwen3:1.7b"
