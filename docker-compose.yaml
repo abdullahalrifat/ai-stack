@@ -1,47 +1,6 @@
 services:
 
   ####################################################
-  ## Ollama
-  ####################################################
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-
-    ports:
-      - "127.0.0.1:11434:11434"
-
-    # Hard cgroup limits: the VM has only 3 total CPU cores / 14 GB RAM.
-    # Leave substantial headroom for Proxmox/SSH/Docker and other services.
-    cpus: ${OLLAMA_CPUS:-0.75}
-    mem_limit: ${OLLAMA_MEMORY_LIMIT:-2g}
-    pids_limit: 256
-
-    environment:
-      # Keep exactly one generation model resident on CPU-constrained hosts.
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
-      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
-      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
-      # Open WebUI can attach several tool schemas to one request. 4096 is
-      # too small for those prompts. 8192 matches the num_ctx each model
-      # advertises through LiteLLM; lower it on memory-constrained hosts.
-      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
-
-    volumes:
-      - ./ollama:/root/.ollama
-
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-
-    networks:
-      - ai
-
-  ####################################################
-  ## Ollama model provisioning
-  ####################################################
   ## PostgreSQL
   ####################################################
   postgres:
@@ -118,56 +77,6 @@ services:
       - ai
 
   ####################################################
-  ## LiteLLM
-  ####################################################
-  litellm:
-    build: ./litellm
-    image: custom-litellm:latest
-    container_name: litellm
-    restart: unless-stopped
-
-    command:
-      - "--host=0.0.0.0"
-      - "--port=4000"
-
-    ports:
-      - "4000:4000"
-
-    environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      # Optional remote providers. They are activated only when every variable
-      # for that provider is configured.
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      INFERENCE_BASE_URL: ${INFERENCE_BASE_URL}
-      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
-      HF_MODEL: ${HF_MODEL:-}
-      HF_INFERENCE_BASE_URL: ${HF_INFERENCE_BASE_URL:-}
-      HF_API_KEY: ${HF_API_KEY:-}
-
-    volumes:
-      - ./litellm/config.yaml:/app/config.yaml:ro
-
-    depends_on:
-      ollama:
-        condition: service_healthy
-
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import socket;s=socket.socket();s.connect(('127.0.0.1',4000));print('ok')"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-    networks:
-      - ai
-
-  ####################################################
   ## Pipelines
   ####################################################
   pipelines:
@@ -196,10 +105,6 @@ services:
     restart: unless-stopped
 
     depends_on:
-      ollama:
-        condition: service_healthy
-      litellm:
-        condition: service_healthy
       postgres:
         condition: service_started
       redis:
@@ -223,7 +128,6 @@ services:
       QDRANT_URI: http://qdrant:6333
 
       OPENAI_API_BASE_URL: http://litellm:4000/v1
-      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
       OPENAI_API_BASE_URLS: http://litellm:4000/v1;http://server:8000/v1
       # Keys correspond positionally to OPENAI_API_BASE_URLS.  The agent
       # endpoint has its own key; leaving this blank makes the seeded
@@ -262,8 +166,8 @@ services:
       - ./agent-sandboxes:/sandboxes
 
     environment:
-      OPENAI_API_BASE: http://litellm:4000/v1
-      INFERENCE_ENABLED: ${INFERENCE_ENABLED:-true}
+      OPENAI_API_BASE: ${INFERENCE_BASE_URL}
+      INFERENCE_ENABLED: "true"
       INFERENCE_BASE_URL: ${INFERENCE_BASE_URL}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
@@ -381,7 +285,8 @@ services:
       MEMORY_ENABLED: ${MEMORY_ENABLED:-true}
       MEMORY_FOR_CODE_RUNS: ${MEMORY_FOR_CODE_RUNS:-false}
       GENERATED_MEMORY_ENABLED: ${GENERATED_MEMORY_ENABLED:-false}
-      OLLAMA_EMBED_MAX_CHARS: ${OLLAMA_EMBED_MAX_CHARS:-4000}
+      EMBED_MAX_CHARS: ${EMBED_MAX_CHARS:-6000}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
       MEMORY_CONTEXT_TOKENS: ${MEMORY_CONTEXT_TOKENS:-1200}
       DOCUMENT_MAX_BYTES: ${DOCUMENT_MAX_BYTES:-10000000}
       MODEL_LIST_CACHE_SECONDS: ${MODEL_LIST_CACHE_SECONDS:-300}
@@ -428,8 +333,6 @@ services:
 
     depends_on:
       agent-runner:
-        condition: service_healthy
-      litellm:
         condition: service_healthy
       postgres:
         condition: service_healthy
