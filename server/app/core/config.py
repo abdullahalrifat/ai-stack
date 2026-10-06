@@ -22,8 +22,8 @@ FAST_MODEL = os.getenv("FAST_MODEL", "qwen3-1.7b")
 # Small, low-latency model used only to translate an Auto request into a
 # validated workflow contract. It does not answer the user's request.
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", FAST_MODEL)
-ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "1536"))
-ROUTER_TIMEOUT_SECONDS = int(os.getenv("ROUTER_TIMEOUT_SECONDS", "240"))
+ROUTER_MAX_COMPLETION_TOKENS = int(os.getenv("ROUTER_MAX_COMPLETION_TOKENS", "768"))
+ROUTER_TIMEOUT_SECONDS = int(os.getenv("ROUTER_TIMEOUT_SECONDS", "120"))
 FINANCE_MODEL = os.getenv("FINANCE_MODEL", "qwen3-4b")
 # Used by the Open WebUI for current web/financial research when
 # no per-run model was explicitly selected in the Runs UI.
@@ -81,7 +81,7 @@ TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "6000"))
 # Head/tail items preserved when a list-shaped tool result exceeds the summary
 # budget (search matches, directory listings, file items).
 TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "6"))
-LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
 LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "1536"))
 # Transient gateway errors (connection refused while Ollama reloads a model,
 # 5xx, rate limits) are retried with exponential backoff before a run fails.
@@ -92,9 +92,9 @@ LLM_RETRY_BACKOFF_SECONDS = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2"))
 # synthesis turn only. If it is unavailable, the executor falls back to the
 # active workflow model without losing the collected evidence.
 ANALYSIS_SYNTHESIS_MODEL = os.getenv("ANALYSIS_SYNTHESIS_MODEL", "qwen3-4b")
-ANALYSIS_SYNTHESIS_MAX_TOKENS = int(os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "1024"))
+ANALYSIS_SYNTHESIS_MAX_TOKENS = int(os.getenv("ANALYSIS_SYNTHESIS_MAX_TOKENS", "1536"))
 ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS = int(
-    os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "600")
+    os.getenv("ANALYSIS_SYNTHESIS_TIMEOUT_SECONDS", "240")
 )
 # A stronger model is used only after bounded grounded failures; normal coding
 # remains on the selected/default model. Independent change review is likewise
@@ -115,7 +115,7 @@ EXPERT_DISPATCH_MODEL = os.getenv("EXPERT_DISPATCH_MODEL", "qwen3-4b")
 MAX_PARALLEL_EXPERTS = int(os.getenv("MAX_PARALLEL_EXPERTS", "1"))
 EXPERT_MAX_COMPLETION_TOKENS = int(os.getenv("EXPERT_MAX_COMPLETION_TOKENS", "512"))
 EXPERT_DISPATCH_TIMEOUT_SECONDS = int(
-    os.getenv("EXPERT_DISPATCH_TIMEOUT_SECONDS", "600")
+    os.getenv("EXPERT_DISPATCH_TIMEOUT_SECONDS", "300")
 )
 # Bounded model-visible budget for each expert's structured findings when they
 # are injected into the task context (per expert, not total).
@@ -147,7 +147,7 @@ TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "8000"))
 # Finance answers need room for a compact evidence summary plus scenarios.
 # Kept separate so normal Code/Quick responses remain fast on CPU.
 FINANCE_MAX_COMPLETION_TOKENS = int(os.getenv("FINANCE_MAX_COMPLETION_TOKENS", "1024"))
-FINANCE_LLM_TIMEOUT_SECONDS = int(os.getenv("FINANCE_LLM_TIMEOUT_SECONDS", "360"))
+FINANCE_LLM_TIMEOUT_SECONDS = int(os.getenv("FINANCE_LLM_TIMEOUT_SECONDS", "300"))
 COMMAND_TIMEOUT_SECONDS = int(os.getenv("COMMAND_TIMEOUT_SECONDS", "300"))
 POSTGRES_URL = os.getenv("POSTGRES_URL")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
