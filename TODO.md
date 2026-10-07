@@ -141,3 +141,11 @@ Production certification status is determined from current CI, end-to-end deploy
 ## Completion rule
 
 A helper/class is not a complete feature. A capability reaches PRODUCTION-READY only after real-path integration, executable cancellation/timeout/malformed-input/permission/recovery/compatibility gates, retained benchmark evidence and documented operational boundaries.
+
+## World-class implementation status
+
+- Real-repository benchmark harness foundation: ADDED on `feat/world-class-foundation`; retained corpus expansion and runtime result storage remain.
+- Adversarial prompt-injection/secret-canary corpus: ADDED; execution across every ingress remains a release gate.
+- Chaos/recovery smoke: ADDED; target-hardware 24/72h retained evidence remains.
+- Backup verification: ADDED; restore/DR drill remains required.
+- Compatibility report: ADDED; CI wiring across all four repositories remains required.
