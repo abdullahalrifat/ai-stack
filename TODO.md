@@ -8,7 +8,7 @@ This tracker is evidence-based:
 - **MEASURED** — retained data demonstrates quality, latency, token/cost and failure behavior.
 - **PRODUCTION-READY** — VALIDATED + MEASURED with documented operational limits and no unresolved P0/P1 reliability issue.
 
-Private GitHub Actions currently fail before runner provisioning, so the v0.8.1 Server branch cannot advance to VALIDATED even where focused tests exist.
+Production certification status is determined from current CI, end-to-end deployment validation and retained target-hardware evidence; this tracker is not itself a release certificate.
 
 ## Shared agent/runtime
 
@@ -77,7 +77,7 @@ Private GitHub Actions currently fail before runner provisioning, so the v0.8.1 
 | Capability | Maturity |
 | --- | --- |
 | Durable Runs execution engine | INTEGRATED |
-| LiteLLM/Ollama real model integration | INTEGRATED |
+| Dedicated jarvis-inference model integration | INTEGRATED |
 | Web/Telegram/WhatsApp ingress/outbound foundation | INTEGRATED |
 | Provider health/routing | INTEGRATED |
 | Claim/source evidence verification | INTEGRATED |

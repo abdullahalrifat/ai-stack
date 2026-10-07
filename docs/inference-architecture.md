@@ -1,58 +1,45 @@
 # Dedicated inference architecture
 
-AI Stack is the control plane. All model execution is delegated to the dedicated jarvis-inference service over a private network.
+AI Stack is the control plane. All local model execution is delegated to `jarvis-inference` over a private network.
 
-## Runtime boundary
+```text
+Jarvis CLI
+   |
+   v
+AI Stack
+   | tools / memory / RAG / durable runs
+   | inference only when needed
+   v
+jarvis-inference
+   |
+   v
+Ollama
+   +-- qwen3:1.7b
+   +-- qwen3:4b
+   +-- nomic-embed-text
+```
 
-AI Stack VM
-  Server / WebUI / RAG / Qdrant / PostgreSQL / Redis / SearXNG
-                     |
-                     | private network
-                     v
-Inference VM
-  jarvis-inference
-      |
-      +-- Ollama
-          +-- qwen3:1.7b
-          +-- qwen3:4b
-          +-- nomic-embed-text
+AI Stack does **not** run Ollama or LiteLLM.
 
-AI Stack must not run Ollama or LiteLLM. It uses the OpenAI-compatible gateway for both chat completions and embeddings:
-- POST /v1/chat/completions
-- POST /v1/embeddings
-- GET /v1/models
-- GET /health
-- GET /ready
+## Configuration
 
-## Deployment requirements
-
-Set these in the AI Stack .env:
+```env
 INFERENCE_BASE_URL=http://<private-inference-ip>:8080/v1
 INFERENCE_API_KEY=<same-secret-as-inference-vm>
 EMBEDDING_MODEL=nomic-embed-text
 DEFAULT_MODEL=qwen3:1.7b
 FAST_MODEL=qwen3:1.7b
 AGENT_REASONING_MODEL=qwen3:4b
+```
 
-The inference VM should expose port 8080 only to the AI Stack VM and trusted administration network. Never expose Ollama port 11434 directly.
+## Deployment order
 
-## Resource policy
+1. Deploy `jarvis-inference`.
+2. Verify `/ready`, `/v1/models` and `/v1/embeddings`.
+3. Configure AI Stack with the inference URL/key.
+4. Run `scripts/preflight.sh`.
+5. Run `scripts/deploy.sh`.
+6. Configure Jarvis to point to AI Stack.
+7. Run the end-to-end Jarvis health/model doctor.
 
-Keep one active generation and one loaded model on the CPU-only inference VM. Requests queue at the inference gateway instead of starting competing model workers.
-
-The AI Stack VM remains a control-plane machine and should not reserve CPU or RAM for model weights.
-
-## Production checklist
-
-1. Deploy and lock models on jarvis-inference.
-2. Configure the inference API key on both VMs.
-3. Verify /ready from the AI Stack VM.
-4. Verify /v1/models includes qwen3:1.7b, qwen3:4b, and nomic-embed-text.
-5. Start AI Stack with Docker Compose.
-6. Verify Server health and WebUI model discovery.
-7. Run the embedding/RAG smoke test.
-8. Confirm no AI Stack container publishes or starts Ollama.
-
-## Security
-
-Use a private VLAN or firewall rule allowing only the AI Stack source address to reach the inference gateway. Keep the gateway authenticated even on a private network. Do not commit production API keys.
+Keep TCP 8080 restricted to the AI Stack host and trusted administration addresses. Keep Ollama port 11434 internal.

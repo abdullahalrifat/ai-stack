@@ -1,79 +1,117 @@
 # AI Stack Server
 
-Server is the optional always-online control plane for long-running agent execution. It is not required for local-only development.
+AI Stack Server is the durable control plane for Jarvis. It owns orchestration, tools, memory/RAG, durable Runs, approvals, scheduling, telemetry and integrations.
 
-## Development deployment
+**Model execution is not owned by Server.** All local chat and embedding inference goes through the dedicated `jarvis-inference` gateway. AI Stack must not run Ollama or LiteLLM.
+
+## Architecture
+
+```text
+Jarvis CLI
+   |
+   v
+AI Stack Server
+   |-- tools / memory / RAG / durable runs
+   |-- PostgreSQL / Redis / Qdrant
+   |
+   | inference only when needed
+   v
+jarvis-inference
+   |
+   v
+Ollama
+```
+
+## Production deployment
+
+From the repository root:
 
 ```bash
 cp .env.example .env
-docker compose config
-docker compose up -d
-docker compose ps
+chmod 600 .env
+# Set strong unique secrets and INFERENCE_BASE_URL/INFERENCE_API_KEY.
+bash scripts/preflight.sh
+bash scripts/deploy.sh
 ```
 
-In production, use long unique service keys, mount `ARTIFACT_ROOT` on persistent storage, expose the API through TLS/VPN, and mount only workspaces the agent may access.
-
-## Models and routing
-
-Server supports local Ollama/LiteLLM routes and controlled OpenAI-compatible remote endpoints. `JARVIS_MODEL_PROFILES_JSON` optionally describes model capabilities; model `auto` selects an available profile satisfying requested capabilities.
-
-Routing uses one concrete local model identity (`qwen3:4b`) and validated internal workflows for quick, code, research, finance, deep, and vision tasks. Router output cannot invent a model, grant tools, expand a workspace, or bypass approval.
-
-Automatic routing also consumes measured runtime evidence through the provider-neutral Core route selector. AI Stack records execution telemetry as `RouteObservation` data; Core applies minimum-sample, quality-floor and recency safeguards. When evidence is insufficient, existing health and benchmark routing remains authoritative.
-
-## Shared runtime, traces, and evaluations
-
-Server installs the verified `jarvis-agent-core==0.16.1` package for token enforcement, context efficiency, artifacts, evidence, capability routing, recovery, redacted traces, evaluations, selective multi-agent contracts, sandbox requirements, provider-neutral model contracts and empirical route selection.
-
-Core 0.16.1 adds provider-neutral route observations, recency-weighted selection, minimum-sample safeguards and quality floors while retaining the application boundary around concrete Ollama/LiteLLM/remote-provider integration. Provider SDKs remain out of Core.
-
-For a clean development installation:
+The Compose file uses an external `proxy` network. Create it once if your reverse-proxy stack does not already create it:
 
 ```bash
-python -m pip install -r server/requirements.txt
+docker network create proxy 2>/dev/null || true
 ```
 
-The human-maintained requirements, lockfile, CI, and Docker image all consume the same public Core 0.16.1 dependency and verify the installed version. For unreleased Core development only, install a local Core checkout explicitly after the locked dependencies.
+Verify:
 
-## MCP
+```bash
+docker compose ps
+curl -fsS http://127.0.0.1:8081/health
+curl -fsS http://127.0.0.1:3002/
+curl -fsS http://127.0.0.1:3003/
+```
 
-Administrators may configure fixed stdio commands. The model chooses only a configured alias and tool name. It cannot choose the executable or invoke a shell. MCP output remains untrusted and cannot broaden Server permissions.
+## Update / redeploy
 
-## Server capabilities
+```bash
+git status
+git pull --ff-only
+bash scripts/preflight.sh
+bash scripts/deploy.sh
+```
 
-- durable runs, conversations, events, replay, cancellation, and client leases;
-- PostgreSQL state, Redis coordination, Qdrant retrieval, and artifact storage;
-- document ingestion, OCR, hybrid retrieval, and source provenance;
-- isolated commands and disposable Git worktrees;
-- explicit approval/discard for write diffs;
-- capability routing, bounded recovery, context compaction, and token budgets;
-- multi-expert analysis for selected complex requests;
-- Runs UI and OpenAI-compatible entry points;
-- web evidence and administrator-selected MCP tools;
-- versioned client protocol and advertised feature flags.
+Normal `docker compose down` preserves bind-mounted PostgreSQL, Redis, Qdrant, WebUI, pipeline and sandbox data.
 
-## Production gates
+## Normal operations
 
-Before describing a deployment as production-certified, prove:
+```bash
+docker compose ps
+docker compose logs --tail=200 server
+docker compose logs --tail=200 agent-runner
+docker compose logs --tail=200 runs-ui
+docker compose restart server
+docker compose stop
+docker compose down --remove-orphans
+docker compose up -d
+```
 
-- OIDC/OAuth identities, tenant isolation, scoped tokens, and central policy;
-- idempotent APIs/webhooks, dead-letter handling, graceful drain, and restores;
-- runner isolation, secret rotation, signed webhooks, SBOM/provenance, and audit;
-- OpenTelemetry, SLOs, queue/lease/model saturation, tokens, latency, and cost;
-- quotas, backpressure, capacity tests, model circuit breakers, and fallback;
-- retention/deletion/export, malware scanning, backups, and disaster recovery;
-- adversarial prompt/tool tests, replay evals, route benchmarks, canaries, and rollback procedures.
+## Cleanup
 
-## Channel integrations
+`cleanup.sh` is intentionally destructive and scoped to this Compose project. Back up required data first:
 
-Telegram, WhatsApp, web, and mobile integrations are thin authenticated adapters:
+```bash
+./cleanup.sh
+```
+
+It must never prune unrelated Docker resources or use `docker system prune --volumes`.
+
+## Connect Jarvis
+
+Normal user flow:
 
 ```text
-channel webhook/app
-  -> identity/signature adapter
-  -> Server Runs API
-  -> durable execution and approvals
-  -> queued channel-safe reply
+Jarvis CLI -> AI Stack -> jarvis-inference -> Ollama
 ```
 
-They do not contain another agent loop. See [product architecture](../docs/product-architecture.md) for identity, idempotency, attachment, delivery, and approval requirements.
+Configure the Jarvis machine:
+
+```bash
+export AI_STACK_BASE_URL="http://<ai-stack-host>:8081"
+export AI_STACK_API_KEY="<same value as AGENT_API_KEY>"
+export JARVIS_MODEL="qwen3:1.7b"
+```
+
+Direct inference access is for diagnostics/developer tooling only.
+
+## Connect to jarvis-inference
+
+AI Stack `.env`:
+
+```env
+INFERENCE_BASE_URL=http://<private-inference-ip>:8080/v1
+INFERENCE_API_KEY=<same secret configured on the inference VM>
+```
+
+Allow TCP 8080 only from the AI Stack host and trusted administration addresses. Never expose Ollama port 11434.
+
+## Production requirements
+
+Validate private/TLS access, strong unique service secrets, persistent backups, workspace permissions, runner isolation, monitoring/disk capacity and recovery from inference/database/VM restart. This deployment is single-tenant personal infrastructure; it is not a claim of enterprise multi-tenant isolation.

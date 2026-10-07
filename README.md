@@ -134,33 +134,20 @@ The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is 
 
 ### Jarvis CLI integration
 
-Jarvis CLI can use AI Stack as an OpenAI-compatible local endpoint. This avoids running a second Ollama instance.
+Jarvis is the user-facing client. Normal repository work uses AI Stack, which calls jarvis-inference only when model inference is required.
 
-On the machine running Jarvis CLI:
+On the Jarvis machine:
 
 ```bash
-export JARVIS_PROVIDER=openai
-export JARVIS_BASE_URL=http://<ai-stack-host>:8081/v1
+export AI_STACK_BASE_URL=http://<ai-stack-host>:8081
+export AI_STACK_API_KEY='<the AGENT_API_KEY from ai-stack .env>'
 export JARVIS_MODEL=qwen3:1.7b
-export JARVIS_API_KEY='<the AGENT_API_KEY from ai-stack .env>'
 
 jarvis model-doctor
 jarvis "review this repository and fix the highest-impact issue"
 ```
 
-If Jarvis CLI runs on the same VM as AI Stack, use `http://127.0.0.1:8081/v1`. From another LAN machine, use the VM's private IP and restrict port 8081 with the firewall to trusted clients. Do not expose the agent API publicly without authentication and network controls.
-
-For a direct model client, point it at the dedicated inference VM instead:
-
-```bash
-export JARVIS_PROVIDER=openai
-export JARVIS_BASE_URL=http://<inference-vm-ip>:8080/v1
-export JARVIS_MODEL=qwen3:4b
-export JARVIS_API_KEY='<the INFERENCE_API_KEY from jarvis-inference .env>'
-jarvis model-doctor
-```
-
-Use the AI Stack agent endpoint when repository tasks should use Server-side tools and durable Runs; use jarvis-inference directly when the caller only needs model inference.
+Do not give Jarvis inference credentials for normal operation. Direct jarvis-inference access is reserved for diagnostics/developer tooling.
 
 ## Offline / off-grid operation
 
