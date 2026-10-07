@@ -1,0 +1,7 @@
+id: hello-world
+category: deterministic
+description: Return the requested literal without using tools.
+prompt: "Return exactly the string benchmark-ok."
+expected:
+  contains: benchmark-ok
+risk: low
