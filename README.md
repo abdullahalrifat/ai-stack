@@ -130,7 +130,7 @@ docker compose -f docker-compose.yaml -f docker-compose.offline.yaml up -d
 
 AI Stack is the control plane. All generation and embeddings run on the dedicated jarvis-inference VM, which owns Ollama, model loading, queueing and resource limits. AI Stack keeps no model runtime or model weights. Generation concurrency remains one end-to-end.
 
-The internal Docker URL for the agent API is `http://server:8000/v1`; `8081` is the host-published port. Open WebUI uses the internal URL.
+The internal Docker URL for the agent API is `http://server:8000`; `8081` is the host-published port. AI Stack does not use an `/v1` prefix. Open WebUI uses the internal URL. The `/v1` prefix belongs exclusively to the private `jarvis-inference` OpenAI-compatible gateway.
 
 ### Jarvis CLI integration
 
@@ -147,7 +147,7 @@ jarvis model-doctor
 jarvis "review this repository and fix the highest-impact issue"
 ```
 
-Do not give Jarvis inference credentials for normal operation. Direct jarvis-inference access is reserved for diagnostics/developer tooling.
+AI Stack exposes its authenticated model catalog at `/models/available`; Jarvis uses that endpoint when validating the configured concrete model. Do not give Jarvis inference credentials for normal operation. Direct jarvis-inference access is reserved for diagnostics/developer tooling.
 
 ## Offline / off-grid operation
 
