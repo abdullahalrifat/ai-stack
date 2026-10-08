@@ -17,6 +17,9 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+INFERENCE_BASE_URL = os.getenv("INFERENCE_BASE_URL", "").strip().rstrip("/")
+INFERENCE_API_KEY = os.getenv("INFERENCE_API_KEY", "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3:1.7b")
 FAST_MODEL = os.getenv("FAST_MODEL", "qwen3:1.7b")
 # Small, low-latency model used only to translate an Auto request into a
