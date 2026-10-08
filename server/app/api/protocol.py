@@ -18,7 +18,7 @@ FEATURES = [
     "evaluation_replay", "failure_signature_memory", "persistent_failure_memory", "independent_verification",
     "opentelemetry", "portable_cloud_model_profiles", "review_sandboxes", "runner_job_leases",
     "standard_cron_semantics", "stream_heartbeats", "task_category_route_calibration", "versioned_events",
-    "inference_provider_status", "model_usage_cost_telemetry", "github_issue_branch_pr_loop", "github_ci_review_status",
+    "inference_provider_status", "inference_diagnostics", "model_usage_cost_telemetry", "github_issue_branch_pr_loop", "github_ci_review_status",
     "ide_jsonrpc_protocol", "subagent_lineage_proofs", "backup_restore_dr_certification", "worker_soak_harness",
     "optional_tenant_identity",
 ]
