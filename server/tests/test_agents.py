@@ -81,6 +81,24 @@ def test_run_agent_generates_conversation_id(
     mock_workspace.assert_called_once()
 
 
+def test_memory_retrieval_failure_is_non_fatal(caplog):
+    with (
+        patch(
+            "app.agent.service.search_memory",
+            side_effect=RuntimeError("inference embeddings unavailable"),
+        ),
+        patch("app.agent.service.memory_context") as mock_memory_context,
+    ):
+        result = agent._load_memory_best_effort(
+            "Reply with exactly OK.",
+            "/workspace/repo",
+        )
+
+    assert result == []
+    mock_memory_context.assert_not_called()
+    assert "Could not retrieve conversation memory" in caplog.text
+
+
 def test_memory_persistence_failure_is_non_fatal(caplog):
     with (
         patch("app.agent.service.GENERATED_MEMORY_ENABLED", True),
