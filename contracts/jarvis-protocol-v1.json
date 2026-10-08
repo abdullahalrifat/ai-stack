@@ -238,5 +238,16 @@
         "description": "Client and server protocol ranges do not overlap"
       }
     }
+  },
+  "x-platform-compatibility": {
+    "agent_protocol": 1,
+    "event_schema": 1,
+    "inference_protocol": 1,
+    "components": {
+      "jarvis": "0.10.x",
+      "jarvis_core": "0.16.x",
+      "ai_stack": "3.7.x",
+      "jarvis_inference": "1.x"
+    }
   }
 }
