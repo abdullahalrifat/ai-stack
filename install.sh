@@ -9,7 +9,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 COMPOSE=(docker compose)
-SERVICES=(server runs-ui)
+BUILD_SERVICES=(server runs-ui)
+DEPENDENCY_SERVICES=(postgres redis qdrant searxng pipelines)
 
 log() {
   printf '[install] %s\n' "$*"
@@ -31,9 +32,10 @@ docker compose version >/dev/null 2>&1 || {
 log "validating Compose configuration"
 "${COMPOSE[@]}" config --quiet
 
-# Keep all registry-backed dependencies current before rebuilding local images.
+# Pull only registry-backed dependencies. Local application images must never
+# be pulled: they are built from the current checkout below.
 log "pulling latest dependency images"
-"${COMPOSE[@]}" pull --ignore-buildable
+"${COMPOSE[@]}" pull "${DEPENDENCY_SERVICES[@]}"
 
 # Stop the application services before replacing their local images. Persistent
 # volumes (Postgres, Redis, Qdrant, sandboxes, etc.) are not removed.
@@ -48,7 +50,7 @@ docker image rm -f ai-stack-server:latest ai-runs-ui:latest >/dev/null 2>&1 || t
 # Equivalent to build.sh, but deliberately uncached so the current source and
 # current base image are always used.
 log "building latest application images without cache"
-"${COMPOSE[@]}" build --pull --no-cache "${SERVICES[@]}"
+"${COMPOSE[@]}" build --pull --no-cache "${BUILD_SERVICES[@]}"
 
 # Recreate all application containers so they cannot keep running an old image.
 # agent-runner intentionally uses the same freshly built ai-stack-server image.
