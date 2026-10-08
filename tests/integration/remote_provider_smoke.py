@@ -118,7 +118,7 @@ def ai_stack_inference_contract_probe() -> None:
     model = os.getenv("DEFAULT_MODEL", "qwen3:1.7b")
     with urlopen(
         Request(
-            f"{base}/inference/probe?model={model}",
+            f"{base}/diagnostics/inference?model={model}",
             headers={"Authorization": f"Bearer {key}"},
         ),
         timeout=120,
