@@ -65,6 +65,11 @@ configured_embedding_timeout = float(__import__("os").environ.get("EMBEDDING_TIM
 if embedding_timeout <= 0 or configured_embedding_timeout < embedding_timeout:
     raise SystemExit("AI Stack EMBEDDING_TIMEOUT_SECONDS must be >= inference embedding timeout")
 print("OK: embedding timeout hierarchy is valid")
+chat_timeout = float(limits.get("chat_timeout_seconds", 0))
+configured_llm_timeout = float(__import__("os").environ.get("LLM_TIMEOUT_SECONDS", "180"))
+if chat_timeout <= 0 or configured_llm_timeout > chat_timeout:
+    raise SystemExit("AI Stack LLM_TIMEOUT_SECONDS must be <= inference chat timeout")
+print("OK: chat timeout hierarchy is valid")
 PY
 
 curl "${curl_args[@]}" -H "Content-Type: application/json" \
