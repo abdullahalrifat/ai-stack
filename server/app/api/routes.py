@@ -32,6 +32,7 @@ from app.core.config import (
     DOCUMENT_MAX_BYTES,
     IMAGE_GENERATION_TIMEOUT_SECONDS,
     IMAGE_GENERATION_URL,
+    EMBEDDING_TIMEOUT_SECONDS,
     INFERENCE_BASE_URL,
     INFERENCE_API_KEY,
     WORKSPACE_ROOTS,
@@ -785,7 +786,7 @@ def inference_probe(model: str | None = None):
             f"{base}/embeddings",
             headers={**headers, "X-Request-ID": f"doctor-embed-{uuid.uuid4().hex}"},
             json={"model": os.getenv("EMBEDDING_MODEL", "nomic-embed-text"), "input": "jarvis model doctor"},
-            timeout=50,
+            timeout=EMBEDDING_TIMEOUT_SECONDS,
         )
         embedding_response.raise_for_status()
         embedding_data = embedding_response.json()
