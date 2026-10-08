@@ -16,6 +16,7 @@ from app.core.config import (
     FINANCE_MAX_COMPLETION_TOKENS,
     FINANCE_MODEL,
     RESEARCH_MODEL,
+    RESEARCH_TIMEOUT_SECONDS,
 )
 from app import main as app_main
 
@@ -370,6 +371,8 @@ def test_auto_profile_uses_default_model_while_quick_uses_fast_model():
     assert resolve_workflow("finance").model == FINANCE_MODEL
     assert resolve_workflow("finance").max_completion_tokens == FINANCE_MAX_COMPLETION_TOKENS
     assert resolve_workflow("finance").timeout_seconds == FINANCE_LLM_TIMEOUT_SECONDS
+    assert resolve_workflow("research").model == RESEARCH_MODEL
+    assert resolve_workflow("research").timeout_seconds == RESEARCH_TIMEOUT_SECONDS
 
 
 def test_available_models_is_a_public_gateway_catalog():
