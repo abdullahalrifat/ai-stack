@@ -70,6 +70,10 @@ configured_llm_timeout = float(__import__("os").environ.get("LLM_TIMEOUT_SECONDS
 if chat_timeout <= 0 or configured_llm_timeout > chat_timeout:
     raise SystemExit("AI Stack LLM_TIMEOUT_SECONDS must be <= inference chat timeout")
 print("OK: chat timeout hierarchy is valid")
+research_timeout = float(__import__("os").environ.get("RESEARCH_TIMEOUT_SECONDS", "300"))
+if research_timeout > chat_timeout:
+    raise SystemExit("RESEARCH_TIMEOUT_SECONDS must be <= inference chat timeout")
+print("OK: research timeout hierarchy is valid")
 PY
 
 curl "${curl_args[@]}" -H "Content-Type: application/json" \
