@@ -771,6 +771,7 @@ def models():
     }
 
 
+@router.get("/diagnostics/inference", dependencies=[Depends(verify_api_key)])
 @router.get("/inference/probe", dependencies=[Depends(verify_api_key)])
 def inference_probe(model: str | None = None):
     """Probe the dedicated inference gateway without running the full agent."""

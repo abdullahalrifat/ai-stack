@@ -69,3 +69,26 @@ IDE / CLI / channel
 ```
 
 Provider/model changes stay below the orchestration boundary. Security, evidence, sandboxing, leases and review are model-independent.
+
+
+## Cross-repository compatibility contract
+
+The deployed platform has independent application versions but shared protocol versions.
+
+| Component | Responsibility | Contract |
+| --- | --- | --- |
+| jarvis-core | semantic/runtime primitives | dependency-free contracts |
+| jarvis | terminal client | Jarvis Agent Protocol v1 / event schema v1 |
+| ai-stack | control plane | Jarvis Agent Protocol v1 |
+| jarvis-inference | model data plane | Inference Protocol v1 |
+| Ollama | model backend | private implementation detail |
+
+Compatibility is protocol-based rather than application-version based. A deployment is valid only when Jarvis and AI Stack advertise overlapping Agent Protocol versions and AI Stack and jarvis-inference advertise Inference Protocol v1. scripts/preflight.sh validates the inference side of this contract before deployment is considered ready.
+
+### End-to-end contract smoke
+
+For a deployed stack, configure INFERENCE_BASE_URL, INFERENCE_API_KEY, AI_STACK_BASE_URL, and AGENT_API_KEY, then run:
+
+    python tests/integration/remote_provider_smoke.py
+
+This validates inference capabilities, the embedding path, and the AI Stack -> inference diagnostic path before optional third-party provider probes.

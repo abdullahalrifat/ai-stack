@@ -185,6 +185,7 @@ services:
       FINANCE_MODEL: ${FINANCE_MODEL:-qwen3:4b}
       # Used for current web/financial research.
       RESEARCH_MODEL: ${RESEARCH_MODEL:-qwen3:1.7b}
+      RESEARCH_TIMEOUT_SECONDS: ${RESEARCH_TIMEOUT_SECONDS:-300}
 
       QDRANT_URL: http://qdrant:6333
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}

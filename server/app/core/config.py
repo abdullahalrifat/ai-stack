@@ -31,6 +31,7 @@ FINANCE_MODEL = os.getenv("FINANCE_MODEL", "qwen3:4b")
 # Used by the Open WebUI for current web/financial research when
 # no per-run model was explicitly selected in the Runs UI.
 RESEARCH_MODEL = os.getenv("RESEARCH_MODEL", FAST_MODEL)
+RESEARCH_TIMEOUT_SECONDS = int(os.getenv("RESEARCH_TIMEOUT_SECONDS", "300"))
 
 WEB_SEARCH_ENABLED = env_flag("WEB_SEARCH_ENABLED", True)
 WEB_SEARCH_URL = os.getenv("WEB_SEARCH_URL", "http://searxng:8080/search")

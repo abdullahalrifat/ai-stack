@@ -169,6 +169,8 @@ def platform_capabilities():
     return {
         "service": "ai-stack",
         "protocols": {
+            "agent": {"versions": [1], "event_schema_versions": [1]},
+            "inference": {"versions": [1]},
             "cloud_execution": {
                 "versions": [1],
                 "proof_schema_versions": [1],

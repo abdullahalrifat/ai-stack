@@ -82,6 +82,55 @@ def anthropic_probe() -> None:
     assert calls[0]["input"]["value"] == "ok"
 
 
+
+def local_inference_contract_probe() -> None:
+    base = os.getenv("INFERENCE_BASE_URL", "").rstrip("/")
+    key = os.getenv("INFERENCE_API_KEY", "")
+    if not (base and key):
+        print("Inference contract smoke test skipped: secrets are not configured")
+        return
+    headers = {"Authorization": f"Bearer {key}"}
+    with urlopen(Request(f"{base}/capabilities", headers=headers), timeout=10) as response:
+        capabilities = json.loads(response.read())
+    assert capabilities["protocol"]["current"] == 1
+    assert {"chat", "streaming", "embeddings"}.issubset(capabilities["features"])
+    model_ids = {item["id"] for item in capabilities["models"]}
+    assert os.getenv("DEFAULT_MODEL", "qwen3:1.7b") in model_ids
+    embedding_models = {
+        item["id"] for item in capabilities["models"] if "embeddings" in item["capabilities"]
+    }
+    embedding_model = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+    assert embedding_model in embedding_models
+    result = post(
+        f"{base}/embeddings",
+        {"model": embedding_model, "input": "cross-repo contract smoke"},
+        headers,
+    )
+    assert result["data"] and result["data"][0]["embedding"]
+
+
+def ai_stack_inference_contract_probe() -> None:
+    base = os.getenv("AI_STACK_BASE_URL", "").rstrip("/")
+    key = os.getenv("AGENT_API_KEY", "")
+    if not (base and key):
+        print("AI Stack integration smoke test skipped: secrets are not configured")
+        return
+    model = os.getenv("DEFAULT_MODEL", "qwen3:1.7b")
+    with urlopen(
+        Request(
+            f"{base}/diagnostics/inference?model={model}",
+            headers={"Authorization": f"Bearer {key}"},
+        ),
+        timeout=120,
+    ) as response:
+        result = json.loads(response.read())
+    assert result["embedding"]["dimensions"] > 0
+    assert result["generation"]["answer"]
+
+
+
+local_inference_contract_probe()
+ai_stack_inference_contract_probe()
 openai_probe()
 anthropic_probe()
 print("configured remote-provider probes passed")
