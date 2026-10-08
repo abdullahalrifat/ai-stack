@@ -38,7 +38,7 @@ log "pulling latest dependency images"
 # Stop the application services before replacing their local images. Persistent
 # volumes (Postgres, Redis, Qdrant, sandboxes, etc.) are not removed.
 log "stopping current application services"
-"${COMPOSE[@]}" rm --force --stop ai-stack-server agent-runner ai-runs-ui >/dev/null 2>&1 || true
+"${COMPOSE[@]}" rm --force --stop server agent-runner runs-ui >/dev/null 2>&1 || true
 
 # Remove the old locally tagged application images. The next build recreates
 # them from the current source and current base images.
