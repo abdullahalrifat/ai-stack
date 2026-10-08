@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 
 import requests
 
@@ -10,6 +11,7 @@ INFERENCE_BASE_URL = os.getenv("INFERENCE_BASE_URL", "").rstrip("/")
 INFERENCE_API_KEY = os.getenv("INFERENCE_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
 EMBED_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 EMBED_MAX_CHARS = int(os.getenv("EMBED_MAX_CHARS", "6000"))
+EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "45"))
 
 _session = requests.Session()
 
@@ -33,9 +35,12 @@ def create_embedding(text: str) -> list[float]:
     bounded_text = _bounded_embedding_text(text, EMBED_MAX_CHARS)
     response = _session.post(
         f"{INFERENCE_BASE_URL}/embeddings",
-        headers={"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {},
+        headers={
+            **({"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {}),
+            "X-Request-ID": f"embed-{uuid.uuid4().hex}",
+        },
         json={"model": EMBED_MODEL, "input": bounded_text, "encoding_format": "float"},
-        timeout=60,
+        timeout=EMBEDDING_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     data = response.json()

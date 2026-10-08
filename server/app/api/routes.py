@@ -30,8 +30,11 @@ from app.core.config import (
     DEFAULT_MODEL,
     DEFAULT_WORKSPACE,
     DOCUMENT_MAX_BYTES,
+    EMBEDDING_TIMEOUT_SECONDS,
     IMAGE_GENERATION_TIMEOUT_SECONDS,
     IMAGE_GENERATION_URL,
+    INFERENCE_BASE_URL,
+    INFERENCE_API_KEY,
     WORKSPACE_ROOTS,
 )
 from app.llm.client import get_available_models
@@ -766,6 +769,49 @@ def models():
             for model_id in PROFILES
         ],
     }
+
+
+@router.get("/inference/probe", dependencies=[Depends(verify_api_key)])
+def inference_probe(model: str | None = None):
+    """Probe the dedicated inference gateway without running the full agent."""
+    if not INFERENCE_BASE_URL:
+        raise HTTPException(503, "INFERENCE_BASE_URL is not configured")
+    selected = model or DEFAULT_MODEL
+    base = INFERENCE_BASE_URL.rstrip("/")
+    headers = {"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {}
+    started = time.perf_counter()
+    result: dict[str, Any] = {"model": selected, "embedding": None, "generation": None}
+    try:
+        embedding_response = requests.post(
+            f"{base}/embeddings",
+            headers={**headers, "X-Request-ID": f"doctor-embed-{uuid.uuid4().hex}"},
+            json={"model": os.getenv("EMBEDDING_MODEL", "nomic-embed-text"), "input": "jarvis model doctor"},
+            timeout=EMBEDDING_TIMEOUT_SECONDS,
+        )
+        embedding_response.raise_for_status()
+        embedding_data = embedding_response.json()
+        vector = ((embedding_data.get("data") or [{}])[0]).get("embedding") or []
+        result["embedding"] = {"ok": bool(vector), "dimensions": len(vector)}
+        generation_response = requests.post(
+            f"{base}/chat/completions",
+            headers={**headers, "X-Request-ID": f"doctor-chat-{uuid.uuid4().hex}"},
+            json={
+                "model": selected,
+                "messages": [{"role": "user", "content": "Reply with exactly OK."}],
+                "max_tokens": 8,
+                "temperature": 0,
+            },
+            timeout=90,
+        )
+        generation_response.raise_for_status()
+        choices = generation_response.json().get("choices") or []
+        answer = str(((choices[0] if choices else {}).get("message") or {}).get("content") or "").strip()
+        result["generation"] = {"ok": bool(answer), "answer": answer}
+    except requests.RequestException as exc:
+        raise HTTPException(503, f"Inference probe failed: {exc}") from exc
+    result["status"] = "ok" if result["embedding"]["ok"] and result["generation"]["ok"] else "failed"
+    result["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
+    return result
 
 
 @router.get("/models/available")

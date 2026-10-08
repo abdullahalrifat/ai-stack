@@ -17,6 +17,9 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+INFERENCE_BASE_URL = os.getenv("INFERENCE_BASE_URL", "").strip().rstrip("/")
+INFERENCE_API_KEY = os.getenv("INFERENCE_API_KEY", "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3:1.7b")
 FAST_MODEL = os.getenv("FAST_MODEL", "qwen3:1.7b")
 # Small, low-latency model used only to translate an Auto request into a
@@ -35,6 +38,7 @@ WEB_SEARCH_TIMEOUT_SECONDS = int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "15"))
 # Maximum size of an externally retrieved HTML/PDF document. This is separate
 # from MAX_TOOL_OUTPUT_CHARS, which bounds only the text given to the model.
 WEB_FETCH_MAX_BYTES = int(os.getenv("WEB_FETCH_MAX_BYTES", "8000000"))
+EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "45"))
 
 # Optional Automatic1111/Forge-compatible image generation API. Vision inference
 # is served by the dedicated inference gateway; image generation stays separate.

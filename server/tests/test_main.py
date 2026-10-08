@@ -379,6 +379,42 @@ def test_available_models_is_a_public_gateway_catalog():
         assert routes.available_models() == {"models": ["qwen3:4b"]}
 
 
+def test_inference_probe_uses_configured_embedding_timeout(monkeypatch):
+    calls = []
+
+    class Response:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        if url.endswith("/embeddings"):
+            return Response({"data": [{"embedding": [0.1, 0.2, 0.3]}]})
+        return Response({"choices": [{"message": {"content": "OK"}}]})
+
+    monkeypatch.setattr(routes, "INFERENCE_BASE_URL", "http://inference:8080/v1")
+    monkeypatch.setattr(routes, "INFERENCE_API_KEY", "secret")
+    monkeypatch.setattr(routes, "EMBEDDING_TIMEOUT_SECONDS", 12.5)
+    monkeypatch.setattr(routes.requests, "post", post)
+
+    result = routes.inference_probe("qwen3:1.7b")
+
+    assert result["status"] == "ok"
+    assert result["embedding"] == {"ok": True, "dimensions": 3}
+    assert result["generation"] == {"ok": True, "answer": "OK"}
+    assert calls[0][1]["timeout"] == 12.5
+    assert calls[1][1]["timeout"] == 90
+    assert calls[0][1]["headers"]["X-Request-ID"].startswith("doctor-embed-")
+    assert calls[1][1]["headers"]["X-Request-ID"].startswith("doctor-chat-")
+    assert calls[0][1]["headers"]["Authorization"] == "Bearer secret"
+
+
 def test_image_generation_status_is_explicit_when_unconfigured(monkeypatch):
     monkeypatch.setattr(routes, "IMAGE_GENERATION_URL", "")
 
