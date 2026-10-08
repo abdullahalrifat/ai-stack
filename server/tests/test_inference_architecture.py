@@ -8,7 +8,7 @@ def test_production_compose_has_single_inference_boundary():
     assert "\n  ollama:" not in compose
     assert "\n  litellm:" not in compose
     assert "INFERENCE_BASE_URL" in compose
-    assert "OPENAI_API_BASE_URL: ${INFERENCE_BASE_URL}" in compose
+    assert "OPENAI_API_BASE: ${INFERENCE_BASE_URL}" in compose
 
 
 def test_local_model_provisioning_is_not_part_of_ai_stack():
