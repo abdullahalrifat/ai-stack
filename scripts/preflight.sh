@@ -32,9 +32,11 @@ if [[ -n "${INFERENCE_API_KEY:-}" ]]; then
 fi
 health="${INFERENCE_BASE_URL%/v1}/ready"
 models="${INFERENCE_BASE_URL}/models"
+capabilities="${INFERENCE_BASE_URL}/capabilities"
 
 curl "${curl_args[@]}" "$health" >/tmp/jarvis-inference-ready.json || fail "jarvis-inference is not ready at ${health}"
 curl "${curl_args[@]}" "$models" >/tmp/jarvis-inference-models.json || fail "jarvis-inference model endpoint is unavailable"
+curl "${curl_args[@]}" "$capabilities" >/tmp/jarvis-inference-capabilities.json || fail "jarvis-inference capability endpoint is unavailable"
 
 python3 - <<'PY'
 import json
@@ -47,6 +49,22 @@ missing = sorted(required - models)
 if missing:
     raise SystemExit(f"Missing inference models: {', '.join(missing)}")
 print("OK: required chat models are available")
+
+cap = json.loads(Path("/tmp/jarvis-inference-capabilities.json").read_text())
+if cap.get("protocol", {}).get("current") != 1:
+    raise SystemExit("Unsupported jarvis-inference protocol version")
+features = set(cap.get("features", []))
+required_features = {"chat", "streaming", "embeddings", "model_catalog", "request_ids"}
+missing_features = sorted(required_features - features)
+if missing_features:
+    raise SystemExit(f"Missing inference capabilities: {', '.join(missing_features)}")
+print("OK: inference protocol v1 and required capabilities are available")
+limits = cap.get("limits", {})
+embedding_timeout = float(limits.get("embedding_timeout_seconds", 0))
+configured_embedding_timeout = float(__import__("os").environ.get("EMBEDDING_TIMEOUT_SECONDS", "45"))
+if embedding_timeout <= 0 or configured_embedding_timeout < embedding_timeout:
+    raise SystemExit("AI Stack EMBEDDING_TIMEOUT_SECONDS must be >= inference embedding timeout")
+print("OK: embedding timeout hierarchy is valid")
 PY
 
 curl "${curl_args[@]}" -H "Content-Type: application/json" \
