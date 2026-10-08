@@ -35,6 +35,7 @@ WEB_SEARCH_TIMEOUT_SECONDS = int(os.getenv("WEB_SEARCH_TIMEOUT_SECONDS", "15"))
 # Maximum size of an externally retrieved HTML/PDF document. This is separate
 # from MAX_TOOL_OUTPUT_CHARS, which bounds only the text given to the model.
 WEB_FETCH_MAX_BYTES = int(os.getenv("WEB_FETCH_MAX_BYTES", "8000000"))
+EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "45"))
 
 # Optional Automatic1111/Forge-compatible image generation API. Vision inference
 # is served by the dedicated inference gateway; image generation stays separate.
