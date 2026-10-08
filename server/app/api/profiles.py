@@ -30,7 +30,12 @@ class AgentProfile:
 WORKFLOW_POLICIES: dict[str, AgentProfile] = {
     "quick": AgentProfile(FAST_MODEL, "fast"),
     "code": AgentProfile(AGENT_REASONING_MODEL, "code"),
-    "research": AgentProfile(\n        RESEARCH_MODEL, "research", force_research=True, timeout_seconds=RESEARCH_TIMEOUT_SECONDS\n    ),
+    "research": AgentProfile(
+        RESEARCH_MODEL,
+        "research",
+        force_research=True,
+        timeout_seconds=RESEARCH_TIMEOUT_SECONDS,
+    ),
     "finance": AgentProfile(
         FINANCE_MODEL,
         "finance",
