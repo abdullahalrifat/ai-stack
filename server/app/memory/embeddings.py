@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 
 import requests
 
@@ -34,7 +35,10 @@ def create_embedding(text: str) -> list[float]:
     bounded_text = _bounded_embedding_text(text, EMBED_MAX_CHARS)
     response = _session.post(
         f"{INFERENCE_BASE_URL}/embeddings",
-        headers={"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {},
+        headers={
+            **({"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {}),
+            "X-Request-ID": f"embed-{uuid.uuid4().hex}",
+        },
         json={"model": EMBED_MODEL, "input": bounded_text, "encoding_format": "float"},
         timeout=EMBEDDING_TIMEOUT_SECONDS,
     )
