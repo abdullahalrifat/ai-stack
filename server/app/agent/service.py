@@ -94,6 +94,21 @@ def _uses_memory(prompt_mode: str, document_scope: str | None = None) -> bool:
     )
 
 
+def _load_memory_best_effort(message: str, scope: str | None) -> list:
+    """Treat optional memory retrieval as a degradation path, not a chat blocker."""
+    try:
+        return memory_context(
+            search_memory(message, scope=scope),
+            MEMORY_CONTEXT_TOKENS,
+        )
+    except Exception:
+        logger.warning(
+            "Could not retrieve conversation memory; continuing without memory",
+            exc_info=True,
+        )
+        return []
+
+
 def _execution_plan(state, research_mode: bool) -> list:
     if state.plan:
         return state.plan
@@ -345,9 +360,8 @@ def run_agent(
         state.document_evidence = build_inline_document_evidence(message)
         _apply_auto_route(state, on_event)
         if _uses_memory(state.prompt_mode):
-            state.memories = memory_context(
-                search_memory(message, scope=state.memory_scope),
-                MEMORY_CONTEXT_TOKENS,
+            state.memories = _load_memory_best_effort(
+                message, state.memory_scope
             )
             state.document_evidence = (
                 build_document_evidence(message, state.memories)
