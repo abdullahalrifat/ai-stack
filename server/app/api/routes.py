@@ -32,6 +32,8 @@ from app.core.config import (
     DOCUMENT_MAX_BYTES,
     IMAGE_GENERATION_TIMEOUT_SECONDS,
     IMAGE_GENERATION_URL,
+    INFERENCE_BASE_URL,
+    INFERENCE_API_KEY,
     WORKSPACE_ROOTS,
 )
 from app.llm.client import get_available_models
@@ -765,6 +767,32 @@ def models():
             }
             for model_id in PROFILES
         ],
+    }
+
+
+@router.get("/inference/status", dependencies=[Depends(verify_api_key)])
+def inference_status():
+    """Return bounded diagnostics from the dedicated inference gateway."""
+    if not INFERENCE_BASE_URL:
+        raise HTTPException(503, "INFERENCE_BASE_URL is not configured")
+    base = INFERENCE_BASE_URL.rstrip("/")
+    headers = {"Authorization": f"Bearer {INFERENCE_API_KEY}"} if INFERENCE_API_KEY else {}
+    started = time.perf_counter()
+    try:
+        response = requests.get(
+            f"{base}/inference/status",
+            headers=headers,
+            timeout=5,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(503, f"Inference gateway unavailable: {exc}") from exc
+    return {
+        "status": "ok",
+        "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+        "runtime": payload.get("runtime", {}),
+        "resources": payload.get("resources", {}),
     }
 
 
