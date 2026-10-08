@@ -14,6 +14,7 @@ from app.core.config import (
     FINANCE_MAX_COMPLETION_TOKENS,
     FINANCE_MODEL,
     RESEARCH_MODEL,
+    RESEARCH_TIMEOUT_SECONDS,
 )
 
 
@@ -29,7 +30,7 @@ class AgentProfile:
 WORKFLOW_POLICIES: dict[str, AgentProfile] = {
     "quick": AgentProfile(FAST_MODEL, "fast"),
     "code": AgentProfile(AGENT_REASONING_MODEL, "code"),
-    "research": AgentProfile(RESEARCH_MODEL, "research", force_research=True),
+    "research": AgentProfile(\n        RESEARCH_MODEL, "research", force_research=True, timeout_seconds=RESEARCH_TIMEOUT_SECONDS\n    ),
     "finance": AgentProfile(
         FINANCE_MODEL,
         "finance",
