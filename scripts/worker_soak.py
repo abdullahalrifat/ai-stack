@@ -1,6 +1,6 @@
-"""Bounded health/readiness soak harness with machine-readable evidence.
+"""Bounded control-plane health/readiness soak harness with machine-readable evidence.
 
-Use against a disposable/staging AI Stack instance. The CI workflow runs a
+This probes health/readiness only; it is not a worker lease/chaos test. Use against a disposable/staging AI Stack instance. The CI workflow runs a
 short integration smoke against a local fixture and the scheduled/manual path
 can run a long soak against AI_STACK_SOAK_URL.
 """
