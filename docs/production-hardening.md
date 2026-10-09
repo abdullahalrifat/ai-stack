@@ -4,7 +4,7 @@ This document separates executable contract validation from deployment-level cer
 
 ## Current baseline
 
-The coordinated Server line consumes Jarvis Core 0.9.2. CI validates Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting and Core protocol conformance.
+The current coordinated Server line consumes `jarvis-agent-core==0.17.1` from the locked `server/requirements.lock` environment. CI validates Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting and Core protocol conformance.
 
 ## Shared-worker isolation requirements
 

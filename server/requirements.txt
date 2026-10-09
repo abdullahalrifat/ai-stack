@@ -36,4 +36,4 @@ ruff
 black
 flake8
 
-jarvis-agent-core==0.17.0
+jarvis-agent-core==0.17.1

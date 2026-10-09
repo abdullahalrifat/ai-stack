@@ -44,6 +44,10 @@ AGENT_REASONING_MODEL=qwen3:4b
 
 For standalone Jarvis, use the same `INFERENCE_BASE_URL` and `INFERENCE_API_KEY`, plus `JARVIS_MODEL=qwen3:1.7b`. Do not set `AI_STACK_BASE_URL` merely to use Jarvis locally.
 
+## Gateway compatibility and deployment
+
+The inference API is a separately deployed HTTP service, not a Python dependency of either consumer. Keep its API contract compatible with both clients and verify the deployed source commit or image digest. The current Compose configuration builds the gateway from the checked-out source, so a GitHub/PyPI release is not a prerequisite for that deployment. If switching to a prebuilt GHCR image, use a published immutable release tag or digest and verify it before rollout. The gateway must require API-key authentication by default and must not automatically replay ambiguous generation timeouts.
+
 ## Deployment order
 
 1. Deploy `jarvis-inference` and verify `/ready`, `/v1/models`, `/v1/capabilities` and `/v1/embeddings`.
@@ -52,4 +56,4 @@ For standalone Jarvis, use the same `INFERENCE_BASE_URL` and `INFERENCE_API_KEY`
 4. Run `scripts/preflight.sh` and `scripts/deploy.sh` for AI Stack.
 5. Verify each consumer independently; local Jarvis should work with AI Stack stopped.
 
-Keep TCP 8080 restricted to trusted private-network clients. Keep Ollama port 11434 internal and unpublished.
+Keep TCP 8080 restricted to trusted private-network clients. The gateway must have `INFERENCE_API_KEY` configured; startup fails closed when it is absent unless the explicit `INFERENCE_ALLOW_INSECURE_NO_AUTH=true` development override is set. Keep Ollama port 11434 internal and unpublished. A caller timeout does not prove generation stopped: ambiguous read timeouts must not be automatically replayed, because the original generation may still occupy the single inference slot.

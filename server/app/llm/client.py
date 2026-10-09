@@ -100,19 +100,21 @@ def _is_transient_error(exc: BaseException) -> bool:
     if isinstance(exc, InferenceClientError):
         # Do not replay requests after a transport timeout: Ollama may still be
         # generating the original response on its single inference queue.
-        return exc.status_code in (408, 429, 500, 502, 503, 504)
-    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return exc.status_code in (429, 500, 502, 503)
+    if isinstance(exc, TimeoutError):
+        # A read timeout may occur after the backend accepted the generation.
+        # Never replay work when request admission is ambiguous.
+        return False
+    if isinstance(exc, ConnectionError):
         return True
     status = getattr(exc, "status_code", None)
     if status is None:
         response = getattr(exc, "response", None)
         status = getattr(response, "status_code", None)
-    if status in (408, 429, 500, 502, 503, 504):
+    if status in (429, 500, 502, 503):
         return True
     name = type(exc).__name__.lower()
-    return any(
-        token in name for token in ("timeout", "connection", "unavailable", "gateway")
-    )
+    return any(token in name for token in ("connection", "unavailable", "gateway"))
 
 
 def _with_transient_retry(call):

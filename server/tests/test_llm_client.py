@@ -118,12 +118,25 @@ def test_client_uses_shared_core_inference_transport(inference_client, monkeypat
 
 
 def test_core_inference_timeouts_are_not_retried():
-    error = client.InferenceClientError("read timed out", retryable=True)
-    assert not client._is_transient_error(error)
-    for status in (408, 429, 500, 502, 503, 504):
+    # A timeout may mean the backend is still generating; replaying can enqueue
+    # duplicate expensive work on the single-generation local gateway.
+    for status in (None, 408, 504):
+        error = client.InferenceClientError(
+            "read timed out", retryable=True, status_code=status
+        )
+        assert not client._is_transient_error(error)
+    assert not client._is_transient_error(TimeoutError("read timed out"))
+    for status in (429, 500, 502, 503):
         assert client._is_transient_error(
             client.InferenceClientError("gateway error", status_code=status)
         )
+
+
+def test_generic_timeout_exception_is_not_retried():
+    class ReadTimeoutError(Exception):
+        pass
+
+    assert not client._is_transient_error(ReadTimeoutError("read timed out"))
 
 
 @patch("app.llm.client._ensure_model_available")
@@ -248,8 +261,12 @@ class _GatewayError(Exception):
 
 def test_is_transient_error_classifies_gateway_statuses():
     assert client._is_transient_error(_GatewayError("boom"))
-    for status in (408, 429, 500, 502, 503, 504):
+    for status in (429, 500, 502, 503):
         assert client._is_transient_error(
+            SimpleNamespace(status_code=status, response=None)
+        )
+    for status in (408, 504):
+        assert not client._is_transient_error(
             SimpleNamespace(status_code=status, response=None)
         )
     assert not client._is_transient_error(ValueError("model not found"))
@@ -260,8 +277,9 @@ def test_is_transient_error_classifies_gateway_statuses():
     assert not client._is_transient_error(RunCancelled())
 
 
-def test_is_transient_error_sees_connection_and_timeout_names():
-    assert client._is_transient_error(TimeoutError("read timed out"))
+def test_is_transient_error_does_not_retry_ambiguous_timeout():
+    assert not client._is_transient_error(TimeoutError("read timed out"))
+    assert not client._is_transient_error(type("ReadTimeoutError", (Exception,), {})("read timed out"))
     assert client._is_transient_error(ConnectionError("connection refused"))
 
 
@@ -307,3 +325,16 @@ def test_with_transient_retry_does_not_retry_permanent_errors():
     ):
         client._with_transient_retry(permanent)
     assert calls["n"] == 1
+
+
+def test_with_transient_retry_never_replays_ambiguous_timeout():
+    calls = 0
+
+    def timed_out():
+        nonlocal calls
+        calls += 1
+        raise TimeoutError("read timed out after backend admission")
+
+    with pytest.raises(TimeoutError):
+        client._with_transient_retry(timed_out)
+    assert calls == 1
