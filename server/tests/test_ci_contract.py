@@ -12,11 +12,11 @@ def test_efficiency_defaults_are_consistent_across_config_and_compose():
     expected = {
         'MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "24"))': "MAX_AGENT_STEPS",
         'TOKEN_RUN_INPUT_LIMIT = int(os.getenv("TOKEN_RUN_INPUT_LIMIT", "48000"))': "TOKEN_RUN_INPUT_LIMIT",
-        'TOKEN_RUN_OUTPUT_LIMIT = int(os.getenv("TOKEN_RUN_OUTPUT_LIMIT", "4000"))': "TOKEN_RUN_OUTPUT_LIMIT",
+        'TOKEN_RUN_OUTPUT_LIMIT = int(os.getenv("TOKEN_RUN_OUTPUT_LIMIT", "8000"))': "TOKEN_RUN_OUTPUT_LIMIT",
         'TOKEN_TURN_INPUT_LIMIT = int(os.getenv("TOKEN_TURN_INPUT_LIMIT", "12000"))': "TOKEN_TURN_INPUT_LIMIT",
-        'TOKEN_TURN_OUTPUT_LIMIT = int(os.getenv("TOKEN_TURN_OUTPUT_LIMIT", "1536"))': "TOKEN_TURN_OUTPUT_LIMIT",
+        'TOKEN_TURN_OUTPUT_LIMIT = int(os.getenv("TOKEN_TURN_OUTPUT_LIMIT", "4096"))': "TOKEN_TURN_OUTPUT_LIMIT",
         'TOKEN_AGENT_INPUT_LIMIT = int(os.getenv("TOKEN_AGENT_INPUT_LIMIT", "32000"))': "TOKEN_AGENT_INPUT_LIMIT",
-        'TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "3000"))': "TOKEN_AGENT_OUTPUT_LIMIT",
+        'TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "6000"))': "TOKEN_AGENT_OUTPUT_LIMIT",
     }
     for declaration, name in expected.items():
         assert declaration in config
