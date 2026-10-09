@@ -14,6 +14,7 @@ AI Stack Server is an optional durable, self-hosted control plane for long-runni
 - `runs-ui/`: run, evidence and approval interface;
 - PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
+- Open WebUI and its Pipelines service: optional services defined in `docker-compose.open-webui.yaml`;
 - dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API;
 - `contracts/`: versioned Server client protocol;
 - `jarvis-agent-core` **0.17.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
@@ -103,7 +104,7 @@ docker compose ps
 # Check service health
 docker compose logs -f
 
-# Access the Open WebUI at http://<server-ip>:3003
+# If you started the optional Open WebUI Compose file, access it at http://<server-ip>:3003
 # The agent runner and SearXNG are internal Docker services; they are not host-published.
 # Access the Runs UI at http://<server-ip>:3002
 ```
