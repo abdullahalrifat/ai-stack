@@ -30,12 +30,25 @@ This boundary is intentionally provider-neutral: changing inference models or th
 
 ## Start the development stack
 
+The default Compose deployment intentionally does **not** start Open WebUI. It starts the AI Stack API, Runs UI, and backend dependencies only.
+
 ```bash
 cp .env.example .env
 docker compose config
 docker compose up -d
 docker compose ps
 ```
+
+### Start Open WebUI separately (optional)
+
+Open WebUI has its own Compose file and is not included in the default `docker compose up -d` deployment. After the core stack is running, start it explicitly:
+
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.open-webui.yaml config open-webui
+docker compose -f docker-compose.yaml -f docker-compose.open-webui.yaml up -d open-webui
+```
+
+This reuses the core stack's networks and backend services while allowing Open WebUI to be managed independently. Its data remains in `./open-webui`, and the UI is published on port `3003`.
 
 ## Deploy to Remote Server
 
