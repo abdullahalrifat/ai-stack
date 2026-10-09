@@ -14,7 +14,7 @@ AI Stack Server is an optional durable, self-hosted control plane for long-runni
 - `runs-ui/`: run, evidence and approval interface;
 - PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
-- dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API;
+- dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API; Jarvis CLI and AI Stack are sibling consumers of this API;
 - `contracts/`: versioned Server client protocol;
 - `jarvis-agent-core` **0.16.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
 
