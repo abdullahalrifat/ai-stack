@@ -85,21 +85,27 @@ It must never prune unrelated Docker resources or use `docker system prune --vol
 
 ## Connect Jarvis
 
-Normal user flow:
+Jarvis 0.11.0 uses direct inference for ordinary local tasks. Jarvis and AI Stack are sibling consumers of `jarvis-inference`; the CLI does not need AI Stack for local repository work.
 
-```text
-Jarvis CLI -> AI Stack -> jarvis-inference -> Ollama
+For direct local work, configure the Jarvis machine:
+
+```bash
+export INFERENCE_BASE_URL="http://<private-inference-ip>:8080/v1"
+export INFERENCE_API_KEY="<inference-secret>"
+export JARVIS_MODEL="qwen3:1.7b"
+jarvis model-doctor
+jarvis "review this repository"
 ```
 
-Configure the Jarvis machine:
+For **explicit remote Runs** that need AI Stack's durable execution, shared queues, memory/RAG or Runs UI, configure the AI Stack API and use `jarvis run` or `jarvis cloud`:
 
 ```bash
 export AI_STACK_BASE_URL="http://<ai-stack-host>:8081"
 export AI_STACK_API_KEY="<same value as AGENT_API_KEY>"
-export JARVIS_MODEL="qwen3:1.7b"
+jarvis run "review this repository" --workspace /workspace/repo
 ```
 
-Direct inference access is for diagnostics/developer tooling only.
+The AI Stack API root does not use `/v1`; only the inference gateway URL includes `/v1`. Never expose Ollama port 11434.
 
 ## Connect to jarvis-inference
 
