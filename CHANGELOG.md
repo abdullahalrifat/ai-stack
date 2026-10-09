@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.8.0
+
+- Pin the published Jarvis Core 0.17.1 release in server requirements, lockfile, image build and CI.
+- Align the shared inference gateway deployment contract with jarvis-inference 0.3.1, including fail-closed authentication and timeout replay protection.
+- Update release and architecture documentation for the coordinated Core and inference versions.
+
+
 ## 3.7.0
 
 - Clarify the AI Stack control-plane API boundary: AI Stack routes are rooted at `/`, not `/v1`.
