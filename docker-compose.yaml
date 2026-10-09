@@ -4,7 +4,7 @@ services:
   ## PostgreSQL
   ####################################################
   postgres:
-    image: postgres:17
+    image: postgres:17.11
     container_name: postgres
     restart: unless-stopped
 
@@ -29,7 +29,7 @@ services:
   ## Redis
   ####################################################
   redis:
-    image: redis:8-alpine
+    image: redis:8.10.2-alpine
     container_name: redis
     restart: unless-stopped
 
