@@ -1,13 +1,33 @@
-# Open WebUI is intentionally disabled in the primary deployment.
+# Optional Open WebUI deployment.
 #
-# To restore it, copy this service definition back into docker-compose.yaml
-# (or use this file as an override) and ensure its dependencies are running.
-# The persistent data directory is preserved at ./open-webui.
+# The default `docker compose up -d` deliberately does not start Open WebUI
+# or its Pipelines service. Start this override only when you want the UI:
+#   docker compose -f docker-compose.yaml -f docker-compose.open-webui.yaml up -d
+#
+# Existing Open WebUI data remains in ./open-webui; Pipelines configuration
+# remains in ./pipelines. Core AI Stack services are defined in the base file.
 
 services:
 
   ####################################################
-  ## Open WebUI (disabled backup)
+  ## Open WebUI Pipelines (only used by Open WebUI)
+  ####################################################
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:0.12.0
+    container_name: pipelines
+    restart: unless-stopped
+
+    environment:
+      PIPELINES_API_KEY: ${PIPELINES_API_KEY}
+
+    volumes:
+      - ./pipelines:/app/pipelines
+
+    networks:
+      - ai
+
+  ####################################################
+  ## Open WebUI
   ####################################################
   open-webui:
     image: ghcr.io/open-webui/open-webui:latest
