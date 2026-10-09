@@ -325,3 +325,16 @@ def test_with_transient_retry_does_not_retry_permanent_errors():
     ):
         client._with_transient_retry(permanent)
     assert calls["n"] == 1
+
+
+def test_with_transient_retry_never_replays_ambiguous_timeout():
+    calls = 0
+
+    def timed_out():
+        nonlocal calls
+        calls += 1
+        raise TimeoutError("read timed out after backend admission")
+
+    with pytest.raises(TimeoutError):
+        client._with_transient_retry(timed_out)
+    assert calls == 1
