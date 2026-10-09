@@ -1,14 +1,31 @@
-# Optional Open WebUI service. This service is intentionally excluded from the default deployment.
+# Optional Open WebUI + Pipelines services. These are intentionally excluded from the default deployment.
 # Start it after the core stack with:
 # docker compose -f docker-compose.yaml -f docker-compose.open-webui.yaml up -d open-webui
 # Stop only the UI with:
 # docker compose -f docker-compose.yaml -f docker-compose.open-webui.yaml stop open-webui
-# Persistent data is preserved in ./open-webui.
+# Persistent data is preserved in ./open-webui and ./pipelines.
 
 services:
 
   ####################################################
-  ## Open WebUI (disabled backup)
+  ## Open WebUI Pipelines (only needed by optional UI)
+  ####################################################
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main
+    container_name: pipelines
+    restart: unless-stopped
+
+    environment:
+      PIPELINES_API_KEY: ${PIPELINES_API_KEY}
+
+    volumes:
+      - ./pipelines:/app/pipelines
+
+    networks:
+      - ai
+
+  ####################################################
+  ## Open WebUI (optional)
   ####################################################
   open-webui:
     image: ghcr.io/open-webui/open-webui:latest
