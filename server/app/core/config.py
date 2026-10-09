@@ -145,11 +145,11 @@ CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "
 # Conservative defaults for the CPU-local model. Override per workload when a task genuinely needs more context.
 # Shared run/agent/turn token budgets enforced by jarvis-core.
 TOKEN_RUN_INPUT_LIMIT = int(os.getenv("TOKEN_RUN_INPUT_LIMIT", "48000"))
-TOKEN_RUN_OUTPUT_LIMIT = int(os.getenv("TOKEN_RUN_OUTPUT_LIMIT", "4000"))
+TOKEN_RUN_OUTPUT_LIMIT = int(os.getenv("TOKEN_RUN_OUTPUT_LIMIT", "8000"))
 TOKEN_TURN_INPUT_LIMIT = int(os.getenv("TOKEN_TURN_INPUT_LIMIT", "12000"))
-TOKEN_TURN_OUTPUT_LIMIT = int(os.getenv("TOKEN_TURN_OUTPUT_LIMIT", "1536"))
+TOKEN_TURN_OUTPUT_LIMIT = int(os.getenv("TOKEN_TURN_OUTPUT_LIMIT", "4096"))
 TOKEN_AGENT_INPUT_LIMIT = int(os.getenv("TOKEN_AGENT_INPUT_LIMIT", "32000"))
-TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "3000"))
+TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "6000"))
 # Finance answers need room for a compact evidence summary plus scenarios.
 # Kept separate so normal Code/Quick responses remain fast on CPU.
 FINANCE_MAX_COMPLETION_TOKENS = int(os.getenv("FINANCE_MAX_COMPLETION_TOKENS", "1024"))
