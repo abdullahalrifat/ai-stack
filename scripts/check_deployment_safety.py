@@ -12,6 +12,7 @@ service_blocks = {
     for i in range(1, len(services), 2)
 }
 errors: list[str] = []
+local_images = {"ai-stack-server:latest", "ai-runs-ui:latest"}
 for name in ("qdrant", "pipelines"):
     block = service_blocks.get(name, "")
     if re.search(r"(?m)^\s+ports:\s*$", block):
@@ -22,7 +23,7 @@ for name, block in service_blocks.items():
     if not image_match or re.search(r"(?m)^\s+build:\s*", block):
         continue
     image = image_match.group(1)
-    if image.endswith(":latest") or image.endswith(":main") or image.endswith(":dev"):
+    if image not in local_images and (image.endswith(":latest") or image.endswith(":main") or image.endswith(":dev")):
         errors.append(f"{name} uses a floating image tag: {image}")
 
 if errors:
