@@ -2,11 +2,15 @@
 
 ## Current contract line
 
-AI Stack consumes the provider-neutral **Jarvis Core 0.17.1** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes the provider-neutral **Jarvis Core 0.17.2** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
-Jarvis Core 0.17.1 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
+Jarvis Core 0.17.2 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
 AI Stack Server is an optional durable, self-hosted control plane for long-running remote agent execution. It is independent of the standalone Jarvis CLI; both are consumers of the separately deployed `jarvis-inference` HTTP API. Inference is not a Python package dependency; deploy from source with Compose or use a published immutable image if choosing the prebuilt-image path.
+
+## Token and resource efficiency defaults
+
+AI Stack now defaults to 24 agent steps, 48,000 input / 8,000 output tokens per run, 12,000 input / 4,096 output tokens per turn, and 32,000 input / 6,000 output tokens per agent. Tool output is bounded more tightly. These remain environment-configurable; raise a limit only when a representative evaluation shows that the task needs it. Jarvis CLI and AI Stack remain independent sibling clients of `jarvis-inference`.
 
 ## Components
 
@@ -17,13 +21,13 @@ AI Stack Server is an optional durable, self-hosted control plane for long-runni
 - Open WebUI and its Pipelines service: optional services defined in `docker-compose.open-webui.yaml`;
 - dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core` **0.17.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
+- `jarvis-agent-core` **0.17.2**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
 
 Server requirements, lockfile, Docker image and CI assert the same Core version.
 
 ## Token-efficient and empirical routing
 
-Core 0.17.1 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
+Core 0.17.2 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
 
 The calibration path is deliberately conservative: minimum samples, a quality floor and recency weighting must be satisfied before measured evidence can change automatic routing. When evidence is insufficient, existing health/benchmark routing remains the fallback.
 
@@ -182,7 +186,7 @@ Provider credentials stay on execution hosts and are not embedded in cloud task 
 
 ## Validation and certification
 
-The current 0.17.1 Core common-brain contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-workload evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
+The current 0.17.2 Core common-brain contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-workload evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
 
 Remaining certification work is retained longitudinal model-quality measurement, hardware-specific soak testing, fully reproducible offline/bootstrap validation and backup/restore/disaster-recovery exercises.
 
