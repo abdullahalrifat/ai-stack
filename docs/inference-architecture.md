@@ -44,6 +44,10 @@ AGENT_REASONING_MODEL=qwen3:4b
 
 For standalone Jarvis, use the same `INFERENCE_BASE_URL` and `INFERENCE_API_KEY`, plus `JARVIS_MODEL=qwen3:1.7b`. Do not set `AI_STACK_BASE_URL` merely to use Jarvis locally.
 
+## Supported gateway release
+
+Consumers should target `jarvis-inference` 0.3.1, which requires API-key authentication by default and avoids replaying ambiguous generation timeouts. Deploy only the immutable image produced by the `v0.3.1` release workflow; verify that release exists before rollout.
+
 ## Deployment order
 
 1. Deploy `jarvis-inference` and verify `/ready`, `/v1/models`, `/v1/capabilities` and `/v1/embeddings`.
