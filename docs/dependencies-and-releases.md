@@ -19,7 +19,7 @@ Core change
 
 ## Current release
 
-The current coordinated consumer release is **Jarvis Core 0.17.1**, consumed by the current Jarvis 0.11.1 line. Core provides the shared inference gateway client and provider-neutral runtime/routing contracts. `jarvis-inference` is a separately deployed HTTP service, not a Python dependency of AI Stack. Verify `server/requirements.lock`, installed wheel metadata, and the exact inference source commit or deployed image digest during release certification. A published inference release is needed only when deploying its prebuilt release image; the current Compose configuration builds the service from source.
+The current coordinated consumer release is **Jarvis Core 0.17.2**, consumed by the current Jarvis 0.11.2 line. Core provides the shared inference gateway client and provider-neutral runtime/routing contracts. `jarvis-inference` is a separately deployed HTTP service, not a Python dependency of AI Stack. Verify `server/requirements.lock`, installed wheel metadata, and the exact inference source commit or deployed image digest during release certification. A published inference release is needed only when deploying its prebuilt release image; the current Compose configuration builds the service from source.
 
 ## Architecture ownership
 
