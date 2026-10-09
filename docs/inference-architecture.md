@@ -44,13 +44,9 @@ AGENT_REASONING_MODEL=qwen3:4b
 
 For standalone Jarvis, use the same `INFERENCE_BASE_URL` and `INFERENCE_API_KEY`, plus `JARVIS_MODEL=qwen3:1.7b`. Do not set `AI_STACK_BASE_URL` merely to use Jarvis locally.
 
-## Supported gateway release
+## Gateway compatibility and deployment
 
-Consumers should target `jarvis-inference` 0.3.1, which requires API-key authentication by default and avoids replaying ambiguous generation timeouts. Deploy only the immutable image produced by the `v0.3.1` release workflow; verify that release exists before rollout.
-
-## Supported gateway release
-
-Consumers should target `jarvis-inference` 0.3.1, which requires API-key authentication by default and avoids replaying ambiguous generation timeouts. Deploy only the immutable image produced by the `v0.3.1` release workflow; verify that release exists before rollout.
+The inference API is a separately deployed HTTP service, not a Python dependency of either consumer. Keep its API contract compatible with both clients and verify the deployed source commit or image digest. The current Compose configuration builds the gateway from the checked-out source, so a GitHub/PyPI release is not a prerequisite for that deployment. If switching to a prebuilt GHCR image, use a published immutable release tag or digest and verify it before rollout. The gateway must require API-key authentication by default and must not automatically replay ambiguous generation timeouts.
 
 ## Deployment order
 
