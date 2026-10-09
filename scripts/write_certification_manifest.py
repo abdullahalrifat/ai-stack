@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 output = Path(sys.argv[1] if len(sys.argv) > 1 else "certification-evidence.json")
@@ -17,7 +17,7 @@ manifest = {
     "workflow_run_id": os.getenv("GITHUB_RUN_ID", "unknown"),
     "workflow_run_attempt": os.getenv("GITHUB_RUN_ATTEMPT", "unknown"),
     "job_status": os.getenv("CI_JOB_STATUS", "unknown"),
-    "recorded_at_utc": datetime.now(UTC).isoformat(),
+    "recorded_at_utc": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
     "deployment_gates": {
         "real_repository_benchmark": "pending_external_evidence",
         "prompt_injection_and_secret_canary": "pending_external_evidence",
