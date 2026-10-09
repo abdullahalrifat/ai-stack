@@ -6,7 +6,7 @@ AI Stack consumes the provider-neutral **Jarvis Core 0.17.1** common-brain runti
 
 Jarvis Core 0.17.1 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
-AI Stack Server is an optional durable, self-hosted control plane for long-running remote agent execution. It is independent of the standalone Jarvis CLI; both are consumers of the dedicated jarvis-inference API (gateway release 0.3.1).
+AI Stack Server is an optional durable, self-hosted control plane for long-running remote agent execution. It is independent of the standalone Jarvis CLI; both are consumers of the separately deployed `jarvis-inference` HTTP API. Inference is not a Python package dependency; deploy from source with Compose or use a published immutable image if choosing the prebuilt-image path.
 
 ## Components
 
