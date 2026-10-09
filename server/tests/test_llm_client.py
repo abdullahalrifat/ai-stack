@@ -261,8 +261,12 @@ class _GatewayError(Exception):
 
 def test_is_transient_error_classifies_gateway_statuses():
     assert client._is_transient_error(_GatewayError("boom"))
-    for status in (408, 429, 500, 502, 503, 504):
+    for status in (429, 500, 502, 503):
         assert client._is_transient_error(
+            SimpleNamespace(status_code=status, response=None)
+        )
+    for status in (408, 504):
+        assert not client._is_transient_error(
             SimpleNamespace(status_code=status, response=None)
         )
     assert not client._is_transient_error(ValueError("model not found"))
@@ -273,8 +277,9 @@ def test_is_transient_error_classifies_gateway_statuses():
     assert not client._is_transient_error(RunCancelled())
 
 
-def test_is_transient_error_sees_connection_and_timeout_names():
-    assert client._is_transient_error(TimeoutError("read timed out"))
+def test_is_transient_error_does_not_retry_ambiguous_timeout():
+    assert not client._is_transient_error(TimeoutError("read timed out"))
+    assert not client._is_transient_error(type("ReadTimeoutError", (Exception,), {})("read timed out"))
     assert client._is_transient_error(ConnectionError("connection refused"))
 
 
