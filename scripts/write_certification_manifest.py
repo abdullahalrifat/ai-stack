@@ -1,4 +1,5 @@
 """Write a commit-bound certification manifest without recording secrets."""
+
 from __future__ import annotations
 
 import json
@@ -7,9 +8,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-output = Path(
-    sys.argv[1] if len(sys.argv) > 1 else "certification-evidence.json"
-)
+output = Path(sys.argv[1] if len(sys.argv) > 1 else "certification-evidence.json")
 manifest = {
     "schema_version": 1,
     "repository": os.getenv("GITHUB_REPOSITORY", "local"),
