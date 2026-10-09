@@ -6,7 +6,7 @@ AI Stack consumes the provider-neutral **Jarvis Core 0.16.1** common-brain runti
 
 Jarvis Core 0.16.1 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
-AI Stack Server is the durable, self-hosted control plane for long-running agent execution.
+AI Stack Server is an optional durable, self-hosted control plane for long-running remote agent execution. It is independent of the standalone Jarvis CLI; both are consumers of the dedicated jarvis-inference API.
 
 ## Components
 
@@ -14,7 +14,7 @@ AI Stack Server is the durable, self-hosted control plane for long-running agent
 - `runs-ui/`: run, evidence and approval interface;
 - PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
-- dedicated `jarvis-inference` VM for all model execution, including embeddings;
+- dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API;
 - `contracts/`: versioned Server client protocol;
 - `jarvis-agent-core` **0.16.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
 
