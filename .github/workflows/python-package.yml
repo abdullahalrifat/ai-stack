@@ -51,6 +51,16 @@ jobs:
         run: ruff check app tests --select E9,F63,F7,F82
       - name: Tests and coverage floor
         run: python -m pytest -q tests --cov=app --cov-report=term-missing --cov-fail-under=67
+      - name: Write commit-bound certification manifest
+        if: always()
+        run: python ../scripts/write_certification_manifest.py ../certification-evidence.json
+      - name: Upload certification evidence manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-evidence-${{ github.sha }}-server
+          path: ../certification-evidence.json
+          if-no-files-found: error
 
   postgres:
     runs-on: ubuntu-latest
