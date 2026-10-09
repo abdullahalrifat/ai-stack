@@ -118,12 +118,25 @@ def test_client_uses_shared_core_inference_transport(inference_client, monkeypat
 
 
 def test_core_inference_timeouts_are_not_retried():
-    error = client.InferenceClientError("read timed out", retryable=True)
-    assert not client._is_transient_error(error)
-    for status in (408, 429, 500, 502, 503, 504):
+    # A timeout may mean the backend is still generating; replaying can enqueue
+    # duplicate expensive work on the single-generation local gateway.
+    for status in (None, 408, 504):
+        error = client.InferenceClientError(
+            "read timed out", retryable=True, status_code=status
+        )
+        assert not client._is_transient_error(error)
+    assert not client._is_transient_error(TimeoutError("read timed out"))
+    for status in (429, 500, 502, 503):
         assert client._is_transient_error(
             client.InferenceClientError("gateway error", status_code=status)
         )
+
+
+def test_generic_timeout_exception_is_not_retried():
+    class ReadTimeoutError(Exception):
+        pass
+
+    assert not client._is_transient_error(ReadTimeoutError("read timed out"))
 
 
 @patch("app.llm.client._ensure_model_available")
