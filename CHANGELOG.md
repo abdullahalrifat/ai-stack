@@ -2,6 +2,8 @@
 
 ## 3.9.0
 
+- Consume the published Jarvis Core 0.17.2 release and align requirements, lockfile, image build, CI and release documentation.
+
 - Lower default run, turn, agent, tool-output and completion budgets for CPU-local inference; keep every budget configurable.
 - Keep Jarvis CLI and AI Stack as independent inference clients.
 - Preserve the published Core dependency; ambiguous timeouts are not retried by the AI Stack orchestration layer.
