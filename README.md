@@ -10,7 +10,7 @@ AI Stack Server is an optional durable, self-hosted control plane for long-runni
 
 ## Token and resource efficiency defaults
 
-AI Stack now defaults to 24 agent steps, 48,000 input / 4,000 output tokens per run, 12,000 input / 1,536 output tokens per turn, and 32,000 input / 3,000 output tokens per agent. Tool output is bounded more tightly. These remain environment-configurable; raise a limit only when a representative evaluation shows that the task needs it. Jarvis CLI and AI Stack remain independent sibling clients of `jarvis-inference`.
+AI Stack now defaults to 24 agent steps, 48,000 input / 8,000 output tokens per run, 12,000 input / 4,096 output tokens per turn, and 32,000 input / 6,000 output tokens per agent. Tool output is bounded more tightly. These remain environment-configurable; raise a limit only when a representative evaluation shows that the task needs it. Jarvis CLI and AI Stack remain independent sibling clients of `jarvis-inference`.
 
 ## Components
 
