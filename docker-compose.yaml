@@ -57,7 +57,7 @@ services:
   ## Private web-search metasearch service
   ####################################################
   searxng:
-    image: ${SEARXNG_IMAGE:?Set SEARXNG_IMAGE to a reviewed immutable version or digest}
+    image: ghcr.io/searxng/searxng:2026.10.4-d48c4b555@sha256:b0497f6e93b5e98b1a15c66b333afed176266af34f479a46ed87514f4a441eda
     container_name: searxng
     restart: unless-stopped
 
@@ -77,7 +77,7 @@ services:
   ## Pipelines
   ####################################################
   pipelines:
-    image: ${PIPELINES_IMAGE:?Set PIPELINES_IMAGE to a reviewed immutable version or digest}
+    image: ghcr.io/open-webui/pipelines:0.12.0
     container_name: pipelines
     restart: unless-stopped
 
