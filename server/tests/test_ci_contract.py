@@ -1,6 +1,6 @@
 from pathlib import Path
 
-CORE_VERSION = "0.17.1"
+CORE_VERSION = "0.17.2"
 
 
 def test_efficiency_defaults_are_consistent_across_config_and_compose():
