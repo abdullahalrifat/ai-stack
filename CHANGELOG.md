@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.9.0
+
+- Lower default run, turn, agent, tool-output and completion budgets for CPU-local inference; keep every budget configurable.
+- Keep Jarvis CLI and AI Stack as independent inference clients.
+- Pin Jarvis Core 0.17.2 for non-streaming ambiguous-timeout protection.
+
+
 ## 3.8.0
 
 - Pin the published Jarvis Core 0.17.1 release in server requirements, lockfile, image build and CI.
