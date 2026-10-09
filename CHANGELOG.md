@@ -3,7 +3,7 @@
 ## 3.8.0
 
 - Pin the published Jarvis Core 0.17.1 release in server requirements, lockfile, image build and CI.
-- Align the shared inference gateway deployment contract with jarvis-inference 0.3.1, including fail-closed authentication and timeout replay protection.
+- Document the inference HTTP compatibility contract, fail-closed authentication and timeout replay protection without treating a published gateway release as a prerequisite for source-built Compose deployments.
 - Update release and architecture documentation for the coordinated Core and inference versions.
 
 
