@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import queue
@@ -37,7 +36,9 @@ _llm_slots = threading.BoundedSemaphore(MAX_CONCURRENT_LLM_CALLS)
 def _to_namespace(value):
     """Adapt Core's provider-neutral JSON payloads to legacy call-site shapes."""
     if isinstance(value, dict):
-        return SimpleNamespace(**{key: _to_namespace(item) for key, item in value.items()})
+        return SimpleNamespace(
+            **{key: _to_namespace(item) for key, item in value.items()}
+        )
     if isinstance(value, list):
         return [_to_namespace(item) for item in value]
     return value
@@ -84,7 +85,7 @@ class _CoreInferenceAdapter:
     def __init__(self, client: InferenceClient):
         self._client = client
         self.chat = SimpleNamespace(
-            completions= _CoreCompletions(client)
+            completions=_CoreCompletions(client)
         )
 
     def list_models(self):
