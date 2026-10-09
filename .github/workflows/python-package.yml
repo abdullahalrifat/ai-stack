@@ -122,6 +122,8 @@ jobs:
           SEARXNG_SECRET: ci-only-placeholder
           PIPELINES_API_KEY: ci-only-placeholder
         run: docker compose config --quiet
+      - name: Check deployment exposure and image pinning
+        run: python scripts/check_deployment_safety.py
       - name: Build the standard server image
         run: docker compose build server
       - name: Start the standard runner from the locally built image
