@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: certification-evidence-${{ github.sha }}-server
-          path: ../certification-evidence.json
+          path: certification-evidence.json
           if-no-files-found: error
 
   postgres:
