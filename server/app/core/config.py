@@ -63,7 +63,7 @@ DEFAULT_WORKSPACE = Path(
     os.getenv("DEFAULT_WORKSPACE_DIR", str(WORKSPACE_ROOT))
 ).resolve()
 
-MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "40"))
+MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "24"))
 # Independent read-only tool calls in one model turn run concurrently instead
 # of sequentially. Write tools are never parallelized.
 MAX_PARALLEL_TOOL_CALLS = int(os.getenv("MAX_PARALLEL_TOOL_CALLS", "2"))
@@ -77,17 +77,17 @@ MAX_EMPTY_SEARCH_RESULTS = int(os.getenv("MAX_EMPTY_SEARCH_RESULTS", "3"))
 MAX_UNPRODUCTIVE_TOOL_CALLS = int(os.getenv("MAX_UNPRODUCTIVE_TOOL_CALLS", "3"))
 # The local 4B model has a finite context window. Keep individual tool payloads
 # compact so the model sees the task and evidence rather than a truncated tail.
-MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "10000"))
+MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "8000"))
 # Model-visible budget for a single tool result once structured summarization
 # kicks in. Smaller than MAX_TOOL_OUTPUT_CHARS because it is the token budget
 # for the transcript, not the raw tool payload. The full result is always
 # retained in the run's observations.
-TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "6000"))
+TOOL_RESULT_SUMMARY_CHARS = int(os.getenv("TOOL_RESULT_SUMMARY_CHARS", "4000"))
 # Head/tail items preserved when a list-shaped tool result exceeds the summary
 # budget (search matches, directory listings, file items).
 TOOL_RESULT_SUMMARY_ITEMS = int(os.getenv("TOOL_RESULT_SUMMARY_ITEMS", "6"))
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
-LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "1536"))
+LLM_MAX_COMPLETION_TOKENS = int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "1024"))
 # Transient inference-gateway errors (connection failures, 5xx, rate limits)
 # are retried with exponential backoff before a run fails.
 # Stream-setup failures are retried; errors after output has begun are not.
@@ -141,14 +141,15 @@ REPLAN_MAX_RETRIES = int(os.getenv("REPLAN_MAX_RETRIES", "1"))
 # adds its own prompt and tool schemas for the model context budget.
 OPENAI_INPUT_MAX_CHARS = int(os.getenv("OPENAI_INPUT_MAX_CHARS", "12000"))
 CONTEXT_TOKEN_LIMIT = int(os.getenv("CONTEXT_TOKEN_LIMIT", "8192"))
-CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "1536"))
+CONTEXT_OUTPUT_RESERVE_TOKENS = int(os.getenv("CONTEXT_OUTPUT_RESERVE_TOKENS", "1024"))
+# Conservative defaults for the CPU-local model. Override per workload when a task genuinely needs more context.
 # Shared run/agent/turn token budgets enforced by jarvis-core.
-TOKEN_RUN_INPUT_LIMIT = int(os.getenv("TOKEN_RUN_INPUT_LIMIT", "120000"))
-TOKEN_RUN_OUTPUT_LIMIT = int(os.getenv("TOKEN_RUN_OUTPUT_LIMIT", "12000"))
-TOKEN_TURN_INPUT_LIMIT = int(os.getenv("TOKEN_TURN_INPUT_LIMIT", "32000"))
-TOKEN_TURN_OUTPUT_LIMIT = int(os.getenv("TOKEN_TURN_OUTPUT_LIMIT", "4096"))
-TOKEN_AGENT_INPUT_LIMIT = int(os.getenv("TOKEN_AGENT_INPUT_LIMIT", "80000"))
-TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "8000"))
+TOKEN_RUN_INPUT_LIMIT = int(os.getenv("TOKEN_RUN_INPUT_LIMIT", "48000"))
+TOKEN_RUN_OUTPUT_LIMIT = int(os.getenv("TOKEN_RUN_OUTPUT_LIMIT", "4000"))
+TOKEN_TURN_INPUT_LIMIT = int(os.getenv("TOKEN_TURN_INPUT_LIMIT", "12000"))
+TOKEN_TURN_OUTPUT_LIMIT = int(os.getenv("TOKEN_TURN_OUTPUT_LIMIT", "1536"))
+TOKEN_AGENT_INPUT_LIMIT = int(os.getenv("TOKEN_AGENT_INPUT_LIMIT", "32000"))
+TOKEN_AGENT_OUTPUT_LIMIT = int(os.getenv("TOKEN_AGENT_OUTPUT_LIMIT", "3000"))
 # Finance answers need room for a compact evidence summary plus scenarios.
 # Kept separate so normal Code/Quick responses remain fast on CPU.
 FINANCE_MAX_COMPLETION_TOKENS = int(os.getenv("FINANCE_MAX_COMPLETION_TOKENS", "1024"))
