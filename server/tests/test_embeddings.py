@@ -13,15 +13,13 @@ def test_bounded_embedding_text_preserves_head_and_tail():
     assert len(bounded) < 1_100
 
 
-def test_create_embedding_sends_bounded_input_to_inference_gateway(monkeypatch):
-    response = Mock()
-    response.raise_for_status.return_value = None
-    response.json.return_value = {
+def test_create_embedding_uses_shared_core_client(monkeypatch):
+    core_client = Mock()
+    core_client.embeddings.return_value = {
         "data": [{"embedding": [0.1, 0.2], "index": 0}],
         "model": "nomic-embed-text",
     }
-    post = Mock(return_value=response)
-    monkeypatch.setattr(embeddings._session, "post", post)
+    monkeypatch.setattr(embeddings, "_get_client", lambda: core_client)
     monkeypatch.setattr(embeddings, "INFERENCE_BASE_URL", "http://inference:8080/v1")
     monkeypatch.setattr(embeddings, "INFERENCE_API_KEY", "secret")
     monkeypatch.setattr(embeddings, "EMBED_MAX_CHARS", 100)
@@ -29,9 +27,11 @@ def test_create_embedding_sends_bounded_input_to_inference_gateway(monkeypatch):
     result = embeddings.create_embedding("x" * 1_000)
 
     assert result == [0.1, 0.2]
-    assert post.call_args.args[0] == "http://inference:8080/v1/embeddings"
-    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer secret"
-    assert len(post.call_args.kwargs["json"]["input"]) < 200
+    kwargs = core_client.embeddings.call_args.kwargs
+    assert kwargs["model"] == "nomic-embed-text"
+    assert kwargs["encoding_format"] == "float"
+    assert kwargs["timeout"] == embeddings.EMBEDDING_TIMEOUT_SECONDS
+    assert len(kwargs["inputs"]) < 200
 
 
 def test_create_embedding_requires_gateway(monkeypatch):

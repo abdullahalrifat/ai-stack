@@ -24,7 +24,7 @@ COPY app ./app
 COPY evals ./evals
 
 RUN python -m compileall app
-RUN python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.16.2'"
+RUN python -c "import importlib.metadata as m; assert m.version('jarvis-agent-core') == '0.17.0'"
 RUN mkdir -p /workspace
 
 EXPOSE 8000

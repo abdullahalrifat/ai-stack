@@ -3,9 +3,9 @@ import os
 import queue
 import threading
 import time
+from types import SimpleNamespace
 
-import requests
-from openai import OpenAI
+from jarvis_core import InferenceClient, InferenceClientError, InferenceConfig
 
 from ..core.cancellation import (
     has_cancellation_context,
@@ -28,17 +28,81 @@ from ..core.exceptions import RunCancelled
 logger = logging.getLogger(__name__)
 
 _client = None
+_inference_client: InferenceClient | None = None
 _model_cache: dict = {"models": None, "fetched_at": 0.0}
 _llm_slots = threading.BoundedSemaphore(MAX_CONCURRENT_LLM_CALLS)
+
+
+def _to_namespace(value):
+    """Adapt Core's provider-neutral JSON payloads to legacy call-site shapes."""
+    if isinstance(value, dict):
+        return SimpleNamespace(
+            **{key: _to_namespace(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return [_to_namespace(item) for item in value]
+    return value
+
+
+class _CoreCompletions:
+    def __init__(self, client: InferenceClient):
+        self._client = client
+
+    def create(self, **kwargs):
+        stream = bool(kwargs.pop("stream", False))
+        timeout = kwargs.pop("timeout", None)
+        model = kwargs.pop("model")
+        messages = kwargs.pop("messages")
+        tools = kwargs.pop("tools", None)
+        max_tokens = kwargs.pop("max_tokens", None)
+        if stream:
+            return (
+                _to_namespace(chunk)
+                for chunk in self._client.stream(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    **kwargs,
+                )
+            )
+        return _to_namespace(
+            self._client.complete(
+                model=model,
+                messages=messages,
+                tools=tools,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                **kwargs,
+            )
+        )
+
+
+class _CoreInferenceAdapter:
+    """Preserve the app's small OpenAI-shaped call surface over Core transport."""
+
+    def __init__(self, client: InferenceClient):
+        self._client = client
+        self.chat = SimpleNamespace(
+            completions=_CoreCompletions(client)
+        )
+
+    def list_models(self):
+        return self._client.list_models()
 
 
 def _is_transient_error(exc: BaseException) -> bool:
     """True when a retry could plausibly succeed: transport hiccups, timeouts,
     rate limits, and gateway 5xx. Model-not-found and logic errors are not."""
-    if isinstance(exc, (ConnectionError, TimeoutError)):
-        return True
     if isinstance(exc, RunCancelled):
         return False
+    if isinstance(exc, InferenceClientError):
+        # Do not replay requests after a transport timeout: Ollama may still be
+        # generating the original response on its single inference queue.
+        return exc.status_code in (408, 429, 500, 502, 503, 504)
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
     status = getattr(exc, "status_code", None)
     if status is None:
         response = getattr(exc, "response", None)
@@ -134,22 +198,27 @@ def _llm_endpoint() -> tuple[str, str]:
     return base_url, api_key
 
 
-def get_client():
-
-    global _client
-
-    if _client is None:
+def _get_inference_client() -> InferenceClient:
+    global _inference_client
+    if _inference_client is None:
         base_url, api_key = _llm_endpoint()
-        _client = OpenAI(
-            base_url=base_url,
-            api_key=api_key,
-            # Retrying a timed-out local inference request duplicates work on
-            # Ollama's single queue, making every subsequent response slower.
-            max_retries=0,
+        _inference_client = InferenceClient(
+            InferenceConfig(
+                base_url=base_url,
+                api_key=api_key,
+                timeout=LLM_TIMEOUT_SECONDS,
+                user_agent="ai-stack-server",
+            )
         )
+    return _inference_client
 
+
+def get_client():
+    """Return the shared Core transport behind the existing app call surface."""
+    global _client
+    if _client is None:
+        _client = _CoreInferenceAdapter(_get_inference_client())
     return _client
-
 
 def resolve_agent_model(model: str | None):
 
@@ -177,17 +246,11 @@ def get_available_models(force_refresh: bool = False):
     ):
         return _model_cache["models"]
 
-    base_url, api_key = _llm_endpoint()
-    response = requests.get(
-        f"{base_url}/models",
-        headers={"Authorization": f"Bearer {api_key}"},
-        timeout=10,
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-    models = [item["id"] for item in data["data"]]
+    models = [
+        str(item["id"])
+        for item in _get_inference_client().list_models()
+        if item.get("id")
+    ]
 
     _model_cache["models"] = models
     _model_cache["fetched_at"] = now

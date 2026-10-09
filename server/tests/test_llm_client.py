@@ -97,18 +97,33 @@ def test_plain_completion_accepts_operation_specific_timeout(_available):
     assert completion.call_args.kwargs["timeout"] == 240
 
 
-@patch("app.llm.client.OpenAI")
-def test_client_disables_sdk_retries_for_inference_gateway(openai, monkeypatch):
+@patch("app.llm.client.InferenceClient")
+def test_client_uses_shared_core_inference_transport(inference_client, monkeypatch):
     monkeypatch.setenv("INFERENCE_BASE_URL", "http://inference:8080/v1")
     monkeypatch.setenv("INFERENCE_API_KEY", "secret")
-    previous = client._client
+    previous_client = client._client
+    previous_inference_client = client._inference_client
     client._client = None
+    client._inference_client = None
     try:
         client.get_client()
     finally:
-        client._client = previous
+        client._client = previous_client
+        client._inference_client = previous_inference_client
 
-    assert openai.call_args.kwargs["max_retries"] == 0
+    config = inference_client.call_args.args[0]
+    assert config.base_url == "http://inference:8080/v1"
+    assert config.api_key == "secret"
+    assert config.user_agent == "ai-stack-server"
+
+
+def test_core_inference_timeouts_are_not_retried():
+    error = client.InferenceClientError("read timed out", retryable=True)
+    assert not client._is_transient_error(error)
+    for status in (408, 429, 500, 502, 503, 504):
+        assert client._is_transient_error(
+            client.InferenceClientError("gateway error", status_code=status)
+        )
 
 
 @patch("app.llm.client._ensure_model_available")

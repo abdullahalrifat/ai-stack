@@ -2,9 +2,9 @@
 
 ## Current contract line
 
-AI Stack consumes the provider-neutral **Jarvis Core 0.16.2** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes the provider-neutral **Jarvis Core 0.17.0** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
-Jarvis Core 0.16.2 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
+Jarvis Core 0.17.0 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
 AI Stack Server is an optional durable, self-hosted control plane for long-running remote agent execution. It is independent of the standalone Jarvis CLI; both are consumers of the dedicated jarvis-inference API.
 
@@ -14,15 +14,15 @@ AI Stack Server is an optional durable, self-hosted control plane for long-runni
 - `runs-ui/`: run, evidence and approval interface;
 - PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
-- dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API; Jarvis CLI and AI Stack are sibling consumers of this API;
+- dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API;
 - `contracts/`: versioned Server client protocol;
-- `jarvis-agent-core` **0.16.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
+- `jarvis-agent-core` **0.17.0**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
 
 Server requirements, lockfile, Docker image and CI assert the same Core version.
 
 ## Token-efficient and empirical routing
 
-Core 0.16.2 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
+Core 0.17.0 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
 
 The calibration path is deliberately conservative: minimum samples, a quality floor and recency weighting must be satisfied before measured evidence can change automatic routing. When evidence is insufficient, existing health/benchmark routing remains the fallback.
 
@@ -134,20 +134,11 @@ The internal Docker URL for the agent API is `http://server:8000`; `8081` is the
 
 ### Jarvis CLI integration
 
-Jarvis is the user-facing client. Normal repository work uses AI Stack, which calls jarvis-inference only when model inference is required.
+Jarvis CLI and AI Stack are sibling clients of `jarvis-inference`; AI Stack is **not required** for local repository work. With Jarvis 0.11.0, ordinary bare-task commands run the agent loop and tools locally and send model requests directly to the inference gateway.
 
-On the Jarvis machine:
+For direct local work, configure the Jarvis machine with `INFERENCE_BASE_URL=http://<inference-host>:8080/v1`, `INFERENCE_API_KEY`, and optionally `JARVIS_MODEL=qwen3:1.7b`. Run `jarvis model-doctor`, then `jarvis "review this repository"`.
 
-```bash
-export AI_STACK_BASE_URL=http://<ai-stack-host>:8081
-export AI_STACK_API_KEY='<the AGENT_API_KEY from ai-stack .env>'
-export JARVIS_MODEL=qwen3:1.7b
-
-jarvis model-doctor
-jarvis "review this repository and fix the highest-impact issue"
-```
-
-AI Stack exposes its authenticated model catalog at `/models/available`; Jarvis uses that endpoint when validating the configured concrete model. Do not give Jarvis inference credentials for normal operation. Direct jarvis-inference access is reserved for diagnostics/developer tooling.
+Use AI Stack only when you explicitly want durable remote Runs, shared queues, persisted history, retrieval, integrations, or the Runs UI. Configure `AI_STACK_BASE_URL=http://<ai-stack-host>:8081` and `AI_STACK_API_KEY` (the AI Stack `AGENT_API_KEY`), then invoke `jarvis run ...` or `jarvis cloud ...`. AI Stack's API root does not include `/v1`; the private inference gateway URL does.
 
 ## Offline / off-grid operation
 
@@ -177,7 +168,7 @@ Provider credentials stay on execution hosts and are not embedded in cloud task 
 
 ## Validation and certification
 
-The current 0.16.1 Core common-brain contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-workload evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
+The current 0.17.0 Core common-brain contract line has executable validation for Server tests, UI tests/build, PostgreSQL durable lease/fencing integration, Compose runner readiness/isolation reporting, cross-repository Core protocol conformance, real-workload evaluation, adversarial secret-canary/prompt-injection coverage, distributed chaos coverage and cloud sandbox policy checks. These gates establish tested contract health; they are not a claim that every model or hardware configuration is production-certified.
 
 Remaining certification work is retained longitudinal model-quality measurement, hardware-specific soak testing, fully reproducible offline/bootstrap validation and backup/restore/disaster-recovery exercises.
 
@@ -210,18 +201,18 @@ See [TODO.md](TODO.md) for prioritized maturity tracking.
 See [.env.example](.env.example) for the configuration surface.
 
 
-## Jarvis integration
+## Request paths and ownership
 
-Jarvis is the user-facing CLI and AI Stack is its control plane. Configure the Jarvis machine with `AI_STACK_BASE_URL` and `AI_STACK_API_KEY` (the same secret configured as AI Stack `AGENT_API_KEY`). Jarvis should not connect directly to Ollama for normal operation.
-
-The request path is:
+Local coding (Jarvis 0.11.0 default):
 
 ```text
-Jarvis CLI
-  -> AI Stack
-     -> tools / memory / RAG / orchestration
-     -> jarvis-inference (only when model inference is needed)
-        -> Ollama
+Jarvis CLI (local agent loop and tools) -> jarvis-inference -> Ollama
 ```
 
-AI Stack owns model routing and embeddings configuration. `jarvis-inference` is the only service that runs Ollama and owns model lifecycle.
+Explicit remote Runs:
+
+```text
+Jarvis CLI -> AI Stack (durable Runs, tools, memory/RAG, orchestration) -> jarvis-inference -> Ollama
+```
+
+Jarvis CLI and AI Stack are independent consumers of the shared inference API. AI Stack owns server-side orchestration, memory/retrieval, durable state and embeddings integration; `jarvis-inference` alone owns model execution and Ollama lifecycle. For direct local Jarvis use, set `INFERENCE_BASE_URL` and `INFERENCE_API_KEY`; for remote Runs, set `AI_STACK_BASE_URL` and `AI_STACK_API_KEY` and explicitly run `jarvis run` or `jarvis cloud`.
