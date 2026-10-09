@@ -52,4 +52,4 @@ For standalone Jarvis, use the same `INFERENCE_BASE_URL` and `INFERENCE_API_KEY`
 4. Run `scripts/preflight.sh` and `scripts/deploy.sh` for AI Stack.
 5. Verify each consumer independently; local Jarvis should work with AI Stack stopped.
 
-Keep TCP 8080 restricted to trusted private-network clients. Keep Ollama port 11434 internal and unpublished.
+Keep TCP 8080 restricted to trusted private-network clients. The gateway must have `INFERENCE_API_KEY` configured; startup fails closed when it is absent unless the explicit `INFERENCE_ALLOW_INSECURE_NO_AUTH=true` development override is set. Keep Ollama port 11434 internal and unpublished. A caller timeout does not prove generation stopped: ambiguous read timeouts must not be automatically replayed, because the original generation may still occupy the single inference slot.
