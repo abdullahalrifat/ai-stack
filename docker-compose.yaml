@@ -43,12 +43,9 @@ services:
   ## Qdrant
   ####################################################
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.19.2
     container_name: qdrant
     restart: unless-stopped
-
-    ports:
-      - "6333:6333"
 
     volumes:
       - ./qdrant:/qdrant/storage
@@ -60,7 +57,7 @@ services:
   ## Private web-search metasearch service
   ####################################################
   searxng:
-    image: searxng/searxng:latest
+    image: ${SEARXNG_IMAGE:?Set SEARXNG_IMAGE to a reviewed immutable version or digest}
     container_name: searxng
     restart: unless-stopped
 
@@ -80,12 +77,9 @@ services:
   ## Pipelines
   ####################################################
   pipelines:
-    image: ghcr.io/open-webui/pipelines:main
+    image: ${PIPELINES_IMAGE:?Set PIPELINES_IMAGE to a reviewed immutable version or digest}
     container_name: pipelines
     restart: unless-stopped
-
-    ports:
-      - "9099:9099"
 
     environment:
       PIPELINES_API_KEY: ${PIPELINES_API_KEY}
