@@ -1,8 +1,9 @@
-# Open WebUI is intentionally disabled in the primary deployment.
-#
-# To restore it, copy this service definition back into docker-compose.yaml
-# (or use this file as an override) and ensure its dependencies are running.
-# The persistent data directory is preserved at ./open-webui.
+# Optional Open WebUI service. This service is intentionally excluded from the default deployment.
+# Start it after the core stack with:
+# docker compose -f docker-compose.yaml -f docker-compose.open-webui.yaml up -d open-webui
+# Stop only the UI with:
+# docker compose -f docker-compose.yaml -f docker-compose.open-webui.yaml stop open-webui
+# Persistent data is preserved in ./open-webui.
 
 services:
 
