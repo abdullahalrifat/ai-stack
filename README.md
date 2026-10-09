@@ -2,11 +2,11 @@
 
 ## Current contract line
 
-AI Stack consumes the provider-neutral **Jarvis Core 0.16.1** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes the provider-neutral **Jarvis Core 0.16.2** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
-Jarvis Core 0.16.1 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
+Jarvis Core 0.16.2 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
-AI Stack Server is the durable, self-hosted control plane for long-running agent execution.
+AI Stack Server is an optional durable, self-hosted control plane for long-running remote agent execution. It is independent of the standalone Jarvis CLI; both are consumers of the dedicated jarvis-inference API.
 
 ## Components
 
@@ -14,7 +14,7 @@ AI Stack Server is the durable, self-hosted control plane for long-running agent
 - `runs-ui/`: run, evidence and approval interface;
 - PostgreSQL/Redis/Qdrant: durable state, coordination and retrieval;
 - SearXNG: optional self-hosted current-information search;
-- dedicated `jarvis-inference` VM for all model execution, including embeddings;
+- dedicated `jarvis-inference` VM for all model execution, including embeddings; Jarvis CLI and AI Stack are sibling consumers of this API; Jarvis CLI and AI Stack are sibling consumers of this API;
 - `contracts/`: versioned Server client protocol;
 - `jarvis-agent-core` **0.16.1**: separately versioned provider-neutral common brain for runtime contracts, capabilities, approvals, sandbox requirements, token/cost estimation, route budgets, empirical observations and conservative calibration.
 
@@ -22,7 +22,7 @@ Server requirements, lockfile, Docker image and CI assert the same Core version.
 
 ## Token-efficient and empirical routing
 
-Core 0.16.1 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
+Core 0.16.2 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
 
 The calibration path is deliberately conservative: minimum samples, a quality floor and recency weighting must be satisfied before measured evidence can change automatic routing. When evidence is insufficient, existing health/benchmark routing remains the fallback.
 
