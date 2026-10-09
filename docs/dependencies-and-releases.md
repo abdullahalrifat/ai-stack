@@ -19,7 +19,7 @@ Core change
 
 ## Current release
 
-The current coordinated consumer release is **Jarvis Core 0.17.0**, consumed by the current Jarvis 0.11.0 line. Core provides the shared inference gateway client and provider-neutral runtime/routing contracts. Verify `server/requirements.lock`, the installed wheel metadata, and the exact deployed commit before release certification.
+The current coordinated consumer release is **Jarvis Core 0.17.1**, consumed by the current Jarvis 0.11.0 line. Core provides the shared inference gateway client and provider-neutral runtime/routing contracts. The coordinated inference gateway target is `jarvis-inference` 0.3.1; ensure its `v0.3.1` release image is published and deployed before production rollout. Verify `server/requirements.lock`, installed wheel metadata, gateway release/image digest, and exact deployed commit before release certification.
 
 ## Architecture ownership
 
