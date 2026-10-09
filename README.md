@@ -2,7 +2,7 @@
 
 ## Current contract line
 
-AI Stack consumes the provider-neutral **Jarvis Core 0.17.2** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
+AI Stack consumes the provider-neutral **Jarvis Core 0.17.1** common-brain runtime contracts and reusable efficiency/calibration primitives. It does not install or require the standalone CLI. The runner API can start independently of optional network-namespace capability, reports isolation availability explicitly, and keeps isolated commands fail-closed when that capability is unavailable.
 
 Jarvis Core 0.17.2 is now published as an immutable PyPI release. Server requirements, the lockfile, Docker image and CI all pin that exact release.
 
