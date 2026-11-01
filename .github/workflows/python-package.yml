@@ -56,7 +56,7 @@ jobs:
         run: python ../scripts/write_certification_manifest.py ../certification-evidence.json
       - name: Upload certification evidence manifest
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: certification-evidence-${{ github.sha }}-server
           path: certification-evidence.json

@@ -62,7 +62,7 @@ jobs:
         run: python scripts/worker_soak.py --url http://127.0.0.1:8765 --hours 0.001 --interval 1 --readiness --report worker-soak-smoke.json
       - name: Upload smoke evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: worker-soak-smoke-${{ github.sha }}
           path: worker-soak-smoke.json
@@ -88,7 +88,7 @@ jobs:
         run: python scripts/worker_soak.py --url "$AI_STACK_SOAK_URL" --hours "$SOAK_HOURS" --interval 30 --readiness --report worker-soak-report.json
       - name: Upload retained staging evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: worker-soak-${{ github.sha }}
           path: worker-soak-report.json
