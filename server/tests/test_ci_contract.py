@@ -3,6 +3,7 @@ from pathlib import Path
 CORE_VERSION = "0.17.3"
 
 
+
 def test_efficiency_defaults_are_consistent_across_config_and_compose():
     root = Path(__file__).parents[2]
     config = (root / "server/app/core/config.py").read_text(encoding="utf-8")
