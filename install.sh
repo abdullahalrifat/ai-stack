@@ -10,7 +10,7 @@ cd "$SCRIPT_DIR"
 
 COMPOSE=(docker compose)
 BUILD_SERVICES=(server runs-ui)
-DEPENDENCY_SERVICES=(postgres redis qdrant searxng pipelines)
+DEPENDENCY_SERVICES=(postgres redis qdrant searxng)
 
 log() {
   printf '[install] %s\n' "$*"

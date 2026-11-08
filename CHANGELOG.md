@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.9.1
+
+- Consume the published Jarvis Core 0.17.3 release and align server requirements, lockfile, image assertions, CI, tests and current documentation.
+- Keep Core-owned queue-rejection retries bounded and avoid replaying ambiguous inference timeouts or partially delivered streams at the orchestration layer.
+
+
+## 3.9.0
+
+- Consume the published Jarvis Core 0.17.3 release and align requirements, lockfile, image build, CI and release documentation.
+
+- Lower default run, turn, agent, tool-output and completion budgets for CPU-local inference; keep every budget configurable.
+- Keep Jarvis CLI and AI Stack as independent inference clients.
+- Preserve the published Core dependency; ambiguous timeouts are not retried by the AI Stack orchestration layer.
+
+
 ## 3.8.0
 
 - Pin the published Jarvis Core 0.17.1 release in server requirements, lockfile, image build and CI.
