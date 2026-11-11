@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.9.3
+
+- Consume the published Jarvis Core 0.17.4 release (ledger reservation cleanup, bounded retry sleeps with a total retry deadline, OpenAI JSON-string tool-call decoding, reserved `model`/`stream` option guard) and align server requirements, lockfile, Docker validation, CI assertions and release documentation.
+
+
 ## 3.9.2
 
 - Serialize cold-boot schema migrations with a session-level advisory lock so concurrent replicas no longer race past the applied-set check and PK-conflict on `agent_schema_migrations`.
