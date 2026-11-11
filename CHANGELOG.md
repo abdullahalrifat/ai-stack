@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.9.2
+
+- Serialize cold-boot schema migrations with a session-level advisory lock so concurrent replicas no longer race past the applied-set check and PK-conflict on `agent_schema_migrations`.
+- Make channel webhook run creation exactly-once: the event claim, run row and queued event now share one transaction, so concurrent webhook retries can no longer create and execute duplicate runs.
+- Retry clean connection failures reported by the Core inference client (`status_code=None`, `retryable=True`) at the orchestration layer; ambiguous timeouts stay non-replayable.
+- Require authentication on `GET /models/available`, which mutates the shared model cache.
+- Whitelist the `agent_runs` columns assignable through `update_run()` instead of interpolating arbitrary field names into SQL.
+
+
 ## 3.9.1
 
 - Consume the published Jarvis Core 0.17.3 release and align server requirements, lockfile, image assertions, CI, tests and current documentation.

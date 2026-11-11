@@ -382,6 +382,21 @@ def test_available_models_is_a_public_gateway_catalog():
         assert routes.available_models() == {"models": ["qwen3:4b"]}
 
 
+def test_available_models_route_requires_authentication():
+    # AS-8: the catalog GET mutates the shared model cache, so it must
+    # not be reachable by unauthenticated traffic.
+    route = next(
+        item
+        for item in routes.router.routes
+        if getattr(item, "path", None) == "/models/available"
+    )
+
+    assert any(
+        getattr(dependency, "dependency", None) is dependencies.verify_api_key
+        for dependency in route.dependencies
+    )
+
+
 def test_inference_probe_uses_configured_embedding_timeout(monkeypatch):
     calls = []
 

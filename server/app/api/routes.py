@@ -815,12 +815,14 @@ def inference_probe(model: str | None = None):
     return result
 
 
-@router.get("/models/available")
+@router.get("/models/available", dependencies=[Depends(verify_api_key)])
 def available_models():
-    """Public, non-sensitive catalog for the Task Router model selector.
+    """Authenticated catalog for the Task Router model selector.
 
-    Starting a run and all run data remain authenticated; this endpoint only
-    returns gateway model aliases and never exposes credentials or settings.
+    The call is authenticated (AS-8): it mutates the shared model cache
+    (and can force a gateway round trip), so it must not be invocable by
+    unauthenticated traffic. It returns only gateway model aliases and
+    never exposes credentials or settings.
     """
     try:
         return {"models": get_available_models()}

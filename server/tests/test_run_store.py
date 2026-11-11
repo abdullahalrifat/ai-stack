@@ -1,7 +1,14 @@
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
-from app.runs.store import MIGRATIONS_DIR, RUN_WORKER_LEASE_SECONDS, RunStore
+import pytest
+
+from app.runs.store import (
+    MIGRATION_ADVISORY_LOCK_KEY,
+    MIGRATIONS_DIR,
+    RUN_WORKER_LEASE_SECONDS,
+    RunStore,
+)
 
 
 def store_with_cursor(cursor):
@@ -59,9 +66,17 @@ def test_initialize_applies_versioned_migrations_once():
 
     executed = [call.args[0] for call in cursor.execute.call_args_list]
     assert any("CREATE TABLE IF NOT EXISTS agent_runs" in query for query in executed)
+    # AS-2: migrations run under a session-level advisory lock and the
+    # lock is released before the pooled connection is returned.
+    assert any("pg_advisory_lock" in query for query in executed)
     assert cursor.execute.call_args_list[-1].args == (
-        "INSERT INTO agent_schema_migrations (version) VALUES (%s)",
-        ("009",),
+        "SELECT pg_advisory_unlock(%s)",
+        (MIGRATION_ADVISORY_LOCK_KEY,),
+    )
+    assert any(
+        call.args
+        == ("INSERT INTO agent_schema_migrations (version) VALUES (%s)", ("009",))
+        for call in cursor.execute.call_args_list
     )
     assert (MIGRATIONS_DIR / "001_initial.sql").is_file()
     assert (MIGRATIONS_DIR / "002_client_leases.sql").is_file()
@@ -72,6 +87,21 @@ def test_initialize_applies_versioned_migrations_once():
     assert (MIGRATIONS_DIR / "007_agent_platform.sql").is_file()
     assert (MIGRATIONS_DIR / "008_efficiency_reliability.sql").is_file()
     assert (MIGRATIONS_DIR / "009_autonomous_runtime.sql").is_file()
+
+
+def test_initialize_releases_the_advisory_lock_when_a_migration_fails():
+    # A failed migration must not strand the session-level lock on the
+    # pooled connection (AS-2).
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    cursor.execute.side_effect = [None, None, Exception("bad migration")]
+    store = store_with_cursor(cursor)
+
+    with pytest.raises(Exception):
+        store.initialize()
+
+    executed = [call.args[0] for call in cursor.execute.call_args_list]
+    assert any("pg_advisory_unlock" in query for query in executed)
 
 
 def test_heartbeat_requires_the_current_worker():
@@ -231,3 +261,93 @@ def test_terminal_sandbox_reconciliation_is_bounded_and_repeatable():
     assert "status IN ('failed', 'cancelled', 'discarded', 'completed')" in query
     assert "sandbox_path IS NOT NULL" in query
     assert params == (5,)
+
+
+def test_create_channel_run_claims_event_and_run_atomically():
+    # AS-3: the previous check-then-insert flow let two concurrent webhook
+    # retries both create a run; now the claim, run row, and queued event
+    # share one transaction and only the INSERT winner creates the run.
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"provider": "web"}
+    store = store_with_cursor(cursor)
+
+    run_id, created = store.create_channel_run(
+        provider="web",
+        event_id="evt-1",
+        identity="web-user",
+        payload={"task": "hi"},
+        task="hi",
+        model="qwen3:4b",
+        workspace="/tmp/ws",
+    )
+
+    assert created is True
+    executed = [call.args[0] for call in cursor.execute.call_args_list]
+    assert any(
+        "ON CONFLICT (provider, event_id) DO NOTHING" in query and "RETURNING" in query
+        for query in executed
+    )
+    assert any("INSERT INTO agent_runs" in query for query in executed)
+    assert any(
+        "UPDATE agent_channel_events SET run_id=%s" in query for query in executed
+    )
+    # Exactly one agent_runs insert on the same cursor (single transaction).
+    assert sum("INSERT INTO agent_runs" in query for query in executed) == 1
+
+
+def test_create_channel_run_loser_never_creates_a_duplicate_run():
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [None, {"run_id": "run-winner"}]
+    store = store_with_cursor(cursor)
+
+    run_id, created = store.create_channel_run(
+        provider="telegram",
+        event_id="evt-2",
+        identity="chat-1",
+        payload={"update_id": 2},
+        task="hi",
+        model="qwen3:4b",
+        workspace="/tmp/ws",
+    )
+
+    assert (run_id, created) == ("run-winner", False)
+    executed = [call.args[0] for call in cursor.execute.call_args_list]
+    assert not any("INSERT INTO agent_runs" in query for query in executed)
+
+
+def test_create_channel_run_refuses_legacy_orphan_event_row():
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [None, {"run_id": None}]
+    store = store_with_cursor(cursor)
+
+    with pytest.raises(RuntimeError):
+        store.create_channel_run(
+            provider="telegram",
+            event_id="evt-3",
+            identity="chat-1",
+            payload={},
+            task="hi",
+            model="qwen3:4b",
+            workspace="/tmp/ws",
+        )
+
+
+def test_update_run_whitelists_columns():
+    cursor = MagicMock()
+    store = store_with_cursor(cursor)
+
+    store.update_run("run-1", status="completed", answer="done")
+
+    query, params = cursor.execute.call_args.args
+    assert (
+        query
+        == "UPDATE agent_runs SET status = %s, answer = %s, updated_at = %s WHERE id = %s"
+    )
+    assert params[0] == "completed" and params[1] == "done" and params[-1] == "run-1"
+
+
+def test_update_run_rejects_unknown_columns():
+    store = store_with_cursor(MagicMock())
+
+    with pytest.raises(ValueError, match="task_text"):
+        store.update_run("run-1", task_text="DROP TABLE agent_runs")
