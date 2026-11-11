@@ -120,9 +120,11 @@ def test_client_uses_shared_core_inference_transport(inference_client, monkeypat
 def test_core_inference_timeouts_are_not_retried():
     # A timeout may mean the backend is still generating; replaying can enqueue
     # duplicate expensive work on the single-generation local gateway.
+    # Core classifies ambiguous read timeouts as retryable=False with no
+    # HTTP status, so the flag must be honored at status_code=None (AS-4).
     for status in (None, 408, 504):
         error = client.InferenceClientError(
-            "read timed out", retryable=True, status_code=status
+            "read timed out", retryable=False, status_code=status
         )
         assert not client._is_transient_error(error)
     assert not client._is_transient_error(TimeoutError("read timed out"))
@@ -130,6 +132,23 @@ def test_core_inference_timeouts_are_not_retried():
         assert client._is_transient_error(
             client.InferenceClientError("gateway error", status_code=status)
         )
+
+
+def test_core_connection_failures_are_retried_when_core_says_retryable():
+    # AS-4: Core wraps clean connection failures as
+    # InferenceClientError(status_code=None, retryable=True). The old
+    # status-code-only check never retried them despite both layers'
+    # stated intent.
+    assert client._is_transient_error(
+        client.InferenceClientError(
+            "Could not reach inference endpoint", retryable=True, status_code=None
+        )
+    )
+    # An explicit non-retryable transport error stays non-retryable even
+    # without a status code.
+    assert not client._is_transient_error(
+        client.InferenceClientError("rejected", retryable=False, status_code=None)
+    )
 
 
 def test_generic_timeout_exception_is_not_retried():

@@ -1,5 +1,7 @@
 """Durable PostgreSQL storage for agent runs and their observable events."""
 
+from __future__ import annotations
+
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -14,6 +16,31 @@ from psycopg_pool import ConnectionPool
 from ..core.config import POSTGRES_URL, RUN_WORKER_LEASE_SECONDS
 
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
+
+# Session-level advisory lock serializing cold-boot migrations across
+# replicas (AS-2). The value is arbitrary but fixed; it only needs to be
+# the same key in every server process of this application.
+MIGRATION_ADVISORY_LOCK_KEY = 0x6A6172766973  # b"jarvis"
+
+# Columns of agent_runs that update_run() may assign (AS-9). Everything
+# else must go through a dedicated, parameterized method — update_run()
+# previously interpolated arbitrary **fields keys into the SQL text.
+RUN_UPDATE_COLUMNS = frozenset(
+    {
+        "active_workspace",
+        "answer",
+        "base_commit",
+        "checkpoint",
+        "completed_at",
+        "error",
+        "lease_expires_at",
+        "repository_path",
+        "sandbox_path",
+        "status",
+        "updated_at",
+        "worker_id",
+    }
+)
 
 
 def _postgres_safe_json(value):
@@ -65,16 +92,29 @@ class RunStore:
                        version TEXT PRIMARY KEY,
                        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                    )""")
-            cursor.execute("SELECT version FROM agent_schema_migrations")
-            applied = {str(row["version"]) for row in cursor.fetchall()}
-            for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
-                version = migration.stem.split("_", 1)[0]
-                if version in applied:
-                    continue
-                cursor.execute(migration.read_text())
+            # Serialize migration across replicas (AS-2): concurrent cold
+            # boots would otherwise race past the applied-set check and
+            # PK-conflict on agent_schema_migrations. The lock is held on
+            # this pooled session and released before the connection
+            # returns to the pool.
+            cursor.execute(
+                "SELECT pg_advisory_lock(%s)", (MIGRATION_ADVISORY_LOCK_KEY,)
+            )
+            try:
+                cursor.execute("SELECT version FROM agent_schema_migrations")
+                applied = {str(row["version"]) for row in cursor.fetchall()}
+                for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                    version = migration.stem.split("_", 1)[0]
+                    if version in applied:
+                        continue
+                    cursor.execute(migration.read_text())
+                    cursor.execute(
+                        "INSERT INTO agent_schema_migrations (version) VALUES (%s)",
+                        (version,),
+                    )
+            finally:
                 cursor.execute(
-                    "INSERT INTO agent_schema_migrations (version) VALUES (%s)",
-                    (version,),
+                    "SELECT pg_advisory_unlock(%s)", (MIGRATION_ADVISORY_LOCK_KEY,)
                 )
 
     def create_run(
@@ -92,35 +132,69 @@ class RunStore:
     ) -> str:
         run_id = str(uuid.uuid4())
         with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """INSERT INTO agent_runs
-                   (id, status, task, model, requested_workspace, conversation_id,
-                    document_scope, project_id, allow_write, client_id,
-                    client_lease_expires_at, client_lease_renewed_at)
-                   VALUES (
-                     %s, 'queued', %s, %s, %s, %s, %s, %s, %s, %s,
-                     CASE WHEN %s::text IS NULL THEN NULL
-                          ELSE NOW() + (%s * INTERVAL '1 second')
-                     END,
-                     CASE WHEN %s::text IS NULL THEN NULL ELSE NOW() END
-                   )""",
-                (
-                    run_id,
-                    task,
-                    model,
-                    workspace,
-                    conversation_id,
-                    document_scope,
-                    project_id,
-                    allow_write,
-                    client_id,
-                    client_id,
-                    max(10, client_lease_seconds),
-                    client_id,
-                ),
+            self._insert_run(
+                cursor,
+                run_id=run_id,
+                task=task,
+                model=model,
+                workspace=workspace,
+                conversation_id=conversation_id,
+                document_scope=document_scope,
+                project_id=project_id,
+                allow_write=allow_write,
+                client_id=client_id,
+                client_lease_seconds=client_lease_seconds,
             )
-        self.append_event(run_id, "queued", {"message": "Run queued"})
         return run_id
+
+    def _insert_run(
+        self,
+        cursor,
+        *,
+        run_id: str,
+        task: str,
+        model: str,
+        workspace: str,
+        conversation_id: str | None,
+        document_scope: str | None,
+        project_id: str | None,
+        allow_write: bool,
+        client_id: str | None = None,
+        client_lease_seconds: int = 30,
+    ) -> None:
+        """Insert the run row and its queued event inside the caller's transaction."""
+        cursor.execute(
+            """INSERT INTO agent_runs
+               (id, status, task, model, requested_workspace, conversation_id,
+                document_scope, project_id, allow_write, client_id,
+                client_lease_expires_at, client_lease_renewed_at)
+               VALUES (
+                 %s, 'queued', %s, %s, %s, %s, %s, %s, %s, %s,
+                 CASE WHEN %s::text IS NULL THEN NULL
+                      ELSE NOW() + (%s * INTERVAL '1 second')
+                 END,
+                 CASE WHEN %s::text IS NULL THEN NULL ELSE NOW() END
+               )""",
+            (
+                run_id,
+                task,
+                model,
+                workspace,
+                conversation_id,
+                document_scope,
+                project_id,
+                allow_write,
+                client_id,
+                client_id,
+                max(10, client_lease_seconds),
+                client_id,
+            ),
+        )
+        cursor.execute(
+            """INSERT INTO agent_run_events (run_id, event_type, payload)
+               VALUES (%s, 'queued', %s)""",
+            (run_id, Jsonb(_postgres_safe_json({"message": "Run queued"}))),
+        )
 
 
     def create_channel_run(
@@ -135,51 +209,60 @@ class RunStore:
         workspace: str,
         conversation_id: str | None = None,
     ) -> tuple[str, bool]:
-        """Create exactly one run for a retried channel webhook."""
+        """Create exactly one run for a retried channel webhook.
 
+        The event claim, the run row, and its queued event share one
+        transaction (AS-3): the previous check-then-insert flow let two
+        concurrent webhook retries both pass the existence check and both
+        call create_run, so a duplicate run was created and executed. Here
+        only the INSERT winner creates the run; the loser reads the
+        winner's run_id, which is guaranteed visible because its
+        ON CONFLICT waited for the winner's transaction to commit.
+        """
+        run_id = str(uuid.uuid4())
         with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """SELECT run_id FROM agent_channel_events
-                   WHERE provider=%s AND event_id=%s""",
-                (provider, event_id),
-            )
-            existing = cursor.fetchone()
-            if existing and existing["run_id"]:
-                return str(existing["run_id"]), False
             cursor.execute(
                 """INSERT INTO agent_channel_events
                    (provider, event_id, identity, payload)
                    VALUES (%s, %s, %s, %s)
-                   ON CONFLICT (provider, event_id) DO NOTHING""",
+                   ON CONFLICT (provider, event_id) DO NOTHING
+                   RETURNING provider""",
                 (provider, event_id, identity, Jsonb(_postgres_safe_json(payload))),
             )
-        run_id = self.create_run(
-            task=task,
-            model=model,
-            workspace=workspace,
-            conversation_id=conversation_id,
-            document_scope=None,
-            project_id=None,
-            allow_write=False,
-            client_id=f"{provider}:{identity}",
-        )
-        with self.connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """UPDATE agent_channel_events SET run_id=%s
-                   WHERE provider=%s AND event_id=%s AND run_id IS NULL
-                   RETURNING run_id""",
-                (run_id, provider, event_id),
-            )
-            updated = cursor.fetchone()
-            if updated:
+            claimed = cursor.fetchone() is not None
+            if claimed:
+                self._insert_run(
+                    cursor,
+                    run_id=run_id,
+                    task=task,
+                    model=model,
+                    workspace=workspace,
+                    conversation_id=conversation_id,
+                    document_scope=None,
+                    project_id=None,
+                    allow_write=False,
+                    client_id=f"{provider}:{identity}",
+                )
+                cursor.execute(
+                    """UPDATE agent_channel_events SET run_id=%s
+                       WHERE provider=%s AND event_id=%s""",
+                    (run_id, provider, event_id),
+                )
                 return run_id, True
             cursor.execute(
                 """SELECT run_id FROM agent_channel_events
                    WHERE provider=%s AND event_id=%s""",
                 (provider, event_id),
             )
-            winner = cursor.fetchone()
-        return str(winner["run_id"]), False
+            existing = cursor.fetchone()
+        if existing and existing["run_id"]:
+            return str(existing["run_id"]), False
+        # Defensive: in the new flow the event row and its run commit
+        # atomically, so a NULL run_id can only come from a legacy row
+        # written by the pre-fix check-then-insert flow.
+        raise RuntimeError(
+            "channel event has no run; refusing to create a duplicate"
+        )
 
 
     def claim_channel_deliveries(self, limit: int = 20) -> list[dict[str, Any]]:
@@ -304,6 +387,13 @@ class RunStore:
         if not fields:
             return
         fields["updated_at"] = datetime.now(timezone.utc)
+        unknown = sorted(set(fields) - RUN_UPDATE_COLUMNS)
+        if unknown:
+            # The keys are interpolated into the SQL text, so only known
+            # agent_runs columns may pass through (AS-9).
+            raise ValueError(
+                "unsupported agent_runs update columns: " + ", ".join(unknown)
+            )
         assignments = ", ".join(f"{key} = %s" for key in fields)
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute(

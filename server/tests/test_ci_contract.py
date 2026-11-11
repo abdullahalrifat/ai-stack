@@ -1,6 +1,6 @@
 from pathlib import Path
 
-CORE_VERSION = "0.17.3"
+CORE_VERSION = "0.17.4"
 
 
 

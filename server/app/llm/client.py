@@ -98,8 +98,16 @@ def _is_transient_error(exc: BaseException) -> bool:
     if isinstance(exc, RunCancelled):
         return False
     if isinstance(exc, InferenceClientError):
+        if exc.status_code is None:
+            # Transport-level failure before any HTTP status exists (AS-4).
+            # Core already classified replay safety here: clean connection
+            # failures are retryable=True, ambiguous read timeouts are
+            # retryable=False. Honor that flag instead of never retrying
+            # status_code=None errors.
+            return bool(exc.retryable)
         # Do not replay requests after a transport timeout: Ollama may still be
         # generating the original response on its single inference queue.
+        # 504 (model timeout) therefore stays non-retryable.
         return exc.status_code in (429, 500, 502, 503)
     if isinstance(exc, TimeoutError):
         # A read timeout may occur after the backend accepted the generation.
