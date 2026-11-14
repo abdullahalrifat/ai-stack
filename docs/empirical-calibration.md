@@ -2,11 +2,13 @@
 
 AI Stack uses `jarvis-core` as the canonical owner of empirical route selection.
 
-## Production loop
+## Intended production loop
 
 `Jarvis workload -> AI Stack execution -> runtime observation -> Core route selection -> next request`
 
-Jarvis provides task categories and task-level quality signals. AI Stack records provider/model execution telemetry and persists it through the Core observation contract. Core applies the reusable selection policy.
+Jarvis provides task categories and task-level quality signals. AI Stack records provider/model execution telemetry and is meant to persist it through the Core observation contract; Core applies the reusable selection policy.
+
+**Status (AS-7):** the AI Stack adapter that turns runtime telemetry into Core `RouteObservation` records is not currently wired into the request path. Request routing is served by the server's expert router (`app/agent/router.py`); the Core calibration loop is a design-complete follow-up, not live behavior. An earlier adapter existed only behind tests and was removed rather than kept as dead code.
 
 ## Evidence
 

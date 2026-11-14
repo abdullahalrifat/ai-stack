@@ -24,7 +24,7 @@ Production certification status is determined from current CI, end-to-end deploy
 | Multi-expert heterogeneous routing | INTEGRATED |
 | Execution-backed completion evidence | INTEGRATED |
 | Replay/adversarial evaluations | INTEGRATED / FOUNDATION corpus depth |
-| Benchmark-calibrated adaptive routing | INTEGRATED |
+| Benchmark-calibrated adaptive routing | FOUNDATION — Core primitives ready, server adapter not wired |
 | Shared team/job/schedule/remote contracts | INTEGRATED |
 | v0.8 execution state + lease fencing contracts | INTEGRATED |
 | v0.8 proof + permission contracts | INTEGRATED |

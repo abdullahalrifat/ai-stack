@@ -39,8 +39,6 @@ jobs:
           app/integrations/github.py
           app/tools/github.py
           app/runs/evidence_bridge.py
-          app/llm/empirical.py
-          app/llm/routing.py
           tests/test_runner.py
           tests/test_v08_autonomous_postgres_integration.py
           tests/test_v08_autonomous_store_edge_cases.py
