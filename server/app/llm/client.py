@@ -23,6 +23,7 @@ from ..core.config import (
 from .cache import default_cache, msg_key, make_message_like
 from .scheduler import default_scheduler
 from .metrics import incr, record_timing, get_metrics
+from .usage import record_usage
 from ..core.exceptions import RunCancelled
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,25 @@ def _to_namespace(value):
     return value
 
 
+def _record_stream_usage(model, chunks):
+    """Tee the stream, recording token usage from the final usage chunk (AS-5).
+
+    Gateways following OpenAI streaming semantics ship usage either as a
+    dedicated usage-only chunk (choices empty, skipped naturally by
+    downstream consumers) or attached to the terminal content chunk; the
+    first sighting is recorded and the chunk itself still flows through
+    untouched.
+    """
+    recorded = False
+    for chunk in chunks:
+        if not recorded:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                recorded = True
+                record_usage(model, usage)
+        yield chunk
+
+
 class _CoreCompletions:
     def __init__(self, client: InferenceClient):
         self._client = client
@@ -56,16 +76,30 @@ class _CoreCompletions:
         tools = kwargs.pop("tools", None)
         max_tokens = kwargs.pop("max_tokens", None)
         if stream:
-            return (
-                _to_namespace(chunk)
-                for chunk in self._client.stream(
-                    model=model,
-                    messages=messages,
-                    tools=tools,
-                    max_tokens=max_tokens,
-                    timeout=timeout,
-                    **kwargs,
-                )
+            # AS-5: streamed responses never passed back through the usage
+            # wrapper because create() returns a generator, so streamed runs
+            # contributed zero token/cost metrics. Ask the gateway for a final
+            # usage-only chunk (OpenAI stream_options semantics) and record it
+            # as the stream is consumed.
+            options = dict(kwargs)
+            if "stream_options" not in options:
+                # AS-5: ask the gateway for a final usage-only chunk (OpenAI
+                # stream_options semantics); a caller that passes its own
+                # stream_options is respected as-is.
+                options["stream_options"] = {"include_usage": True}
+            return _record_stream_usage(
+                model,
+                (
+                    _to_namespace(chunk)
+                    for chunk in self._client.stream(
+                        model=model,
+                        messages=messages,
+                        tools=tools,
+                        max_tokens=max_tokens,
+                        timeout=timeout,
+                        **options,
+                    )
+                ),
             )
         return _to_namespace(
             self._client.complete(

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Record token usage for streamed LLM calls (AS-5): the streaming path now asks
+  the gateway for a final usage-only chunk (`stream_options.include_usage`) and
+  records it, so streamed production traffic contributes token/cost metrics
+  like non-streamed calls. `record_usage` also accepts usage delivered as a
+  plain mapping. Callers that pass their own `stream_options` are respected.
+- Remove the dead capability-routing adapters `app/llm/routing.py` and
+  `app/llm/empirical.py` (AS-7 partial): they had zero runtime imports and were
+  exercised only by their own tests. Request routing remains the live expert
+  router (`app/agent/router.py`); the Core calibration loop is documented as a
+  design-complete follow-up in README/TODO and docs/empirical-calibration.md.
+  Dropped the two deleted files from the CI black whitelist.
+
 ## 3.9.3
 
 - Consume the published Jarvis Core 0.17.4 release (ledger reservation cleanup, bounded retry sleeps with a total retry deadline, OpenAI JSON-string tool-call decoding, reserved `model`/`stream` option guard) and align server requirements, lockfile, Docker validation, CI assertions and release documentation.

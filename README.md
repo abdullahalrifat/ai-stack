@@ -27,9 +27,9 @@ Server requirements, lockfile, Docker image and CI assert the same Core version.
 
 ## Token-efficient and empirical routing
 
-Core 0.17.4 supplies provider-neutral efficiency accounting plus empirical route calibration. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution and adapts measured runtime observations into Core `RouteObservation` records.
+Core 0.17.4 supplies provider-neutral efficiency accounting plus the empirical route calibration primitives. Server uses the OpenAI-compatible jarvis-inference gateway for local model execution. Request-level routing today is the server's own expert router (`app/agent/router.py`); the adapter that feeds measured runtime observations back into Core `RouteObservation` records is **not yet wired** into the request path — an earlier adapter existed only behind tests and was removed rather than left as dead code (AS-7).
 
-The calibration path is deliberately conservative: minimum samples, a quality floor and recency weighting must be satisfied before measured evidence can change automatic routing. When evidence is insufficient, existing health/benchmark routing remains the fallback.
+Core's calibration policy remains deliberately conservative: minimum samples, a quality floor and recency weighting must be satisfied before measured evidence can change automatic routing. When evidence is insufficient, existing health/benchmark routing remains the fallback.
 
 This boundary is intentionally provider-neutral: changing inference models or the gateway implementation does not require changing Jarvis Core or importing provider-specific SDKs into Core.
 

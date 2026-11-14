@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from typing import Any
 
 from .metrics import incr
@@ -24,17 +25,39 @@ def _pricing() -> dict[str, Any]:
         return {}
 
 
+def _usage_value(usage: Any, *names: str) -> Any:
+    """Read the first present token field from an object or mapping.
+
+    Streaming paths (AS-5) and some providers deliver usage as a plain
+    mapping, while others expose attributes; support both.
+    """
+    for name in names:
+        value = (
+            usage.get(name)
+            if isinstance(usage, Mapping)
+            else getattr(usage, name, None)
+        )
+        if value:
+            return value
+    return 0
+
+
 def record_usage(model: str, usage: Any) -> dict[str, float]:
-    prompt = int(getattr(usage, "prompt_tokens", 0) or getattr(usage, "input_tokens", 0) or 0)
-    completion = int(getattr(usage, "completion_tokens", 0) or getattr(usage, "output_tokens", 0) or 0)
-    total = int(getattr(usage, "total_tokens", 0) or prompt + completion)
+    prompt = int(_usage_value(usage, "prompt_tokens", "input_tokens"))
+    completion = int(_usage_value(usage, "completion_tokens", "output_tokens"))
+    total = int(_usage_value(usage, "total_tokens") or prompt + completion)
     prices = _pricing().get(model, {}) or {}
     input_rate = float(prices.get("input_usd_per_million", 0.0) or 0.0)
     output_rate = float(prices.get("output_usd_per_million", 0.0) or 0.0)
     cost = prompt * input_rate / 1_000_000 + completion * output_rate / 1_000_000
     incr(f"llm.tokens.{model}", total)
     incr(f"llm.requests.{model}")
-    return {"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total, "estimated_cost_usd": cost}
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
+        "estimated_cost_usd": cost,
+    }
 
 
 def install() -> None:
